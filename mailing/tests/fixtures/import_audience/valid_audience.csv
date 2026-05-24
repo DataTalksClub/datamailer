@@ -1,0 +1,4 @@
+email,tags,verified,subscription_status,unsubscribed,global_unsubscribed,hard_bounced,complained,suppressed,unsubscribe_reason
+Person@Example.COM,Newsletter;ML Zoomcamp,true,subscribed,false,false,false,false,false,
+unsubscribe@example.com,Newsletter,false,unsubscribed,true,false,false,false,false,user requested
+suppressed@example.com,Suppressed,false,pending,false,true,true,true,true,legacy suppression
