@@ -1,0 +1,78 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "staging"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "datamailer"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-REPLACE"
+  },
+  {
+    "ParameterKey": "PublicSubnetId",
+    "ParameterValue": "subnet-REPLACE-public"
+  },
+  {
+    "ParameterKey": "PrivateSubnetIds",
+    "ParameterValue": "subnet-REPLACE-private-a,subnet-REPLACE-private-b"
+  },
+  {
+    "ParameterKey": "WebAmiId",
+    "ParameterValue": "ami-REPLACE-arm64"
+  },
+  {
+    "ParameterKey": "WebInstanceType",
+    "ParameterValue": "t4g.nano"
+  },
+  {
+    "ParameterKey": "WebDomainName",
+    "ParameterValue": "staging.datamailer.example.com"
+  },
+  {
+    "ParameterKey": "OperatorAlarmTopicArn",
+    "ParameterValue": "arn:aws:sns:us-east-1:123456789012:datamailer-staging-alarms"
+  },
+  {
+    "ParameterKey": "LambdaArtifactBucket",
+    "ParameterValue": "datamailer-staging-artifacts"
+  },
+  {
+    "ParameterKey": "LambdaArtifactKey",
+    "ParameterValue": "lambda/datamailer-current.zip"
+  },
+  {
+    "ParameterKey": "LambdaLogRetentionDays",
+    "ParameterValue": "14"
+  },
+  {
+    "ParameterKey": "DBInstanceClass",
+    "ParameterValue": "db.t4g.micro"
+  },
+  {
+    "ParameterKey": "DBBackupRetentionDays",
+    "ParameterValue": "7"
+  },
+  {
+    "ParameterKey": "SESRegion",
+    "ParameterValue": "us-east-1"
+  },
+  {
+    "ParameterKey": "SESSenderIdentity",
+    "ParameterValue": "staging.datamailer.example.com"
+  },
+  {
+    "ParameterKey": "SESConfigurationSetName",
+    "ParameterValue": "datamailer-staging"
+  },
+  {
+    "ParameterKey": "DefaultFromEmail",
+    "ParameterValue": "no-reply@staging.datamailer.example.com"
+  },
+  {
+    "ParameterKey": "PublicBaseUrl",
+    "ParameterValue": "https://staging.datamailer.example.com"
+  }
+]

@@ -1,0 +1,2235 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Datamailer MVP staging/production infrastructure skeleton: ARM Django web, Postgres, SQS/DLQs, Lambda workers, IAM, SES assumptions, alarms, and dashboard.",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "AllowedValues": [
+        "staging",
+        "production"
+      ]
+    },
+    "ProjectName": {
+      "Type": "String",
+      "Default": "datamailer"
+    },
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "PublicSubnetId": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "Public subnet for the low-cost ARM Django web instance."
+    },
+    "PrivateSubnetIds": {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Description": "Private subnets for Postgres and Lambda workers."
+    },
+    "WebAmiId": {
+      "Type": "AWS::EC2::Image::Id",
+      "Description": "Ubuntu/Debian ARM64 AMI baked with Python, uv, Caddy, and the Datamailer systemd unit."
+    },
+    "WebInstanceType": {
+      "Type": "String",
+      "Default": "t4g.nano",
+      "AllowedValues": [
+        "t4g.nano",
+        "t4g.micro",
+        "t4g.small"
+      ]
+    },
+    "WebKeyName": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional EC2 key pair for emergency SSH. Prefer SSM Session Manager."
+    },
+    "WebAllowedCidr": {
+      "Type": "String",
+      "Default": "0.0.0.0/0"
+    },
+    "WebDomainName": {
+      "Type": "String",
+      "Description": "Environment host name served by Caddy/HTTPS, for example staging.datamailer.example.com."
+    },
+    "OperatorAlarmTopicArn": {
+      "Type": "String",
+      "Description": "SNS topic ARN for alarm notifications."
+    },
+    "LambdaArtifactBucket": {
+      "Type": "String",
+      "Description": "S3 bucket containing the Datamailer Lambda deployment zip."
+    },
+    "LambdaArtifactKey": {
+      "Type": "String",
+      "Description": "S3 key for the Datamailer Lambda deployment zip."
+    },
+    "LambdaRuntime": {
+      "Type": "String",
+      "Default": "python3.12",
+      "AllowedValues": [
+        "python3.12"
+      ]
+    },
+    "LambdaLogRetentionDays": {
+      "Type": "Number",
+      "Default": 14,
+      "AllowedValues": [
+        7,
+        14,
+        30,
+        60,
+        90
+      ],
+      "Description": "CloudWatch Logs retention for Datamailer Lambda worker log groups."
+    },
+    "DBInstanceClass": {
+      "Type": "String",
+      "Default": "db.t4g.micro"
+    },
+    "DBAllocatedStorage": {
+      "Type": "Number",
+      "Default": 20
+    },
+    "DBMaxAllocatedStorage": {
+      "Type": "Number",
+      "Default": 100
+    },
+    "DBBackupRetentionDays": {
+      "Type": "Number",
+      "Default": 7,
+      "MinValue": 7
+    },
+    "DBName": {
+      "Type": "String",
+      "Default": "datamailer"
+    },
+    "DBMasterUsername": {
+      "Type": "String",
+      "Default": "datamailer_admin"
+    },
+    "SESRegion": {
+      "Type": "String",
+      "Default": "us-east-1"
+    },
+    "SESSenderIdentity": {
+      "Type": "String",
+      "Description": "Verified SES domain or sender identity. HUMAN: verify DNS and production access before production traffic."
+    },
+    "SESConfigurationSetName": {
+      "Type": "String",
+      "Default": "datamailer"
+    },
+    "DefaultFromEmail": {
+      "Type": "String"
+    },
+    "PublicBaseUrl": {
+      "Type": "String"
+    }
+  },
+  "Conditions": {
+    "HasWebKeyName": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "WebKeyName"
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Mappings": {
+    "QueueDefaults": {
+      "transactional-email": {
+        "VisibilityTimeout": "180",
+        "MaxReceiveCount": "5",
+        "BatchSize": "5",
+        "MaxBatchingWindow": "10",
+        "OldestMessageAlarmSeconds": "120",
+        "WorkerTimeoutSeconds": "60",
+        "WorkerMemoryMb": "512",
+        "ReservedConcurrency": "4"
+      },
+      "campaign-email": {
+        "VisibilityTimeout": "900",
+        "MaxReceiveCount": "4",
+        "BatchSize": "10",
+        "MaxBatchingWindow": "30",
+        "OldestMessageAlarmSeconds": "900",
+        "WorkerTimeoutSeconds": "300",
+        "WorkerMemoryMb": "1024",
+        "ReservedConcurrency": "2"
+      },
+      "ses-webhooks": {
+        "VisibilityTimeout": "180",
+        "MaxReceiveCount": "5",
+        "BatchSize": "10",
+        "MaxBatchingWindow": "30",
+        "OldestMessageAlarmSeconds": "300",
+        "WorkerTimeoutSeconds": "60",
+        "WorkerMemoryMb": "512",
+        "ReservedConcurrency": "2"
+      },
+      "email-events": {
+        "VisibilityTimeout": "180",
+        "MaxReceiveCount": "5",
+        "BatchSize": "10",
+        "MaxBatchingWindow": "30",
+        "OldestMessageAlarmSeconds": "300",
+        "WorkerTimeoutSeconds": "60",
+        "WorkerMemoryMb": "512",
+        "ReservedConcurrency": "1"
+      }
+    }
+  },
+  "Resources": {
+    "WebSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Datamailer web ingress for HTTP/HTTPS and egress to Postgres/SQS/SES.",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": {
+              "Ref": "WebAllowedCidr"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": {
+              "Ref": "WebAllowedCidr"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "WorkerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Datamailer Lambda worker egress to Postgres, SQS, SES, and Secrets Manager.",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "DatabaseSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Datamailer Postgres ingress from web and Lambda workers only.",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": {
+              "Ref": "WebSecurityGroup"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": {
+              "Ref": "WorkerSecurityGroup"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "DatabaseSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "Private subnets for Datamailer Postgres.",
+        "SubnetIds": {
+          "Ref": "PrivateSubnetIds"
+        }
+      }
+    },
+    "DatabaseSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "Properties": {
+        "Description": "Datamailer Postgres admin credentials.",
+        "GenerateSecretString": {
+          "SecretStringTemplate": {
+            "Fn::Sub": "{\"username\":\"${DBMasterUsername}\"}"
+          },
+          "GenerateStringKey": "password",
+          "PasswordLength": 32,
+          "ExcludeCharacters": "\"@/\\"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "DatabaseInstance": {
+      "Type": "AWS::RDS::DBInstance",
+      "DeletionPolicy": "Snapshot",
+      "UpdateReplacePolicy": "Snapshot",
+      "Properties": {
+        "Engine": "postgres",
+        "EngineVersion": "16",
+        "DBInstanceClass": {
+          "Ref": "DBInstanceClass"
+        },
+        "AllocatedStorage": {
+          "Ref": "DBAllocatedStorage"
+        },
+        "MaxAllocatedStorage": {
+          "Ref": "DBMaxAllocatedStorage"
+        },
+        "DBName": {
+          "Ref": "DBName"
+        },
+        "MasterUsername": {
+          "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
+        },
+        "MasterUserPassword": {
+          "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+        },
+        "DBSubnetGroupName": {
+          "Ref": "DatabaseSubnetGroup"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "DatabaseSecurityGroup"
+          }
+        ],
+        "BackupRetentionPeriod": {
+          "Ref": "DBBackupRetentionDays"
+        },
+        "CopyTagsToSnapshot": true,
+        "DeletionProtection": true,
+        "EnableCloudwatchLogsExports": [
+          "postgresql"
+        ],
+        "StorageEncrypted": true,
+        "PubliclyAccessible": false,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "WebRuntimeRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+          "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "enqueue-datamailer-queues-and-read-db-secret",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::GetAtt": [
+                        "TransactionalEmailQueue",
+                        "Arn"
+                      ]
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "CampaignEmailQueue",
+                        "Arn"
+                      ]
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "SesWebhooksQueue",
+                        "Arn"
+                      ]
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "EmailEventsQueue",
+                        "Arn"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "DatabaseSecret"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "WebInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "WebRuntimeRole"
+          }
+        ]
+      }
+    },
+    "WebInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Ref": "WebAmiId"
+        },
+        "InstanceType": {
+          "Ref": "WebInstanceType"
+        },
+        "IamInstanceProfile": {
+          "Ref": "WebInstanceProfile"
+        },
+        "KeyName": {
+          "Fn::If": [
+            "HasWebKeyName",
+            {
+              "Ref": "WebKeyName"
+            },
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnetId"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "WebSecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p /etc/datamailer\ncat >/etc/datamailer/environment <<ENV\nDJANGO_SETTINGS_MODULE=datamailer.settings\nDEBUG=False\nAWS_REGION=${AWS::Region}\nAWS_SES_CONFIGURATION_SET=${SESConfigurationSetName}\nDEFAULT_FROM_EMAIL=${DefaultFromEmail}\nPUBLIC_BASE_URL=${PublicBaseUrl}\nALLOWED_HOSTS=${WebDomainName}\nCSRF_TRUSTED_ORIGINS=https://${WebDomainName}\nTRANSACTIONAL_EMAIL_QUEUE_NAME=${EnvironmentName}-transactional-email\nCAMPAIGN_EMAIL_QUEUE_NAME=${EnvironmentName}-campaign-email\nSES_WEBHOOKS_QUEUE_NAME=${EnvironmentName}-ses-webhooks\nEMAIL_EVENTS_QUEUE_NAME=${EnvironmentName}-email-events\nSQS_TRANSACTIONAL_EMAIL_QUEUE_URL=${TransactionalEmailQueue}\nSQS_CAMPAIGN_EMAIL_QUEUE_URL=${CampaignEmailQueue}\nSQS_SES_WEBHOOKS_QUEUE_URL=${SesWebhooksQueue}\nSQS_EMAIL_EVENTS_QUEUE_URL=${EmailEventsQueue}\nENV\nsystemctl restart datamailer || true\nsystemctl restart caddy || true\n"
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${ProjectName}-${EnvironmentName}-web"
+            }
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "TransactionalEmailDLQ": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-transactional-email-dlq"
+        },
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "TransactionalEmailQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-transactional-email"
+        },
+        "VisibilityTimeout": 180,
+        "MessageRetentionPeriod": 345600,
+        "ReceiveMessageWaitTimeSeconds": 20,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "TransactionalEmailDLQ",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "CampaignEmailDLQ": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-campaign-email-dlq"
+        },
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "CampaignEmailQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-campaign-email"
+        },
+        "VisibilityTimeout": 900,
+        "MessageRetentionPeriod": 345600,
+        "ReceiveMessageWaitTimeSeconds": 20,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "CampaignEmailDLQ",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 4
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "SesWebhooksDLQ": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-ses-webhooks-dlq"
+        },
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "SesWebhooksQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-ses-webhooks"
+        },
+        "VisibilityTimeout": 180,
+        "MessageRetentionPeriod": 345600,
+        "ReceiveMessageWaitTimeSeconds": 20,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "SesWebhooksDLQ",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "EmailEventsDLQ": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-email-events-dlq"
+        },
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "EmailEventsQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {
+          "Fn::Sub": "${EnvironmentName}-email-events"
+        },
+        "VisibilityTimeout": 180,
+        "MessageRetentionPeriod": 345600,
+        "ReceiveMessageWaitTimeSeconds": 20,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "EmailEventsDLQ",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "TransactionalEmailWorkerLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${ProjectName}-${EnvironmentName}-transactional-email"
+        },
+        "RetentionInDays": {
+          "Ref": "LambdaLogRetentionDays"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "TransactionalEmailWorkerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "transactional-email-worker-runtime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${EnvironmentName}-transactional-email:*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CreateNetworkInterface",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeSubnets",
+                    "ec2:DeleteNetworkInterface",
+                    "ec2:AssignPrivateIpAddresses",
+                    "ec2:UnassignPrivateIpAddresses"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:ChangeMessageVisibility",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "TransactionalEmailQueue",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "TransactionalEmailDLQ",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "DatabaseSecret"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ses:SendEmail",
+                    "ses:SendRawEmail"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "ses:FromAddress": {
+                        "Ref": "DefaultFromEmail"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "CampaignEmailWorkerLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${ProjectName}-${EnvironmentName}-campaign-email"
+        },
+        "RetentionInDays": {
+          "Ref": "LambdaLogRetentionDays"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "CampaignEmailWorkerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "campaign-email-worker-runtime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${EnvironmentName}-campaign-email:*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CreateNetworkInterface",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeSubnets",
+                    "ec2:DeleteNetworkInterface",
+                    "ec2:AssignPrivateIpAddresses",
+                    "ec2:UnassignPrivateIpAddresses"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:ChangeMessageVisibility",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CampaignEmailQueue",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CampaignEmailDLQ",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "DatabaseSecret"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ses:SendEmail",
+                    "ses:SendRawEmail"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "ses:FromAddress": {
+                        "Ref": "DefaultFromEmail"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "SesWebhooksWorkerLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${ProjectName}-${EnvironmentName}-ses-webhooks"
+        },
+        "RetentionInDays": {
+          "Ref": "LambdaLogRetentionDays"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "SesWebhooksWorkerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ses-webhooks-worker-runtime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${EnvironmentName}-ses-webhooks:*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CreateNetworkInterface",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeSubnets",
+                    "ec2:DeleteNetworkInterface",
+                    "ec2:AssignPrivateIpAddresses",
+                    "ec2:UnassignPrivateIpAddresses"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:ChangeMessageVisibility",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "SesWebhooksQueue",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "SesWebhooksDLQ",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "DatabaseSecret"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "EmailEventsWorkerLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${ProjectName}-${EnvironmentName}-email-events"
+        },
+        "RetentionInDays": {
+          "Ref": "LambdaLogRetentionDays"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "EmailEventsWorkerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "email-events-worker-runtime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${EnvironmentName}-email-events:*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CreateNetworkInterface",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeSubnets",
+                    "ec2:DeleteNetworkInterface",
+                    "ec2:AssignPrivateIpAddresses",
+                    "ec2:UnassignPrivateIpAddresses"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:ChangeMessageVisibility",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "EmailEventsQueue",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "EmailEventsDLQ",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "DatabaseSecret"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "TransactionalEmailWorker": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${ProjectName}-${EnvironmentName}-transactional-email"
+        },
+        "Runtime": {
+          "Ref": "LambdaRuntime"
+        },
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "mailing.workers.handlers.transactional_email_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "TransactionalEmailWorkerRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "LambdaArtifactKey"
+          }
+        },
+        "MemorySize": 512,
+        "Timeout": 60,
+        "ReservedConcurrentExecutions": 4,
+        "Environment": {
+          "Variables": {
+            "DJANGO_SETTINGS_MODULE": "datamailer.settings",
+            "DEBUG": "False",
+            "AWS_REGION": {
+              "Ref": "AWS::Region"
+            },
+            "AWS_SES_CONFIGURATION_SET": {
+              "Ref": "SESConfigurationSetName"
+            },
+            "DEFAULT_FROM_EMAIL": {
+              "Ref": "DefaultFromEmail"
+            },
+            "PUBLIC_BASE_URL": {
+              "Ref": "PublicBaseUrl"
+            },
+            "SQS_TRANSACTIONAL_EMAIL_QUEUE_URL": {
+              "Ref": "TransactionalEmailQueue"
+            },
+            "SQS_CAMPAIGN_EMAIL_QUEUE_URL": {
+              "Ref": "CampaignEmailQueue"
+            },
+            "SQS_SES_WEBHOOKS_QUEUE_URL": {
+              "Ref": "SesWebhooksQueue"
+            },
+            "SQS_EMAIL_EVENTS_QUEUE_URL": {
+              "Ref": "EmailEventsQueue"
+            }
+          }
+        },
+        "VpcConfig": {
+          "SubnetIds": {
+            "Ref": "PrivateSubnetIds"
+          },
+          "SecurityGroupIds": [
+            {
+              "Ref": "WorkerSecurityGroup"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "TransactionalEmailWorkerLogGroup"
+      ]
+    },
+    "CampaignEmailWorker": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${ProjectName}-${EnvironmentName}-campaign-email"
+        },
+        "Runtime": {
+          "Ref": "LambdaRuntime"
+        },
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "mailing.workers.handlers.campaign_email_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "CampaignEmailWorkerRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "LambdaArtifactKey"
+          }
+        },
+        "MemorySize": 1024,
+        "Timeout": 300,
+        "ReservedConcurrentExecutions": 2,
+        "Environment": {
+          "Variables": {
+            "DJANGO_SETTINGS_MODULE": "datamailer.settings",
+            "DEBUG": "False",
+            "AWS_REGION": {
+              "Ref": "AWS::Region"
+            },
+            "AWS_SES_CONFIGURATION_SET": {
+              "Ref": "SESConfigurationSetName"
+            },
+            "DEFAULT_FROM_EMAIL": {
+              "Ref": "DefaultFromEmail"
+            },
+            "PUBLIC_BASE_URL": {
+              "Ref": "PublicBaseUrl"
+            },
+            "SQS_CAMPAIGN_EMAIL_QUEUE_URL": {
+              "Ref": "CampaignEmailQueue"
+            }
+          }
+        },
+        "VpcConfig": {
+          "SubnetIds": {
+            "Ref": "PrivateSubnetIds"
+          },
+          "SecurityGroupIds": [
+            {
+              "Ref": "WorkerSecurityGroup"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "CampaignEmailWorkerLogGroup"
+      ]
+    },
+    "SesWebhooksWorker": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${ProjectName}-${EnvironmentName}-ses-webhooks"
+        },
+        "Runtime": {
+          "Ref": "LambdaRuntime"
+        },
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "mailing.workers.handlers.ses_webhooks_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "SesWebhooksWorkerRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "LambdaArtifactKey"
+          }
+        },
+        "MemorySize": 512,
+        "Timeout": 60,
+        "ReservedConcurrentExecutions": 2,
+        "Environment": {
+          "Variables": {
+            "DJANGO_SETTINGS_MODULE": "datamailer.settings",
+            "DEBUG": "False",
+            "AWS_REGION": {
+              "Ref": "AWS::Region"
+            },
+            "SES_WEBHOOKS_SIGNATURE_MODE": "strict",
+            "SQS_SES_WEBHOOKS_QUEUE_URL": {
+              "Ref": "SesWebhooksQueue"
+            }
+          }
+        },
+        "VpcConfig": {
+          "SubnetIds": {
+            "Ref": "PrivateSubnetIds"
+          },
+          "SecurityGroupIds": [
+            {
+              "Ref": "WorkerSecurityGroup"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "DeferredUntilIssue",
+            "Value": "11"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "SesWebhooksWorkerLogGroup"
+      ]
+    },
+    "EmailEventsWorker": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${ProjectName}-${EnvironmentName}-email-events"
+        },
+        "Runtime": {
+          "Ref": "LambdaRuntime"
+        },
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "mailing.workers.handlers.email_events_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "EmailEventsWorkerRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "LambdaArtifactKey"
+          }
+        },
+        "MemorySize": 512,
+        "Timeout": 60,
+        "ReservedConcurrentExecutions": 1,
+        "Environment": {
+          "Variables": {
+            "DJANGO_SETTINGS_MODULE": "datamailer.settings",
+            "DEBUG": "False",
+            "SQS_EMAIL_EVENTS_QUEUE_URL": {
+              "Ref": "EmailEventsQueue"
+            }
+          }
+        },
+        "VpcConfig": {
+          "SubnetIds": {
+            "Ref": "PrivateSubnetIds"
+          },
+          "SecurityGroupIds": [
+            {
+              "Ref": "WorkerSecurityGroup"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Optional",
+            "Value": "true"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "EmailEventsWorkerLogGroup"
+      ]
+    },
+    "TransactionalEmailEventSourceMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "TransactionalEmailQueue",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Ref": "TransactionalEmailWorker"
+        },
+        "BatchSize": 5,
+        "MaximumBatchingWindowInSeconds": 10,
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures"
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 4
+        }
+      }
+    },
+    "CampaignEmailEventSourceMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "CampaignEmailQueue",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Ref": "CampaignEmailWorker"
+        },
+        "BatchSize": 10,
+        "MaximumBatchingWindowInSeconds": 30,
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures"
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 2
+        }
+      }
+    },
+    "SesWebhooksEventSourceMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "SesWebhooksQueue",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Ref": "SesWebhooksWorker"
+        },
+        "BatchSize": 10,
+        "MaximumBatchingWindowInSeconds": 30,
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures"
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 2
+        },
+        "Enabled": false
+      }
+    },
+    "EmailEventsEventSourceMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "EmailEventsQueue",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Ref": "EmailEventsWorker"
+        },
+        "BatchSize": 10,
+        "MaximumBatchingWindowInSeconds": 30,
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures"
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 1
+        },
+        "Enabled": false
+      }
+    },
+    "SesConfigurationSet": {
+      "Type": "AWS::SES::ConfigurationSet",
+      "Properties": {
+        "Name": {
+          "Ref": "SESConfigurationSetName"
+        },
+        "SendingOptions": {
+          "SendingEnabled": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ProjectName"
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "TransactionalQueueAgeAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Transactional email queue latency is above two minutes.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "TransactionalEmailQueue",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 2,
+        "Threshold": 120,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "CampaignQueueAgeAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Campaign email queue has stale messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "CampaignEmailQueue",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 900,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "SesWebhooksQueueAgeAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "SES webhook queue has stale messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "SesWebhooksQueue",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "EmailEventsQueueAgeAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Email events queue has stale messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "EmailEventsQueue",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "TransactionalDLQDepthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Transactional email DLQ has messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "TransactionalEmailDLQ",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "CampaignDLQDepthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Campaign email DLQ has messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "CampaignEmailDLQ",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "SesWebhooksDLQDepthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "SES webhooks DLQ has messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "SesWebhooksDLQ",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "EmailEventsDLQDepthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Email events DLQ has messages.",
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "EmailEventsDLQ",
+                "QueueName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "LambdaErrorAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "One or more Datamailer Lambda workers are erroring.",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "LambdaThrottleAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Datamailer Lambda workers are being throttled.",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "LambdaDurationNearTimeoutAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Lambda p95 duration is close to the shortest worker timeout.",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Duration",
+        "ExtendedStatistic": "p95",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 50000,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "DatabaseCpuAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Postgres CPU is high.",
+        "Namespace": "AWS/RDS",
+        "MetricName": "CPUUtilization",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseInstance"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 3,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "DatabaseConnectionsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Postgres connection usage is high; evaluate lower Lambda concurrency or RDS Proxy.",
+        "Namespace": "AWS/RDS",
+        "MetricName": "DatabaseConnections",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseInstance"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 3,
+        "Threshold": 60,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "DatabaseStorageAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Postgres free storage is below 5 GiB.",
+        "Namespace": "AWS/RDS",
+        "MetricName": "FreeStorageSpace",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseInstance"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 5368709120,
+        "ComparisonOperator": "LessThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "SesSendFailureAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "SES rejected or failed Datamailer sends.",
+        "Namespace": "AWS/SES",
+        "MetricName": "Reject",
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "SesBounceRateAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "SES bounce count is non-zero; check rate against account reputation and suppress affected contacts.",
+        "Namespace": "AWS/SES",
+        "MetricName": "Bounce",
+        "Statistic": "Sum",
+        "Period": 3600,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "SesComplaintRateAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "SES complaint count is non-zero; pause campaigns and suppress affected contacts.",
+        "Namespace": "AWS/SES",
+        "MetricName": "Complaint",
+        "Statistic": "Sum",
+        "Period": 3600,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "WebHealthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Datamailer web health check failed. HUMAN: wire this to Route53 or CloudWatch Synthetics when the DNS name is live.",
+        "Namespace": "Datamailer/Web",
+        "MetricName": "HealthCheckOk",
+        "Statistic": "Minimum",
+        "Period": 60,
+        "EvaluationPeriods": 2,
+        "Threshold": 1,
+        "ComparisonOperator": "LessThanThreshold",
+        "TreatMissingData": "breaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "CampaignStuckAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "A campaign has remained in sending too long. Emit Datamailer/Campaigns SendingAgeSeconds from an ops cron or scheduled management command.",
+        "Namespace": "Datamailer/Campaigns",
+        "MetricName": "SendingAgeSeconds",
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 3600,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperatorAlarmTopicArn"
+          }
+        ]
+      }
+    },
+    "DatamailerDashboard": {
+      "Type": "AWS::CloudWatch::Dashboard",
+      "Properties": {
+        "DashboardName": {
+          "Fn::Sub": "${ProjectName}-${EnvironmentName}"
+        },
+        "DashboardBody": {
+          "Fn::Sub": "{\"widgets\":[{\"type\":\"text\",\"x\":0,\"y\":0,\"width\":24,\"height\":1,\"properties\":{\"markdown\":\"# Datamailer ${EnvironmentName} operations\"}},{\"type\":\"metric\",\"x\":0,\"y\":1,\"width\":12,\"height\":6,\"properties\":{\"metrics\":[[\"AWS/SQS\",\"ApproximateAgeOfOldestMessage\",\"QueueName\",\"${EnvironmentName}-transactional-email\"],[\".\",\".\",\"QueueName\",\"${EnvironmentName}-campaign-email\"],[\".\",\".\",\"QueueName\",\"${EnvironmentName}-ses-webhooks\"],[\".\",\".\",\"QueueName\",\"${EnvironmentName}-email-events\"]],\"period\":60,\"stat\":\"Maximum\",\"title\":\"Queue age\"}},{\"type\":\"metric\",\"x\":12,\"y\":1,\"width\":12,\"height\":6,\"properties\":{\"metrics\":[[\"AWS/SQS\",\"ApproximateNumberOfMessagesVisible\",\"QueueName\",\"${EnvironmentName}-transactional-email-dlq\"],[\".\",\".\",\"QueueName\",\"${EnvironmentName}-campaign-email-dlq\"],[\".\",\".\",\"QueueName\",\"${EnvironmentName}-ses-webhooks-dlq\"],[\".\",\".\",\"QueueName\",\"${EnvironmentName}-email-events-dlq\"]],\"period\":60,\"stat\":\"Maximum\",\"title\":\"DLQ depth\"}},{\"type\":\"metric\",\"x\":0,\"y\":7,\"width\":12,\"height\":6,\"properties\":{\"metrics\":[[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"${ProjectName}-${EnvironmentName}-transactional-email\"],[\".\",\".\",\"FunctionName\",\"${ProjectName}-${EnvironmentName}-campaign-email\"],[\".\",\".\",\"FunctionName\",\"${ProjectName}-${EnvironmentName}-ses-webhooks\"],[\".\",\".\",\"FunctionName\",\"${ProjectName}-${EnvironmentName}-email-events\"]],\"period\":300,\"stat\":\"Sum\",\"title\":\"Lambda errors\"}},{\"type\":\"metric\",\"x\":12,\"y\":7,\"width\":12,\"height\":6,\"properties\":{\"metrics\":[[\"AWS/RDS\",\"CPUUtilization\",\"DBInstanceIdentifier\",\"${DatabaseInstance}\"],[\".\",\"DatabaseConnections\",\".\",\"${DatabaseInstance}\"],[\".\",\"FreeStorageSpace\",\".\",\"${DatabaseInstance}\"]],\"period\":300,\"stat\":\"Average\",\"title\":\"Postgres health\"}}]}"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "WebInstanceId": {
+      "Value": {
+        "Ref": "WebInstance"
+      }
+    },
+    "DatabaseEndpoint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "DatabaseInstance",
+          "Endpoint.Address"
+        ]
+      }
+    },
+    "TransactionalEmailQueueUrl": {
+      "Value": {
+        "Ref": "TransactionalEmailQueue"
+      }
+    },
+    "CampaignEmailQueueUrl": {
+      "Value": {
+        "Ref": "CampaignEmailQueue"
+      }
+    },
+    "SesWebhooksQueueUrl": {
+      "Value": {
+        "Ref": "SesWebhooksQueue"
+      }
+    },
+    "EmailEventsQueueUrl": {
+      "Value": {
+        "Ref": "EmailEventsQueue"
+      }
+    }
+  }
+}
