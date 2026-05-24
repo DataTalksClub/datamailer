@@ -166,3 +166,123 @@ class ContactTag(models.Model):
 
     def __str__(self):
         return f"{self.contact.normalized_email}: {self.tag.slug}"
+
+
+class CampaignStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    QUEUED = "queued", "Queued"
+    SNAPSHOTTING = "snapshotting", "Snapshotting"
+    SENDING = "sending", "Sending"
+    SENT = "sent", "Sent"
+    CANCELLED = "cancelled", "Cancelled"
+    FAILED = "failed", "Failed"
+
+
+def normalize_tag_filter(value):
+    return sorted({slugify(str(tag).strip()) for tag in (value or []) if str(tag).strip()})
+
+
+class Campaign(TimeStampedModel):
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="campaigns")
+    audience = models.ForeignKey(Audience, on_delete=models.PROTECT, related_name="campaigns")
+    subject = models.CharField(max_length=255)
+    preview_text = models.CharField(max_length=255, blank=True)
+    html_body = models.TextField(blank=True)
+    text_body = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=CampaignStatus.choices,
+        default=CampaignStatus.DRAFT,
+    )
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    include_tags = models.JSONField(default=list, blank=True)
+    exclude_tags = models.JSONField(default=list, blank=True)
+    recipient_count = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    delivered_count = models.PositiveIntegerField(default=0)
+    unique_open_count = models.PositiveIntegerField(default=0)
+    open_count = models.PositiveIntegerField(default=0)
+    unique_click_count = models.PositiveIntegerField(default=0)
+    click_count = models.PositiveIntegerField(default=0)
+    unsubscribe_count = models.PositiveIntegerField(default=0)
+    bounce_count = models.PositiveIntegerField(default=0)
+    complaint_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "campaigns"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["client", "audience", "status"], name="campaign_client_aud_status_idx"),
+            models.Index(fields=["scheduled_at"], name="campaign_scheduled_at_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.include_tags = normalize_tag_filter(self.include_tags)
+        self.exclude_tags = normalize_tag_filter(self.exclude_tags)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.subject
+
+
+class CampaignRecipientStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    SENT = "sent", "Sent"
+    SKIPPED = "skipped", "Skipped"
+    FAILED = "failed", "Failed"
+    BOUNCED = "bounced", "Bounced"
+    COMPLAINED = "complained", "Complained"
+    UNSUBSCRIBED = "unsubscribed", "Unsubscribed"
+
+
+class CampaignRecipientSkipReason(models.TextChoices):
+    UNVERIFIED = "unverified", "Unverified"
+    GLOBAL_UNSUBSCRIBE = "global_unsubscribe", "Global unsubscribe"
+    CLIENT_UNSUBSCRIBE = "client_unsubscribe", "Client unsubscribe"
+    AUDIENCE_UNSUBSCRIBE = "audience_unsubscribe", "Audience unsubscribe"
+    HARD_BOUNCE = "hard_bounce", "Hard bounce"
+    COMPLAINT = "complaint", "Complaint"
+    DUPLICATE = "duplicate", "Duplicate"
+    SUPPRESSED = "suppressed", "Suppressed"
+
+
+class CampaignRecipient(TimeStampedModel):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="recipients")
+    contact = models.ForeignKey(Contact, on_delete=models.PROTECT, related_name="campaign_recipients")
+    email = models.EmailField(max_length=320)
+    status = models.CharField(
+        max_length=20,
+        choices=CampaignRecipientStatus.choices,
+        default=CampaignRecipientStatus.PENDING,
+    )
+    skip_reason = models.CharField(
+        max_length=30,
+        choices=CampaignRecipientSkipReason.choices,
+        blank=True,
+    )
+    tracking_token_hash = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    unsubscribe_token_hash = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    ses_message_id = models.CharField(max_length=255, blank=True, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    first_opened_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    first_clicked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    open_count = models.PositiveIntegerField(default=0)
+    click_count = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "campaign_recipients"
+        ordering = ["campaign_id", "contact__normalized_email"]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "contact"], name="unique_campaign_recipient_contact"),
+        ]
+        indexes = [
+            models.Index(fields=["campaign", "status"], name="campaign_recip_status_idx"),
+            models.Index(fields=["contact", "sent_at"], name="campaign_recip_contact_sent_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.campaign_id}: {self.email} ({self.status})"

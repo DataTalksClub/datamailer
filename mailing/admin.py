@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from mailing.models import Audience, Client, Contact, ContactTag, Organization, Subscription, Tag
+from mailing.models import (
+    Audience,
+    Campaign,
+    CampaignRecipient,
+    Client,
+    Contact,
+    ContactTag,
+    Organization,
+    Subscription,
+    Tag,
+)
 
 
 class CreatedAtReadOnlyMixin:
@@ -94,3 +104,68 @@ class ContactTagAdmin(CreatedAtReadOnlyMixin, admin.ModelAdmin):
     list_filter = ("tag__audience", "tag")
     search_fields = ("contact__email", "contact__normalized_email", "tag__name", "tag__slug")
     autocomplete_fields = ("contact", "tag")
+
+
+class CampaignRecipientInline(admin.TabularInline):
+    model = CampaignRecipient
+    extra = 0
+    fields = ("contact", "email", "status", "skip_reason", "sent_at", "last_error")
+    readonly_fields = ("email", "status", "skip_reason", "sent_at", "last_error")
+    autocomplete_fields = ("contact",)
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Campaign)
+class CampaignAdmin(admin.ModelAdmin):
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "recipient_count",
+        "sent_count",
+        "skipped_count",
+        "delivered_count",
+        "unique_open_count",
+        "open_count",
+        "unique_click_count",
+        "click_count",
+        "unsubscribe_count",
+        "bounce_count",
+        "complaint_count",
+    )
+    list_display = (
+        "subject",
+        "client",
+        "audience",
+        "status",
+        "scheduled_at",
+        "recipient_count",
+        "skipped_count",
+        "sent_count",
+        "created_at",
+    )
+    list_filter = ("status", "client", "audience")
+    search_fields = ("subject", "client__name", "client__slug", "audience__name", "audience__slug")
+    autocomplete_fields = ("client", "audience")
+    inlines = (CampaignRecipientInline,)
+
+
+@admin.register(CampaignRecipient)
+class CampaignRecipientAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at", "updated_at")
+    list_display = ("campaign", "email", "contact", "status", "skip_reason", "sent_at", "last_error")
+    list_filter = ("status", "skip_reason", "campaign__client", "campaign__audience")
+    search_fields = (
+        "email",
+        "contact__email",
+        "contact__normalized_email",
+        "campaign__subject",
+        "campaign__client__name",
+        "campaign__client__slug",
+        "campaign__audience__name",
+        "campaign__audience__slug",
+        "ses_message_id",
+    )
+    autocomplete_fields = ("campaign", "contact")
