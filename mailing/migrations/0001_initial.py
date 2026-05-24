@@ -138,7 +138,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name='subscription',
-            index=models.Index(fields=['audience', 'client', 'status'], name='subs_audience_client_status_idx'),
+            index=models.Index(fields=['audience', 'client', 'status'], name='subs_aud_cli_status_idx'),
         ),
         migrations.AddIndex(
             model_name='subscription',

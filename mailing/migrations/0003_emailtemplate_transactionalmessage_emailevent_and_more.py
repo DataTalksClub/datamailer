@@ -96,7 +96,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name='transactionalmessage',
-            index=models.Index(fields=['client', 'status', 'created_at'], name='tx_msg_client_status_created_idx'),
+            index=models.Index(fields=['client', 'status', 'created_at'], name='tx_msg_cli_status_created_idx'),
         ),
         migrations.AddConstraint(
             model_name='transactionalmessage',
@@ -104,7 +104,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name='emailevent',
-            index=models.Index(fields=['contact', 'created_at'], name='email_events_contact_created_idx'),
+            index=models.Index(fields=['contact', 'created_at'], name='email_evt_contact_created_idx'),
         ),
         migrations.AddIndex(
             model_name='emailevent',
@@ -112,10 +112,10 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name='emailevent',
-            index=models.Index(fields=['campaign_recipient', 'event_type'], name='email_events_recipient_type_idx'),
+            index=models.Index(fields=['campaign_recipient', 'event_type'], name='email_evt_recipient_type_idx'),
         ),
         migrations.AddIndex(
             model_name='emailevent',
-            index=models.Index(fields=['client', 'created_at'], name='email_events_client_created_idx'),
+            index=models.Index(fields=['client', 'created_at'], name='email_evt_client_created_idx'),
         ),
     ]

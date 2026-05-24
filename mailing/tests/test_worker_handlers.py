@@ -71,6 +71,7 @@ VALID_MESSAGES = {
 @pytest.fixture(autouse=True)
 def stub_campaign_sender(monkeypatch):
     monkeypatch.setattr(mailing.workers.handlers, "send_campaign_batch", lambda payload: None)
+    monkeypatch.setattr(mailing.workers.handlers, "process_ses_webhook", lambda payload: None)
 
 
 @pytest.mark.parametrize("worker", VALID_MESSAGES.values(), ids=VALID_MESSAGES.keys())
