@@ -65,7 +65,14 @@ make test-aws-local
 
 If LocalStack is unavailable and the issue only requires skip-safe local setup, verify the marked tests skip cleanly and report that. If the issue requires a real local queue run, start LocalStack or fail with concrete instructions.
 
-For UI-visible changes, start the server, inspect the page, and capture/read screenshots when practical. For backend-only changes, state screenshots are not applicable.
+For UI-visible changes, start the server, inspect the page, and capture/read screenshots when practical. Save screenshots under `.tmp/` and upload shareable images with the sandbox screenshot CLI:
+
+```bash
+cd /home/alexey/git/sandbox-screenshots
+upload-screenshot /home/alexey/git/datamailer/.tmp/screenshot.png
+```
+
+Read `/home/alexey/git/sandbox-screenshots/README.md` before uploading. If the CLI is missing or stale, run `./install.sh` from that repo and `source ~/.bashrc`. Include the returned `url` values in the QA report. Do not use an orphan `screenshots` branch. If a local or remote `screenshots` branch exists, delete it, reupload screenshots with `upload-screenshot`, and update affected issue comments. For backend-only changes, state screenshots are not applicable.
 
 ### 4. Verify Acceptance Criteria
 

@@ -74,4 +74,13 @@ Use `Stubber` to assert:
 
 Start with Django view/template tests. Add Playwright only when the UI workflow is critical and cannot be verified well with Django tests.
 
+For UI-visible changes, save screenshots under `.tmp/` and upload them with the sandbox screenshot CLI:
+
+```bash
+cd /home/alexey/git/sandbox-screenshots
+upload-screenshot /home/alexey/git/datamailer/.tmp/screenshot.png
+```
+
+Read `/home/alexey/git/sandbox-screenshots/README.md` before uploading. Do not use an orphan `screenshots` branch. If a local or remote `screenshots` branch exists, delete it, reupload screenshots with `upload-screenshot`, and update affected issue comments.
+
 For backend-only issues, screenshots are not applicable; tester should state that explicitly.

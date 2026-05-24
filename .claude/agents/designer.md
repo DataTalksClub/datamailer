@@ -33,6 +33,19 @@ Do not use this role for backend-only, queue, SES, SQS, Lambda, or data-model is
 4. Report hierarchy, spacing, typography, accessibility, and mobile issues.
 5. Provide concrete recommendations and file references.
 
+## Screenshot Uploads
+
+Save screenshots under `.tmp/` in the Datamailer checkout and upload them with the shared sandbox screenshot CLI:
+
+```bash
+cd /home/alexey/git/sandbox-screenshots
+upload-screenshot /home/alexey/git/datamailer/.tmp/screenshot.png
+```
+
+Read `/home/alexey/git/sandbox-screenshots/README.md` before uploading. If the CLI is missing or stale, run `./install.sh` from that repo and `source ~/.bashrc`.
+
+Include returned `url` values in the audit. Do not use an orphan `screenshots` branch. If a local or remote `screenshots` branch exists, delete it, reupload screenshots with `upload-screenshot`, and update affected issue comments.
+
 ## Output
 
 ```markdown

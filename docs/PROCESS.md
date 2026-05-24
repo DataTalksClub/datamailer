@@ -164,6 +164,30 @@ Guidelines:
 - UI tests should start with Django view/template tests. Add Playwright only for critical user/operator workflows once the UI is substantial.
 - Capture screenshots only for UI issues with visible page changes. For backend-only issues, tester should explicitly state screenshots are not applicable.
 
+## Screenshot Upload Workflow
+
+Use the shared sandbox screenshot uploader for throw-away screenshot links. Do not create or update an orphan `screenshots` branch.
+
+For UI-visible issues:
+
+1. Save screenshots under `.tmp/` in this repo.
+2. Read `/home/alexey/git/sandbox-screenshots/README.md` before uploading.
+3. Install or refresh the CLI if needed:
+   ```bash
+   cd /home/alexey/git/sandbox-screenshots
+   ./install.sh
+   source ~/.bashrc
+   ```
+4. Upload each screenshot:
+   ```bash
+   upload-screenshot /home/alexey/git/datamailer/.tmp/screenshot.png
+   ```
+5. Copy the returned `url` value into the GitHub issue comment, QA report, designer audit, or PM acceptance notes.
+
+Do not paste `SCREENSHOT_UPLOAD_TOKEN` into chat, logs, commits, issue comments, or docs. Screenshot objects are temporary and expire automatically.
+
+If a local or remote `screenshots` branch exists, delete that branch, reupload the relevant screenshot files with `upload-screenshot`, and update any issue comments that pointed at the old branch URLs.
+
 ## Datamailer Engineering Rules
 
 - Do not send email from HTTP request handlers. Enqueue durable work.
