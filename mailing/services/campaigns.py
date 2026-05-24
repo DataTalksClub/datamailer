@@ -1,24 +1,57 @@
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q, Sum
+from django.utils import timezone
 
 from mailing.models import (
     Campaign,
     CampaignRecipient,
     CampaignRecipientSkipReason,
     CampaignRecipientStatus,
+    CampaignStatus,
     Contact,
+    EmailEvent,
+    EmailEventType,
     Subscription,
     SubscriptionStatus,
     normalize_tag_filter,
 )
+from mailing.queue_contracts import CAMPAIGN_EMAIL_CONTRACT, CONTRACT_VERSION, validate_campaign_email_message
+from mailing.sqs import enqueue_campaign_email
 
 
 @dataclass(frozen=True)
 class SnapshotResult:
     campaign_id: int
     created_count: int
+    recipient_count: int
+    skipped_count: int
+
+
+@dataclass(frozen=True)
+class RecipientPreviewRow:
+    email: str
+    status: str
+    skip_reason: str
+
+
+@dataclass(frozen=True)
+class RecipientEstimate:
+    total_candidates: int
+    tag_filtered_count: int
+    recipient_count: int
+    skipped_count: int
+    skip_reason_counts: dict[str, int]
+    preview_rows: list[RecipientPreviewRow]
+
+
+@dataclass(frozen=True)
+class QueueCampaignResult:
+    campaign_id: int
+    queued: bool
+    batch_count: int
     recipient_count: int
     skipped_count: int
 
@@ -57,17 +90,91 @@ def snapshot_campaign_recipients(campaign):
     )
 
 
-def _candidate_contacts(campaign, include_tags, exclude_tags):
-    contacts = (
-        Subscription.objects.filter(audience=campaign.audience)
-        .filter(Q(client=campaign.client) | Q(client__isnull=True))
-        .select_related("contact")
-        .order_by("contact__normalized_email", "contact_id")
-        .distinct()
-        .values_list("contact", flat=True)
+def estimate_campaign_recipients(campaign, *, preview_limit=25):
+    include_tags = normalize_tag_filter(campaign.include_tags)
+    exclude_tags = normalize_tag_filter(campaign.exclude_tags)
+    total_candidates = _base_candidate_contacts(campaign).count()
+    candidate_contacts = _candidate_contacts(campaign, include_tags, exclude_tags)
+    tag_filtered_count = total_candidates - candidate_contacts.count()
+    recipient_count = 0
+    skipped_count = 0
+    skip_reason_counts = {reason: 0 for reason, _label in CampaignRecipientSkipReason.choices}
+    preview_rows = []
+
+    for contact in candidate_contacts:
+        skip_reason = _skip_reason(contact, campaign)
+        if skip_reason:
+            skipped_count += 1
+            skip_reason_counts[skip_reason] += 1
+            status = CampaignRecipientStatus.SKIPPED
+        else:
+            recipient_count += 1
+            status = CampaignRecipientStatus.PENDING
+
+        if len(preview_rows) < preview_limit:
+            preview_rows.append(
+                RecipientPreviewRow(
+                    email=contact.email,
+                    status=status,
+                    skip_reason=skip_reason,
+                )
+            )
+
+    return RecipientEstimate(
+        total_candidates=total_candidates,
+        tag_filtered_count=tag_filtered_count,
+        recipient_count=recipient_count,
+        skipped_count=skipped_count,
+        skip_reason_counts={reason: count for reason, count in skip_reason_counts.items() if count},
+        preview_rows=preview_rows,
     )
 
-    queryset = Contact.objects.filter(id__in=contacts).order_by("normalized_email", "id")
+
+def queue_campaign(campaign, *, batch_size=None):
+    batch_size = batch_size or getattr(settings, "CAMPAIGN_EMAIL_BATCH_SIZE", 10)
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+
+    with transaction.atomic():
+        locked_campaign = Campaign.objects.select_for_update().get(pk=campaign.pk)
+        if locked_campaign.status != CampaignStatus.DRAFT:
+            return QueueCampaignResult(
+                campaign_id=locked_campaign.id,
+                queued=False,
+                batch_count=0,
+                recipient_count=locked_campaign.recipient_count,
+                skipped_count=locked_campaign.skipped_count,
+            )
+
+        snapshot_campaign_recipients(locked_campaign)
+        locked_campaign.refresh_from_db()
+        recipient_ids = list(
+            CampaignRecipient.objects.filter(
+                campaign=locked_campaign,
+                status=CampaignRecipientStatus.PENDING,
+            )
+            .order_by("id")
+            .values_list("id", flat=True)
+        )
+        payloads = _campaign_email_payloads(locked_campaign.id, recipient_ids, batch_size)
+        locked_campaign.status = CampaignStatus.QUEUED
+        locked_campaign.save(update_fields=["status", "updated_at"])
+        _append_queue_audit_events(locked_campaign, recipient_ids, len(payloads))
+
+    for payload in payloads:
+        enqueue_campaign_email(payload)
+
+    return QueueCampaignResult(
+        campaign_id=locked_campaign.id,
+        queued=True,
+        batch_count=len(payloads),
+        recipient_count=locked_campaign.recipient_count,
+        skipped_count=locked_campaign.skipped_count,
+    )
+
+
+def _candidate_contacts(campaign, include_tags, exclude_tags):
+    queryset = _base_candidate_contacts(campaign)
 
     if include_tags:
         queryset = queryset.filter(contact_tags__tag__audience=campaign.audience, contact_tags__tag__slug__in=include_tags)
@@ -86,6 +193,57 @@ def _candidate_contacts(campaign, include_tags, exclude_tags):
         )
 
     return queryset
+
+
+def _base_candidate_contacts(campaign):
+    contacts = (
+        Subscription.objects.filter(audience=campaign.audience)
+        .filter(Q(client=campaign.client) | Q(client__isnull=True))
+        .select_related("contact")
+        .order_by("contact__normalized_email", "contact_id")
+        .distinct()
+        .values_list("contact", flat=True)
+    )
+    return Contact.objects.filter(id__in=contacts).order_by("normalized_email", "id")
+
+
+def _campaign_email_payloads(campaign_id, recipient_ids, batch_size):
+    payloads = []
+    for batch_index, offset in enumerate(range(0, len(recipient_ids), batch_size), start=1):
+        batch_id = f"campaign-{campaign_id}-batch-{batch_index:04d}"
+        payload = {
+            "contract": CAMPAIGN_EMAIL_CONTRACT,
+            "version": CONTRACT_VERSION,
+            "campaign_id": campaign_id,
+            "batch_id": batch_id,
+            "campaign_recipient_ids": recipient_ids[offset : offset + batch_size],
+            "idempotency_key": batch_id,
+        }
+        validate_campaign_email_message(payload)
+        payloads.append(payload)
+    return payloads
+
+
+def _append_queue_audit_events(campaign, recipient_ids, batch_count):
+    if not recipient_ids:
+        return
+    now = timezone.now()
+    recipients = CampaignRecipient.objects.filter(id__in=recipient_ids).select_related("contact")
+    EmailEvent.objects.bulk_create(
+        [
+            EmailEvent(
+                campaign=campaign,
+                campaign_recipient=recipient,
+                contact=recipient.contact,
+                client=campaign.client,
+                audience=campaign.audience,
+                event_type=EmailEventType.QUEUED,
+                metadata={"batch_count": batch_count},
+                created_at=now,
+            )
+            for recipient in recipients
+        ]
+    )
 
 
 def _recipient_status(contact, campaign):

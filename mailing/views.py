@@ -1,5 +1,6 @@
 import json
 
+from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
@@ -7,7 +8,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from mailing.models import Campaign
+from mailing.forms import CampaignForm
+from mailing.models import Campaign, CampaignStatus
 from mailing.services.api import (
     ApiValidationError,
     get_contact_status_for_client,
@@ -16,6 +18,7 @@ from mailing.services.api import (
     upsert_contact_for_client,
 )
 from mailing.services.auth import authenticate_bearer_token
+from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
 from mailing.services.operator_ui import (
     RECIPIENT_FILTER_LABELS,
     campaign_queryset,
@@ -65,6 +68,39 @@ def operator_campaign_list(request):
 
 
 @staff_member_required
+@require_http_methods(["GET", "POST"])
+def operator_campaign_create(request):
+    form = CampaignForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        campaign = form.save()
+        messages.success(request, "Campaign draft created.")
+        return redirect("mailing:operator_campaign_detail", campaign_id=campaign.id)
+
+    return render(
+        request,
+        "mailing/operator/campaign_form.html",
+        {"form": form, "mode": "create", "campaign": None},
+    )
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def operator_campaign_edit(request, campaign_id):
+    campaign = get_object_or_404(Campaign.objects.select_related("client", "audience"), pk=campaign_id)
+    form = CampaignForm(request.POST or None, instance=campaign)
+    if request.method == "POST" and form.is_valid():
+        campaign = form.save()
+        messages.success(request, "Campaign draft updated.")
+        return redirect("mailing:operator_campaign_detail", campaign_id=campaign.id)
+
+    return render(
+        request,
+        "mailing/operator/campaign_form.html",
+        {"form": form, "mode": "edit", "campaign": campaign},
+    )
+
+
+@staff_member_required
 def operator_campaign_detail(request, campaign_id):
     campaign = get_object_or_404(
         Campaign.objects.select_related("client", "audience", "audience__organization"),
@@ -72,11 +108,15 @@ def operator_campaign_detail(request, campaign_id):
     )
     active_filter = request.GET.get("filter", "")
     recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
+    estimate = estimate_campaign_recipients(campaign) if campaign.status == CampaignStatus.DRAFT else None
     return render(
         request,
         "mailing/operator/campaign_detail.html",
         {
             "campaign": campaign,
+            "can_edit": campaign.status == CampaignStatus.DRAFT,
+            "can_queue": campaign.status == CampaignStatus.DRAFT,
+            "estimate": estimate,
             "stats": campaign_stats(campaign),
             "recipients": recipients,
             "recipient_filter_labels": RECIPIENT_FILTER_LABELS,
@@ -84,6 +124,22 @@ def operator_campaign_detail(request, campaign_id):
             "pagination_querystring": pagination_querystring(request),
         },
     )
+
+
+@staff_member_required
+@require_POST
+def operator_campaign_queue(request, campaign_id):
+    campaign = get_object_or_404(Campaign, pk=campaign_id)
+    result = queue_campaign(campaign)
+    if result.queued:
+        messages.success(
+            request,
+            f"Campaign queued with {result.recipient_count} recipients, {result.skipped_count} skipped, "
+            f"and {result.batch_count} send batches.",
+        )
+    else:
+        messages.info(request, "Campaign was already queued or locked for sending.")
+    return redirect("mailing:operator_campaign_detail", campaign_id=campaign.id)
 
 
 @staff_member_required

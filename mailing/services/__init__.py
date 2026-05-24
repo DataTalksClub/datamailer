@@ -1,4 +1,11 @@
-from mailing.services.campaigns import SnapshotResult, snapshot_campaign_recipients
+from mailing.services.campaigns import (
+    QueueCampaignResult,
+    RecipientEstimate,
+    SnapshotResult,
+    estimate_campaign_recipients,
+    queue_campaign,
+    snapshot_campaign_recipients,
+)
 from mailing.services.contacts import (
     assign_tag,
     get_audience_client_for_slugs,
@@ -22,6 +29,8 @@ from mailing.services.tracking import apply_unsubscribe, record_click, record_op
 
 __all__ = [
     "SnapshotResult",
+    "QueueCampaignResult",
+    "RecipientEstimate",
     "apply_unsubscribe",
     "assign_tag",
     "campaign_recipient_public_urls",
@@ -30,10 +39,12 @@ __all__ = [
     "get_audience_client_for_slugs",
     "get_contact_suppression_state",
     "get_subscription_for_slugs",
+    "estimate_campaign_recipients",
     "is_marketing_email_allowed",
     "is_transactional_email_allowed",
     "normalize_email",
     "open_pixel_url",
+    "queue_campaign",
     "record_click",
     "record_open",
     "subscribe_contact",
