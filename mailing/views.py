@@ -26,6 +26,12 @@ from mailing.services.api import (
 )
 from mailing.services.auth import authenticate_bearer_token
 from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
+from mailing.services.contact_import_export import (
+    bulk_import_contacts_for_client,
+    csv_import_contacts_for_client,
+    export_contacts_csv_for_client,
+    export_contacts_for_client,
+)
 from mailing.services.operator_ui import (
     RECIPIENT_FILTER_LABELS,
     audience_breakdowns,
@@ -362,6 +368,44 @@ def api_request_data(request):
 
 @csrf_exempt
 def api_contacts(request):
+    if request.method not in {"GET", "POST"}:
+        return method_not_allowed_response(["GET", "POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = export_contacts_for_client(request.GET, client)
+        else:
+            payload = upsert_contact_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_contacts_csv(request):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        csv_body = export_contacts_csv_for_client(request.GET, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    response = HttpResponse(csv_body, content_type="text/csv; charset=utf-8")
+    response.headers["Content-Disposition"] = 'attachment; filename="contacts.csv"'
+    return response
+
+
+@csrf_exempt
+def api_contact_imports(request):
     if request.method != "POST":
         return method_not_allowed_response(["POST"])
 
@@ -370,7 +414,36 @@ def api_contacts(request):
         return error_response
 
     try:
-        payload = upsert_contact_for_client(json_request_body(request), client)
+        payload = bulk_import_contacts_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_imports_csv(request):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        data = request.POST.copy()
+        data.setdefault("dry_run", "false")
+        if "file" in request.FILES:
+            csv_body = request.FILES["file"].read().decode("utf-8-sig")
+        else:
+            payload = json_request_body(request) if request.content_type.startswith("application/json") else {}
+            data.update(payload)
+            csv_body = payload.get("csv", "")
+        if not csv_body:
+            raise ApiValidationError({"csv": "required"})
+        payload = csv_import_contacts_for_client(csv_body, data, client)
+    except UnicodeDecodeError:
+        return validation_error_response(ApiValidationError({"csv": "must_be_utf8"}))
     except ApiValidationError as exc:
         return validation_error_response(exc)
 
