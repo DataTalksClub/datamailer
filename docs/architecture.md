@@ -58,6 +58,8 @@ Queues:
 - `email-events`: optional async processing for opens, clicks, unsubscribes, and other tracking events.
 - `ses-webhooks`: async processing for SES delivery, bounce, complaint, open, and click notifications.
 
+Versioned queue message schemas are documented in [`worker-contracts.md`](worker-contracts.md).
+
 Each queue should have:
 
 - A dead-letter queue.
