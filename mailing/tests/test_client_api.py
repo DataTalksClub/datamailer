@@ -633,9 +633,9 @@ def test_contact_history_is_scoped_and_does_not_expose_tokens_or_secrets(client,
 def test_api_errors_are_json_only_and_never_login_redirect(client, api_client_record):
     response = client.get(reverse("mailing:api_contacts"), follow=False)
 
-    assert response.status_code == 405
+    assert response.status_code == 401
     assert response.headers["Content-Type"].startswith("application/json")
-    assert response.json()["error"]["code"] == "method_not_allowed"
+    assert response.json()["error"]["code"] == "missing_authorization"
 
     response = client.get(reverse("mailing:api_contact_status"), follow=False)
     assert response.status_code == 401
