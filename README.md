@@ -25,11 +25,27 @@ Datamailer is a standalone Django mailing service for shared audiences, campaign
 make setup
 ```
 
+Seed local demo data:
+
+```bash
+uv run python manage.py seed_demo_data
+```
+
 Run the web app:
 
 ```bash
 make run
 ```
+
+Log in at `/admin/login/` with:
+
+- Username: `admin`
+- Password: `admin`
+
+The operator UI uses Django staff auth, so unauthenticated users are redirected to `/admin/login/`.
+`seed_demo_data` is local-only and idempotent; rerun it after migrations to recreate or refresh the test admin,
+organizations, audiences, clients, contacts, tags, campaigns, transactional history, engagement events, and
+suppressed contacts without enqueueing SQS work or calling SES.
 
 ## Direction
 
