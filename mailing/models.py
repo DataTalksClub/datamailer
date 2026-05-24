@@ -187,6 +187,32 @@ class ContactTag(models.Model):
         return f"{self.contact.normalized_email}: {self.tag.slug}"
 
 
+class ContactSourceMetadata(TimeStampedModel):
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, related_name="source_metadata")
+    audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name="contact_source_metadata")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="contact_source_metadata")
+    source = models.CharField(max_length=80)
+    external_id = models.CharField(max_length=255, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "contact_source_metadata"
+        ordering = ["source", "contact__normalized_email"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contact", "audience", "client", "source"],
+                name="unique_contact_source_metadata_scope",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["source", "external_id"], name="contact_src_ext_idx"),
+            models.Index(fields=["audience", "client", "source"], name="contact_src_scope_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.contact.normalized_email}: {self.source}"
+
+
 class CampaignStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     QUEUED = "queued", "Queued"
