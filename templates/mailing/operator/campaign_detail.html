@@ -8,7 +8,18 @@
       <h1>{{ campaign.subject }}</h1>
       <p>{{ campaign.client.name }} / {{ campaign.audience.name }}</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">All campaigns</a>
+    <div class="actions">
+      {% if can_edit %}
+        <a class="button secondary" href="{% url 'mailing:operator_campaign_edit' campaign.id %}">Edit draft</a>
+      {% endif %}
+      {% if can_queue %}
+        <form method="post" action="{% url 'mailing:operator_campaign_queue' campaign.id %}">
+          {% csrf_token %}
+          <button type="submit">Snapshot and queue</button>
+        </form>
+      {% endif %}
+      <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">All campaigns</a>
+    </div>
   </div>
 
   <section aria-labelledby="campaign-summary">
@@ -19,8 +30,79 @@
       <div class="meta-item"><span class="meta-label">Audience</span>{{ campaign.audience.name }}</div>
       <div class="meta-item"><span class="meta-label">Scheduled</span>{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Sent</span>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Include tags</span>{{ campaign.include_tags|join:", "|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Exclude tags</span>{{ campaign.exclude_tags|join:", "|default:"-" }}</div>
     </div>
   </section>
+
+  {% if estimate %}
+    <section aria-labelledby="recipient-estimate">
+      <h2 id="recipient-estimate">Recipient Estimate</h2>
+      <div class="stats-grid">
+        <div class="stat">
+          <span class="stat-label">Candidates</span>
+          <span class="stat-value">{{ estimate.total_candidates }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Filtered by tags</span>
+          <span class="stat-value">{{ estimate.tag_filtered_count }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Queueable</span>
+          <span class="stat-value">{{ estimate.recipient_count }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Skipped</span>
+          <span class="stat-value">{{ estimate.skipped_count }}</span>
+        </div>
+      </div>
+
+      {% if estimate.skip_reason_counts %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Skip reason</th>
+                <th scope="col">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for reason, count in estimate.skip_reason_counts.items %}
+                <tr>
+                  <td>{{ reason }}</td>
+                  <td>{{ count }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if estimate.preview_rows %}
+        <h3>Preview</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Email</th>
+                <th scope="col">Estimated status</th>
+                <th scope="col">Skip reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in estimate.preview_rows %}
+                <tr>
+                  <td class="truncate">{{ row.email }}</td>
+                  <td><span class="badge">{{ row.status }}</span></td>
+                  <td>{{ row.skip_reason|default:"-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
 
   <section aria-labelledby="campaign-stats">
     <h2 id="campaign-stats">Stats</h2>

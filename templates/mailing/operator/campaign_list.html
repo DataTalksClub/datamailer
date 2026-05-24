@@ -8,7 +8,10 @@
       <h1>Campaigns</h1>
       <p>Recent campaign status, schedule, and high-level engagement.</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Find contact</a>
+    <div class="actions">
+      <a class="button" href="{% url 'mailing:operator_campaign_create' %}">Create campaign</a>
+      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Find contact</a>
+    </div>
   </div>
 
   {% if campaigns.object_list %}
@@ -25,6 +28,7 @@
             <th scope="col">Recipients</th>
             <th scope="col">Opens</th>
             <th scope="col">Clicks</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -39,6 +43,13 @@
               <td class="nowrap">{{ campaign.recipient_count }}</td>
               <td class="nowrap">{{ campaign.unique_open_count }} / {{ campaign.open_count }}</td>
               <td class="nowrap">{{ campaign.unique_click_count }} / {{ campaign.click_count }}</td>
+              <td class="nowrap">
+                {% if campaign.status == "draft" %}
+                  <a href="{% url 'mailing:operator_campaign_edit' campaign.id %}">Edit</a>
+                {% else %}
+                  Locked
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

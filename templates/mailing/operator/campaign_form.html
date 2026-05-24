@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{% if mode == "create" %}Create campaign{% else %}Edit campaign{% endif %} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{% if mode == "create" %}Create campaign{% else %}Edit campaign{% endif %}</h1>
+      <p>Paste final campaign content prepared outside Datamailer.</p>
+    </div>
+    <a class="button secondary" href="{% if campaign %}{% url 'mailing:operator_campaign_detail' campaign.id %}{% else %}{% url 'mailing:operator_campaign_list' %}{% endif %}">Cancel</a>
+  </div>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="form-grid">
+      {% for field in form %}
+        <div class="form-field {% if field.name == 'subject' or field.name == 'preview_text' or field.name == 'html_body' or field.name == 'text_body' %}full{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<div class="muted">{{ field.help_text }}</div>{% endif %}
+          {% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="toolbar">
+      <button type="submit">{% if mode == "create" %}Create draft{% else %}Save draft{% endif %}</button>
+      <a class="button secondary" href="{% if campaign %}{% url 'mailing:operator_campaign_detail' campaign.id %}{% else %}{% url 'mailing:operator_campaign_list' %}{% endif %}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}
