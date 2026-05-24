@@ -1,4 +1,4 @@
-.PHONY: setup migrate run localstack test test-aws-local lint format
+.PHONY: setup migrate run localstack test test-aws-local lint validate-infra format
 
 setup:
 	@test -f .env || cp .env.example .env
@@ -22,6 +22,10 @@ test-aws-local:
 
 lint:
 	uv run ruff check .
+	uv run python scripts/validate_infra.py
+
+validate-infra:
+	uv run python scripts/validate_infra.py
 
 format:
 	uv run ruff format .

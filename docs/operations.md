@@ -191,6 +191,11 @@ Minimum dashboards/alarms:
 - Campaign stuck in `sending` too long.
 - Transactional email queued too long.
 
+The issue #13 MVP infrastructure skeleton codifies these alarms and the operations dashboard in
+[`infra/cloudformation/datamailer-mvp.json`](../infra/cloudformation/datamailer-mvp.json). Deployment notes live in
+[`infra-deploy.md`](infra-deploy.md), and step-by-step incident procedures live in
+[`runbooks/infra-operations.md`](runbooks/infra-operations.md).
+
 ## Recovery
 
 Recovery tools:
