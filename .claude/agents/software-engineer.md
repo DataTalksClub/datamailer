@@ -42,6 +42,9 @@ You are not alone in the codebase. Do not revert changes you did not make. If th
 
 - Follow existing Django patterns.
 - Keep changes scoped to the issue.
+- Datamailer is pre-production: do not add backwards-compatibility shims, aliases, duplicated legacy endpoints, cloned old payload shapes, or long-lived deprecated behavior unless the GitHub issue explicitly scopes that compatibility path.
+- If compatibility is explicitly scoped, require the issue to name the client, migration window, tests, observability, and removal plan before implementing it.
+- Treat client integration requirements as first-class Datamailer API design work, not accidental legacy compatibility.
 - Use `uv` and Make targets.
 - Add migrations for model changes.
 - Add tests for acceptance criteria.
