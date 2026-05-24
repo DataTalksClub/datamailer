@@ -1,9 +1,9 @@
 import json
 
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from mailing.services.api import (
     ApiValidationError,
@@ -13,6 +13,8 @@ from mailing.services.api import (
     upsert_contact_for_client,
 )
 from mailing.services.auth import authenticate_bearer_token
+from mailing.services.tokens import get_recipient_by_unsubscribe_token
+from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
 from mailing.services.transactional import TransactionalSendRejected, send_transactional_email_for_client
 
 
@@ -22,6 +24,52 @@ def health(request):
 
 def dashboard(request):
     return render(request, "mailing/dashboard.html")
+
+
+def transparent_gif_response(*, status=200):
+    response = HttpResponse(TRANSPARENT_GIF, status=status, content_type="image/gif")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Content-Length"] = str(len(TRANSPARENT_GIF))
+    return response
+
+
+@require_GET
+def tracking_open(request, tracking_token):
+    recipient = record_open(tracking_token)
+    if recipient is None:
+        return transparent_gif_response(status=404)
+    return transparent_gif_response()
+
+
+@require_GET
+def tracking_click(request, tracking_token):
+    destination_url = request.GET.get("u", "")
+    recipient = record_click(tracking_token, destination_url)
+    if recipient is None:
+        return JsonResponse({"error": {"code": "invalid_tracking_redirect"}}, status=400)
+    return redirect(destination_url)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def public_unsubscribe(request, unsubscribe_token):
+    recipient = get_recipient_by_unsubscribe_token(unsubscribe_token)
+    if recipient is None:
+        return render(request, "mailing/unsubscribe.html", status=404, context={"invalid": True})
+
+    if request.method == "POST":
+        recipient = apply_unsubscribe(unsubscribe_token, request.POST.get("scope", ""))
+        if recipient is None:
+            return render(
+                request,
+                "mailing/unsubscribe.html",
+                status=400,
+                context={"recipient": get_recipient_by_unsubscribe_token(unsubscribe_token), "invalid_scope": True},
+            )
+        return render(request, "mailing/unsubscribe.html", context={"recipient": recipient, "confirmed": True})
+
+    return render(request, "mailing/unsubscribe.html", context={"recipient": recipient})
 
 
 def authenticate_api_request(request):

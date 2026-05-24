@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Unsubscribe | Datamailer{% endblock %}
+
+{% block content %}
+  <h1>Email preferences</h1>
+  {% if invalid %}
+    <p>This unsubscribe link is no longer available.</p>
+  {% elif confirmed %}
+    <p>You have been unsubscribed from the selected marketing emails for {{ recipient.email }}.</p>
+  {% else %}
+    <p>Choose how you want to unsubscribe {{ recipient.email }} from marketing emails.</p>
+    {% if invalid_scope %}
+      <p>Select a valid unsubscribe option.</p>
+    {% endif %}
+    <form method="post">
+      <fieldset>
+        <legend>Unsubscribe scope</legend>
+        <label>
+          <input type="radio" name="scope" value="client" checked>
+          {{ recipient.campaign.client.name }}
+        </label>
+        <label>
+          <input type="radio" name="scope" value="audience">
+          {{ recipient.campaign.audience.name }}
+        </label>
+        <label>
+          <input type="radio" name="scope" value="global">
+          All Datamailer marketing emails
+        </label>
+      </fieldset>
+      <button type="submit">Unsubscribe</button>
+    </form>
+  {% endif %}
+{% endblock %}
