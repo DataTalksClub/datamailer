@@ -33,3 +33,6 @@ select = ["F", "I", "PLC0415"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["datamailer", "mailing"]
+
+[tool.ruff.lint.per-file-ignores]
+"manage.py" = ["PLC0415"]
