@@ -19,6 +19,7 @@ from mailing.models import (
     normalize_tag_filter,
 )
 from mailing.queue_contracts import CAMPAIGN_EMAIL_CONTRACT, CONTRACT_VERSION, validate_campaign_email_message
+from mailing.services.contacts import has_invalid_email_validation
 from mailing.sqs import enqueue_campaign_email
 
 
@@ -259,6 +260,8 @@ def _skip_reason(contact, campaign):
         return CampaignRecipientSkipReason.COMPLAINT
     if contact.global_unsubscribed_at is not None:
         return CampaignRecipientSkipReason.GLOBAL_UNSUBSCRIBE
+    if has_invalid_email_validation(contact):
+        return CampaignRecipientSkipReason.INVALID_EMAIL
     if contact.verified_at is None:
         return CampaignRecipientSkipReason.UNVERIFIED
 

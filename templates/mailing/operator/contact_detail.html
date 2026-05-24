@@ -15,6 +15,9 @@
     <h2 id="contact-state">State</h2>
     <div class="meta-grid">
       <div class="meta-item"><span class="meta-label">Verified</span>{{ contact.verified_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Validation</span>{{ contact.get_email_validation_status_display }}</div>
+      <div class="meta-item"><span class="meta-label">Validated</span>{{ contact.email_validated_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Validation reason</span>{{ contact.email_validation_reason|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Global unsubscribe</span>{{ contact.global_unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Hard bounce</span>{{ contact.hard_bounced_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Complaint</span>{{ contact.complained_at|date:"Y-m-d H:i"|default:"-" }}</div>

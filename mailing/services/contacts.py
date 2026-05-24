@@ -4,7 +4,29 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
-from mailing.models import Audience, Client, Contact, ContactTag, Subscription, SubscriptionStatus, Tag
+from mailing.models import (
+    Audience,
+    Client,
+    Contact,
+    ContactTag,
+    EmailValidationStatus,
+    Subscription,
+    SubscriptionStatus,
+    Tag,
+)
+
+NON_DELIVERABLE_EMAIL_VALIDATION_STATUSES = {
+    EmailValidationStatus.INVALID_SYNTAX,
+    EmailValidationStatus.NO_MX,
+    EmailValidationStatus.DISPOSABLE,
+    EmailValidationStatus.RISKY,
+    EmailValidationStatus.MANUALLY_INVALID,
+}
+
+DELIVERABLE_EMAIL_VALIDATION_STATUSES = {
+    EmailValidationStatus.VALID,
+    EmailValidationStatus.EXTERNALLY_VALIDATED,
+}
 
 
 def normalize_email(email):
@@ -16,6 +38,9 @@ def upsert_contact(
     email,
     *,
     verified_at=None,
+    email_validation_status=None,
+    email_validation_reason=None,
+    email_validated_at=None,
     global_unsubscribed_at=None,
     hard_bounced_at=None,
     complained_at=None,
@@ -24,6 +49,9 @@ def upsert_contact(
     defaults = {"email": email.strip()}
     for field, value in {
         "verified_at": verified_at,
+        "email_validation_status": email_validation_status,
+        "email_validation_reason": email_validation_reason,
+        "email_validated_at": email_validated_at,
         "global_unsubscribed_at": global_unsubscribed_at,
         "hard_bounced_at": hard_bounced_at,
         "complained_at": complained_at,
@@ -125,9 +153,15 @@ def is_transactional_email_allowed(contact):
     return not get_contact_suppression_state(contact).has_hard_suppression
 
 
+def has_invalid_email_validation(contact):
+    return contact.email_validation_status in NON_DELIVERABLE_EMAIL_VALIDATION_STATUSES
+
+
 def is_marketing_email_allowed(contact, audience, client=None):
     suppression = get_contact_suppression_state(contact)
     if suppression.has_marketing_suppression:
+        return False
+    if has_invalid_email_validation(contact):
         return False
 
     return Subscription.objects.filter(

@@ -1,0 +1,4 @@
+email,tags,verified,subscription_status,email_validation_status,email_validation_reason
+valid@example.com,Newsletter,true,subscribed,valid,syntax and provider check passed
+unknown@example.com,Newsletter,true,subscribed,,
+invalid@example.com,Newsletter,true,subscribed,no_mx,domain has no MX

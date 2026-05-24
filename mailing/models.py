@@ -61,10 +61,29 @@ class Client(TimeStampedModel):
         return f"{self.name} ({self.organization.slug})"
 
 
+class EmailValidationStatus(models.TextChoices):
+    UNKNOWN = "unknown", "Unknown"
+    VALID = "valid", "Valid"
+    INVALID_SYNTAX = "invalid_syntax", "Invalid syntax"
+    NO_MX = "no_mx", "No MX"
+    DISPOSABLE = "disposable", "Disposable"
+    RISKY = "risky", "Risky"
+    MANUALLY_INVALID = "manually_invalid", "Manually invalid"
+    EXTERNALLY_VALIDATED = "externally_validated", "Externally validated"
+
+
 class Contact(TimeStampedModel):
     email = models.EmailField(max_length=320)
     normalized_email = models.EmailField(max_length=320, unique=True)
     verified_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    email_validation_status = models.CharField(
+        max_length=30,
+        choices=EmailValidationStatus.choices,
+        default=EmailValidationStatus.UNKNOWN,
+        db_index=True,
+    )
+    email_validation_reason = models.CharField(max_length=255, blank=True)
+    email_validated_at = models.DateTimeField(null=True, blank=True, db_index=True)
     global_unsubscribed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     hard_bounced_at = models.DateTimeField(null=True, blank=True)
     complained_at = models.DateTimeField(null=True, blank=True)
@@ -239,6 +258,7 @@ class CampaignRecipientStatus(models.TextChoices):
 
 class CampaignRecipientSkipReason(models.TextChoices):
     UNVERIFIED = "unverified", "Unverified"
+    INVALID_EMAIL = "invalid_email", "Invalid email"
     GLOBAL_UNSUBSCRIBE = "global_unsubscribe", "Global unsubscribe"
     CLIENT_UNSUBSCRIBE = "client_unsubscribe", "Client unsubscribe"
     AUDIENCE_UNSUBSCRIBE = "audience_unsubscribe", "Audience unsubscribe"

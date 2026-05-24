@@ -5,7 +5,17 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from mailing.models import Audience, Client, Contact, ContactTag, Organization, Subscription, SubscriptionStatus, Tag
+from mailing.models import (
+    Audience,
+    Client,
+    Contact,
+    ContactTag,
+    EmailValidationStatus,
+    Organization,
+    Subscription,
+    SubscriptionStatus,
+    Tag,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -146,6 +156,26 @@ def test_repeated_import_is_idempotent_and_reports_unchanged(capsys, organizatio
     assert ContactTag.objects.count() == 4
 
 
+def test_import_can_set_email_validation_state_idempotently(capsys, organization, audience, client_record):
+    first_report = run_import(capsys, "email_validation.csv", organization, audience, client_record)
+    second_report = run_import(capsys, "email_validation.csv", organization, audience, client_record)
+
+    assert first_report["counts"]["email_validation_applied"] == 2
+    assert second_report["counts"]["email_validation_applied"] == 0
+    assert second_report["counts"]["unchanged"] == 3
+
+    valid = Contact.objects.get(normalized_email="valid@example.com")
+    unknown = Contact.objects.get(normalized_email="unknown@example.com")
+    invalid = Contact.objects.get(normalized_email="invalid@example.com")
+    assert valid.email_validation_status == EmailValidationStatus.VALID
+    assert valid.email_validation_reason == "syntax and provider check passed"
+    assert valid.email_validated_at is not None
+    assert unknown.email_validation_status == EmailValidationStatus.UNKNOWN
+    assert unknown.email_validated_at is None
+    assert invalid.email_validation_status == EmailValidationStatus.NO_MX
+    assert invalid.email_validation_reason == "domain has no MX"
+
+
 def test_duplicate_input_rows_use_first_valid_row_and_skip_later_duplicates(
     capsys,
     organization,
@@ -210,6 +240,9 @@ def test_import_does_not_weaken_existing_unsubscribe_or_hard_suppression(
     existing_time = timezone.now()
     contact = Contact.objects.create(
         email="person@example.com",
+        email_validation_status=EmailValidationStatus.VALID,
+        email_validation_reason="pre-import check",
+        email_validated_at=existing_time,
         global_unsubscribed_at=existing_time,
         hard_bounced_at=existing_time,
         complained_at=existing_time,
@@ -233,3 +266,6 @@ def test_import_does_not_weaken_existing_unsubscribe_or_hard_suppression(
     assert contact.global_unsubscribed_at == existing_time
     assert contact.hard_bounced_at == existing_time
     assert contact.complained_at == existing_time
+    assert contact.email_validation_status == EmailValidationStatus.VALID
+    assert contact.email_validation_reason == "pre-import check"
+    assert contact.email_validated_at == existing_time
