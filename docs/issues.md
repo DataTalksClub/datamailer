@@ -72,7 +72,28 @@ Acceptance:
 - Message schemas are documented.
 - Partial batch failure behavior is defined.
 
-## 5. Add transactional email templates and send API
+## 5. Add local AWS test environment for SQS, SES, and Lambda flows
+
+Labels: `P0`, `infra`, `workers`, `ses`
+
+Scope:
+
+- Add LocalStack or equivalent local AWS emulation for integration tests.
+- Add a Docker Compose profile or documented command for local SQS/SES-compatible services.
+- Configure tests so AWS SDK clients point to local endpoints by default in test mode.
+- Add helpers/fixtures for creating local queues and SES identities.
+- Add tests proving we can enqueue, consume, and process SQS messages locally.
+- Add tests proving SES send calls can be exercised locally or mocked deterministically.
+- Document which tests use pure mocks, which use LocalStack, and which require real AWS staging.
+
+Acceptance:
+
+- No real AWS credentials are required for local tests or CI.
+- SQS worker tests can run end-to-end against local queues.
+- SES sending tests can run without sending real email.
+- The setup is documented in README or `docs/testing.md`.
+
+## 6. Add transactional email templates and send API
 
 Labels: `P0`, `transactional`, `email`, `api`
 
@@ -90,7 +111,7 @@ Acceptance:
 - Duplicate idempotency key does not enqueue/send twice.
 - Transactional sends respect hard bounce/complaint suppression.
 
-## 6. Implement transactional sender Lambda with SES
+## 7. Implement transactional sender Lambda with SES
 
 Labels: `P0`, `transactional`, `ses`, `workers`
 
@@ -108,7 +129,7 @@ Acceptance:
 - Failed transient send is retried.
 - Duplicate SQS delivery does not send twice.
 
-## 7. Add campaigns and recipient snapshotting
+## 8. Add campaigns and recipient snapshotting
 
 Labels: `P0`, `campaigns`, `backend`
 
@@ -126,7 +147,7 @@ Acceptance:
 - Skipped contacts have explicit skip reasons.
 - Snapshot is stable after campaign queueing.
 
-## 8. Implement campaign sender Lambda
+## 9. Implement campaign sender Lambda
 
 Labels: `P0`, `campaigns`, `ses`, `workers`
 
@@ -144,7 +165,7 @@ Acceptance:
 - SES message IDs are stored.
 - Duplicate SQS delivery does not send twice.
 
-## 9. Add open/click tracking and unsubscribe endpoints
+## 10. Add open/click tracking and unsubscribe endpoints
 
 Labels: `P0`, `tracking`, `subscriptions`, `frontend`
 
@@ -164,7 +185,7 @@ Acceptance:
 - Repeated opens/clicks update total counts without inflating unique counts.
 - Unsubscribe works without login.
 
-## 10. Add SES webhook processing and suppression
+## 11. Add SES webhook processing and suppression
 
 Labels: `P0`, `ses`, `workers`, `ops`
 
@@ -182,7 +203,7 @@ Acceptance:
 - Bounce/complaint events update contact suppression state.
 - Campaign and transactional stats update correctly.
 
-## 11. Add operator campaign/contact UI
+## 12. Add operator campaign/contact UI
 
 Labels: `P1`, `frontend`, `campaigns`
 
@@ -199,7 +220,7 @@ Acceptance:
 - Operator can inspect delivery and engagement without shell access.
 - Contact history shows subscription, send, open, click, unsubscribe, bounce, and complaint events.
 
-## 12. Add production infrastructure and monitoring
+## 13. Add production infrastructure and monitoring
 
 Labels: `P0`, `infra`, `ops`
 
@@ -217,7 +238,7 @@ Acceptance:
 - DLQ and stuck-queue alarms exist.
 - Transactional queue is isolated from campaign queue.
 
-## 13. Add import tooling for first audience migration
+## 14. Add import tooling for first audience migration
 
 Labels: `P1`, `backend`, `ops`
 
@@ -233,7 +254,7 @@ Acceptance:
 - Import is idempotent.
 - Invalid rows are reported without aborting the full import.
 
-## 14. Run first production pilot
+## 15. Run first production pilot
 
 Labels: `P0`, `ops`, `email`
 

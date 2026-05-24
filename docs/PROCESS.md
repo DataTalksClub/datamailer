@@ -79,6 +79,7 @@ Minimum expected tests by area:
 - Tracking endpoints: request/response tests plus idempotency tests.
 - SES integration: mocked boto3/SES payload tests.
 - SQS/Lambda workers: handler tests with representative queue events.
+- AWS-adjacent flows: LocalStack or equivalent local AWS emulation for SQS/SES wiring where mocks are not enough.
 - Operator UI: focused template/view tests first; add Playwright only for critical workflows.
 
 Before merging production-impacting email work, verify:
@@ -89,6 +90,8 @@ Before merging production-impacting email work, verify:
 - Bounce/complaint suppressions work.
 - Unsubscribe links work without login.
 - Stats distinguish total events from unique opens/clicks.
+
+Real AWS credentials are not required for normal local development or CI. The test environment should use local mocks and LocalStack-style emulation for SQS/SES/Lambda integration tests, with real AWS reserved for staging smoke tests.
 
 ## Temporary Files
 
