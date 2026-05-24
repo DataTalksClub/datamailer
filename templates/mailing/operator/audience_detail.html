@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}{{ audience.name }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ audience.name }}</h1>
+      <p>{{ audience.organization.name }} / {{ audience.slug }}</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">All audiences</a>
+      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}?audience={{ audience.id }}">Open in explorer</a>
+    </div>
+  </div>
+
+  <section aria-labelledby="audience-summary">
+    <h2 id="audience-summary">Summary</h2>
+    <div class="stats-grid">
+      {% for stat in summary %}
+        <div class="stat">
+          <span class="stat-label">{{ stat.label }}</span>
+          <span class="stat-value">{{ stat.value }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="audience-breakdowns">
+    <h2 id="audience-breakdowns">Breakdowns</h2>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">Validation</span>
+        {% for label, count in breakdowns.validation %}<div>{{ label }}: {{ count }}</div>{% endfor %}
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Tags</span>
+        {% for tag in breakdowns.tags %}<div>{{ tag.slug }}: {{ tag.count }}</div>{% empty %}<div>-</div>{% endfor %}
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Campaign statuses</span>
+        {% for label, count in breakdowns.campaign_statuses %}<div>{{ label }}: {{ count }}</div>{% endfor %}
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Skip reasons</span>
+        {% for label, count in breakdowns.skip_reasons %}<div>{{ label }}: {{ count }}</div>{% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="audience-members">
+    <h2 id="audience-members">Membership</h2>
+    <form method="get">
+      <div class="filter-grid">
+        <div>
+          <label for="q">Email</label>
+          <input id="q" name="q" type="search" value="{{ filters.query }}" autocomplete="email">
+        </div>
+        <div>
+          <label for="client">Client</label>
+          <select id="client" name="client">
+            <option value="">Any client</option>
+            {% for client in options.clients %}
+              <option value="{{ client.id }}"{% if client.id == filters.client_id %} selected{% endif %}>{{ client.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="subscription_status">Subscription</label>
+          <select id="subscription_status" name="subscription_status">
+            <option value="">Any subscription</option>
+            {% for choice in options.subscription_statuses %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.subscription_status %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="verified">Verified</label>
+          <select id="verified" name="verified">
+            <option value="">Any verified state</option>
+            {% for choice in options.verified_states %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.verified_state %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="email_validation_status">Validation</label>
+          <select id="email_validation_status" name="email_validation_status">
+            <option value="">Any validation state</option>
+            {% for choice in options.email_validation_statuses %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.email_validation_status %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="suppression">Suppression</label>
+          <select id="suppression" name="suppression">
+            <option value="">Any suppression</option>
+            {% for choice in options.suppression_states %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.suppression_state %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="campaign_status">Campaign status</label>
+          <select id="campaign_status" name="campaign_status">
+            <option value="">Any campaign status</option>
+            {% for choice in options.campaign_statuses %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.campaign_status %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="skip_reason">Skip reason</label>
+          <select id="skip_reason" name="skip_reason">
+            <option value="">Any skip reason</option>
+            {% for choice in options.skip_reasons %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.skip_reason %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="engagement">Engagement</label>
+          <select id="engagement" name="engagement">
+            <option value="">Any engagement</option>
+            {% for choice in options.engagement_states %}
+              <option value="{{ choice.value }}"{% if choice.value == filters.engagement %} selected{% endif %}>{{ choice.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="inactive_since">Inactive since</label>
+          <input id="inactive_since" name="inactive_since" type="date" value="{{ filters.inactive_since|date:'Y-m-d' }}">
+        </div>
+      </div>
+      <div class="toolbar">
+        <button type="submit">Apply filters</button>
+        <a class="button secondary" href="{% url 'mailing:operator_audience_detail' audience.id %}">Clear</a>
+      </div>
+    </form>
+
+    {% if member_rows %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Email</th>
+              <th scope="col">Validation</th>
+              <th scope="col">Subscriptions</th>
+              <th scope="col">Tags</th>
+              <th scope="col">Last sent</th>
+              <th scope="col">Last opened</th>
+              <th scope="col">Last clicked</th>
+              <th scope="col">Recent issue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in member_rows %}
+              <tr>
+                <td>
+                  <a href="{% url 'mailing:operator_contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
+                  <div class="muted">{{ row.contact.normalized_email }}</div>
+                </td>
+                <td><span class="badge">{{ row.contact.get_email_validation_status_display }}</span></td>
+                <td class="truncate">{{ row.subscription_summary }}</td>
+                <td class="truncate">{{ row.tag_summary }}</td>
+                <td class="nowrap">{{ row.last_sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ row.last_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ row.last_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="truncate">{{ row.recent_issue|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=members querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No audience members match these filters.</div>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="audience-campaigns">
+    <h2 id="audience-campaigns">Campaign History</h2>
+    {% if campaigns.object_list %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Campaign</th>
+              <th scope="col">Client</th>
+              <th scope="col">Status</th>
+              <th scope="col">Sent</th>
+              <th scope="col">Recipients</th>
+              <th scope="col">Opens</th>
+              <th scope="col">Clicks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for campaign in campaigns %}
+              <tr>
+                <td class="truncate"><a href="{% url 'mailing:operator_campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
+                <td>{{ campaign.client.name }}</td>
+                <td><span class="badge">{{ campaign.get_status_display }}</span></td>
+                <td>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ campaign.recipient_count }}</td>
+                <td>{{ campaign.unique_open_count }} / {{ campaign.open_count }}</td>
+                <td>{{ campaign.unique_click_count }} / {{ campaign.click_count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=campaigns querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No campaign history found for this audience.</div>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="audience-events">
+    <h2 id="audience-events">Recent Events</h2>
+    <form class="toolbar" method="get">
+      <div>
+        <label for="event_type">Event type</label>
+        <select id="event_type" name="event_type">
+          <option value="">Any event</option>
+          {% for choice in event_type_options %}
+            <option value="{{ choice.value }}"{% if choice.value == event_type %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Filter events</button>
+    </form>
+    {% if event_rows %}
+      <div class="timeline">
+        {% for row in event_rows %}
+          <article class="timeline-item">
+            <strong>{{ row.event.get_event_type_display }}</strong>
+            <span class="muted">{{ row.event.created_at|date:"Y-m-d H:i:s" }}</span>
+            <div>{{ row.context }}</div>
+            {% if row.event.contact %}
+              <div><a href="{% url 'mailing:operator_contact_detail' row.event.contact_id %}">{{ row.event.contact.email }}</a></div>
+            {% endif %}
+            {% if row.event.url %}<div class="truncate"><a href="{{ row.event.url }}">{{ row.event.url }}</a></div>{% endif %}
+            {% if row.metadata_summary %}<div class="muted truncate">{{ row.metadata_summary }}</div>{% endif %}
+          </article>
+        {% endfor %}
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=events querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No recent events found for this audience.</div>
+    {% endif %}
+  </section>
+{% endblock %}

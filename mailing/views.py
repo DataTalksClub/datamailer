@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from mailing.forms import CampaignForm
-from mailing.models import Campaign, CampaignStatus
+from mailing.models import Campaign, CampaignStatus, EmailEventType
 from mailing.services.api import (
     ApiValidationError,
     get_contact_status_for_client,
@@ -21,16 +21,27 @@ from mailing.services.auth import authenticate_bearer_token
 from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
 from mailing.services.operator_ui import (
     RECIPIENT_FILTER_LABELS,
+    audience_breakdowns,
+    audience_campaign_history,
+    audience_detail_queryset,
+    audience_queryset,
+    audience_recent_events,
+    audience_summary,
     campaign_queryset,
     campaign_recipient_queryset,
     campaign_stats,
+    choices_from_text_choices,
     contact_campaign_history,
+    contact_detail_context,
     contact_detail_queryset,
     contact_event_timeline,
-    contact_search_queryset,
+    contact_explorer_options,
+    contact_explorer_queryset,
+    contact_result_rows,
     contact_transactional_history,
     event_context,
     metadata_summary,
+    parse_contact_explorer_filters,
 )
 from mailing.services.ses_webhooks import SesWebhookError, SnsSignatureError, ingest_sns_webhook
 from mailing.services.tokens import get_recipient_by_unsubscribe_token
@@ -144,18 +155,26 @@ def operator_campaign_queue(request, campaign_id):
 
 @staff_member_required
 def operator_contact_search(request):
-    query = request.GET.get("q", "")
-    contacts = paginate(request, contact_search_queryset(query), per_page=25) if query.strip() else None
+    filters = parse_contact_explorer_filters(request.GET)
+    contacts = paginate(request, contact_explorer_queryset(filters), per_page=25) if filters.has_filters else None
+    rows = contact_result_rows(contacts.object_list) if contacts is not None else []
     return render(
         request,
         "mailing/operator/contact_search.html",
-        {"query": query, "contacts": contacts, "pagination_querystring": pagination_querystring(request)},
+        {
+            "filters": filters,
+            "options": contact_explorer_options(),
+            "contacts": contacts,
+            "contact_rows": rows,
+            "pagination_querystring": pagination_querystring(request),
+        },
     )
 
 
 @staff_member_required
 def operator_contact_detail(request, contact_id):
     contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+    detail_context = contact_detail_context(contact)
     events = paginate(request, contact_event_timeline(contact), per_page=50)
     event_rows = [
         {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
@@ -163,17 +182,67 @@ def operator_contact_detail(request, contact_id):
     ]
     campaign_history = paginate(request, contact_campaign_history(contact), per_page=25)
     transactional_history = paginate(request, contact_transactional_history(contact), per_page=25)
+    transactional_rows = [
+        {"message": message, "metadata_summary": metadata_summary(message.metadata)}
+        for message in transactional_history.object_list
+    ]
     return render(
         request,
         "mailing/operator/contact_detail.html",
         {
             "contact": contact,
-            "subscriptions": contact.subscriptions.all(),
-            "contact_tags": contact.contact_tags.all(),
+            "eligibility": detail_context.eligibility,
+            "subscriptions": detail_context.subscriptions,
+            "contact_tags": detail_context.contact_tags,
             "campaign_history": campaign_history,
             "transactional_history": transactional_history,
+            "transactional_rows": transactional_rows,
             "events": events,
             "event_rows": event_rows,
+            "pagination_querystring": pagination_querystring(request),
+        },
+    )
+
+
+@staff_member_required
+def operator_audience_list(request):
+    audiences = paginate(request, audience_queryset(), per_page=25)
+    return render(
+        request,
+        "mailing/operator/audience_list.html",
+        {"audiences": audiences, "pagination_querystring": pagination_querystring(request)},
+    )
+
+
+@staff_member_required
+def operator_audience_detail(request, audience_id):
+    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
+    filters = parse_contact_explorer_filters(request.GET, forced_audience_id=audience.id)
+    members = paginate(request, contact_explorer_queryset(filters), per_page=25)
+    member_rows = contact_result_rows(members.object_list)
+    campaigns = paginate(request, audience_campaign_history(audience), per_page=10)
+    event_type = request.GET.get("event_type", "")
+    events = paginate(request, audience_recent_events(audience, event_type), per_page=25)
+    event_rows = [
+        {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
+        for event in events.object_list
+    ]
+    return render(
+        request,
+        "mailing/operator/audience_detail.html",
+        {
+            "audience": audience,
+            "summary": audience_summary(audience),
+            "breakdowns": audience_breakdowns(audience),
+            "filters": filters,
+            "options": contact_explorer_options(),
+            "members": members,
+            "member_rows": member_rows,
+            "campaigns": campaigns,
+            "events": events,
+            "event_rows": event_rows,
+            "event_type": event_type,
+            "event_type_options": choices_from_text_choices(EmailEventType),
             "pagination_querystring": pagination_querystring(request),
         },
     )

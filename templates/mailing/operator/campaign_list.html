@@ -10,6 +10,7 @@
     </div>
     <div class="actions">
       <a class="button" href="{% url 'mailing:operator_campaign_create' %}">Create campaign</a>
+      <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">Audiences</a>
       <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Find contact</a>
     </div>
   </div>
@@ -37,7 +38,7 @@
               <td class="truncate"><a href="{% url 'mailing:operator_campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
               <td><span class="badge">{{ campaign.get_status_display }}</span></td>
               <td>{{ campaign.client.name }}</td>
-              <td>{{ campaign.audience.name }}</td>
+              <td><a href="{% url 'mailing:operator_audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a></td>
               <td class="nowrap">{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</td>
               <td class="nowrap">{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
               <td class="nowrap">{{ campaign.recipient_count }}</td>

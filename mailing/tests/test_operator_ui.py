@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -7,6 +9,7 @@ from mailing.models import (
     Audience,
     Campaign,
     CampaignRecipient,
+    CampaignRecipientSkipReason,
     CampaignRecipientStatus,
     Client,
     Contact,
@@ -24,11 +27,17 @@ from mailing.models import (
 )
 from mailing.services.campaigns import estimate_campaign_recipients
 from mailing.services.operator_ui import (
+    ContactExplorerFilters,
+    audience_recent_events,
+    audience_summary,
     campaign_recipient_queryset,
     campaign_stats,
+    contact_detail_context,
     contact_event_timeline,
+    contact_explorer_queryset,
     contact_search_queryset,
     metadata_summary,
+    parse_contact_explorer_filters,
     rate,
 )
 
@@ -93,6 +102,26 @@ def create_recipient(campaign, email, *, status=CampaignRecipientStatus.SENT, **
     return CampaignRecipient.objects.create(campaign=campaign, contact=contact, email=email, status=status, **kwargs)
 
 
+def create_transactional_message(contact, client, *, status=TransactionalMessageStatus.SENT, **kwargs):
+    template = EmailTemplate.objects.create(
+        client=client,
+        key=f"template-{contact.id}-{TransactionalMessage.objects.count()}",
+        name="Template",
+        subject="Subject",
+        is_transactional=True,
+    )
+    return TransactionalMessage.objects.create(
+        client=client,
+        contact=contact,
+        email=contact.email,
+        template=template,
+        template_key=template.key,
+        status=status,
+        subject="Subject",
+        **kwargs,
+    )
+
+
 def test_rate_hides_unavailable_denominators():
     assert rate(1, 4) == "25.0%"
     assert rate(1, 0) == ""
@@ -132,6 +161,182 @@ def test_contact_search_uses_normalized_email(audience, client_record):
     assert list(contact_search_queryset(" person@example.com ")) == [contact]
 
 
+def test_contact_explorer_filters_by_scope_tags_status_validation_and_skip_reason(audience, client_record, campaign):
+    included = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+    excluded = Tag.objects.create(audience=audience, name="Inactive", slug="inactive")
+    match = create_subscribed_contact(
+        "match@example.com",
+        audience,
+        client_record,
+        email_validation_status=EmailValidationStatus.NO_MX,
+    )
+    ContactTag.objects.create(contact=match, tag=included)
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=match,
+        email=match.email,
+        status=CampaignRecipientStatus.SKIPPED,
+        skip_reason="invalid_email",
+    )
+    no_tag = create_subscribed_contact("no-tag@example.com", audience, client_record)
+    excluded_contact = create_subscribed_contact("excluded@example.com", audience, client_record)
+    ContactTag.objects.create(contact=excluded_contact, tag=included)
+    ContactTag.objects.create(contact=excluded_contact, tag=excluded)
+
+    filters = ContactExplorerFilters(
+        audience_id=audience.id,
+        client_id=client_record.id,
+        include_tags=("newsletter",),
+        exclude_tags=("inactive",),
+        subscription_status=SubscriptionStatus.SUBSCRIBED,
+        verified_state="verified",
+        email_validation_status=EmailValidationStatus.NO_MX,
+        campaign_status=CampaignRecipientStatus.SKIPPED,
+        skip_reason="invalid_email",
+    )
+
+    assert list(contact_explorer_queryset(filters)) == [match]
+    assert no_tag not in contact_explorer_queryset(filters)
+    assert excluded_contact not in contact_explorer_queryset(filters)
+
+
+def test_contact_explorer_audience_client_filters_match_same_subscription_row(organization):
+    audience_one = Audience.objects.create(organization=organization, name="Audience One", slug="audience-one")
+    audience_two = Audience.objects.create(organization=organization, name="Audience Two", slug="audience-two")
+    client_one = Client.objects.create(organization=organization, name="Client One", slug="client-one")
+    client_two = Client.objects.create(organization=organization, name="Client Two", slug="client-two")
+    contact = create_contact("split-scope@example.com", verified_at=timezone.now())
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience_one,
+        client=client_one,
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience_two,
+        client=client_two,
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
+
+    mismatched = ContactExplorerFilters(audience_id=audience_one.id, client_id=client_two.id)
+    matched = ContactExplorerFilters(audience_id=audience_one.id, client_id=client_one.id)
+
+    assert list(contact_explorer_queryset(mismatched)) == []
+    assert list(contact_explorer_queryset(matched)) == [contact]
+
+
+def test_contact_explorer_tag_filters_are_scoped_to_selected_audience(organization):
+    audience_one = Audience.objects.create(organization=organization, name="Audience One", slug="audience-one")
+    audience_two = Audience.objects.create(organization=organization, name="Audience Two", slug="audience-two")
+    client_record = Client.objects.create(organization=organization, name="Client", slug="client")
+    tag_one = Tag.objects.create(audience=audience_one, name="Newsletter", slug="newsletter")
+    tag_two = Tag.objects.create(audience=audience_two, name="Newsletter", slug="newsletter")
+    contact = create_subscribed_contact("cross-tag@example.com", audience_one, client_record)
+    ContactTag.objects.create(contact=contact, tag=tag_two)
+    matching_contact = create_subscribed_contact("matching-tag@example.com", audience_one, client_record)
+    ContactTag.objects.create(contact=matching_contact, tag=tag_one)
+
+    include_filters = ContactExplorerFilters(audience_id=audience_one.id, include_tags=("newsletter",))
+    exclude_filters = ContactExplorerFilters(audience_id=audience_one.id, exclude_tags=("newsletter",))
+
+    assert list(contact_explorer_queryset(include_filters)) == [matching_contact]
+    assert list(contact_explorer_queryset(exclude_filters)) == [contact]
+
+
+def test_contact_explorer_engagement_filters_are_deterministic(audience, client_record, campaign):
+    now = timezone.now()
+    opened_not_clicked = create_subscribed_contact("opened@example.com", audience, client_record)
+    never_opened = create_subscribed_contact("never-opened@example.com", audience, client_record)
+    clicked = create_subscribed_contact("clicked@example.com", audience, client_record)
+    inactive = create_subscribed_contact("inactive@example.com", audience, client_record)
+    recently_active = create_subscribed_contact("recent@example.com", audience, client_record)
+    empty = create_subscribed_contact("empty@example.com", audience, client_record)
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=opened_not_clicked,
+        email=opened_not_clicked.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=now - timedelta(days=20),
+        first_opened_at=now - timedelta(days=10),
+    )
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=never_opened,
+        email=never_opened.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=now - timedelta(days=20),
+    )
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=clicked,
+        email=clicked.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=now - timedelta(days=20),
+        first_opened_at=now - timedelta(days=10),
+        first_clicked_at=now - timedelta(days=9),
+    )
+    create_transactional_message(
+        inactive,
+        client_record,
+        sent_at=now - timedelta(days=40),
+    )
+    create_transactional_message(
+        recently_active,
+        client_record,
+        sent_at=now - timedelta(days=40),
+        first_clicked_at=now - timedelta(days=1),
+    )
+
+    scoped = {"audience_id": audience.id, "client_id": client_record.id}
+
+    assert list(contact_explorer_queryset(ContactExplorerFilters(engagement="opened_not_clicked", **scoped))) == [
+        opened_not_clicked
+    ]
+    assert list(contact_explorer_queryset(ContactExplorerFilters(engagement="never_opened", **scoped))) == [
+        inactive,
+        never_opened,
+        recently_active,
+    ]
+    assert empty not in contact_explorer_queryset(
+        ContactExplorerFilters(engagement="inactive_since", inactive_since=(now - timedelta(days=7)).date(), **scoped)
+    )
+    assert inactive in contact_explorer_queryset(
+        ContactExplorerFilters(engagement="inactive_since", inactive_since=(now - timedelta(days=7)).date(), **scoped)
+    )
+    assert recently_active not in contact_explorer_queryset(
+        ContactExplorerFilters(engagement="inactive_since", inactive_since=(now - timedelta(days=7)).date(), **scoped)
+    )
+
+
+def test_parse_contact_explorer_filters_rejects_unknown_values(audience):
+    class Params(dict):
+        def getlist(self, key):
+            value = self.get(key, [])
+            return value if isinstance(value, list) else [value]
+
+    filters = parse_contact_explorer_filters(
+        Params(
+            {
+                "audience": str(audience.id),
+                "verified": "bad",
+                "email_validation_status": "valid",
+                "campaign_status": "missing",
+                "include_tags": ["newsletter", ""],
+                "engagement": "inactive_since",
+                "inactive_since": "2026-05-01",
+            }
+        )
+    )
+
+    assert filters.audience_id == audience.id
+    assert filters.verified_state == ""
+    assert filters.email_validation_status == EmailValidationStatus.VALID
+    assert filters.campaign_status == ""
+    assert filters.include_tags == ("newsletter",)
+    assert filters.engagement == "inactive_since"
+
+
 def test_operator_contact_views_show_email_validation_status(client, operator, audience, client_record):
     client.force_login(operator)
     contact = create_contact(
@@ -152,6 +357,33 @@ def test_operator_contact_views_show_email_validation_status(client, operator, a
     assert b"Validation" in detail_response.content
     assert b"Manually invalid" in detail_response.content
     assert b"operator marked bad" in detail_response.content
+
+
+def test_operator_contact_explorer_renders_filters_and_pagination_querystring(client, operator, audience, client_record):
+    client.force_login(operator)
+    for index in range(30):
+        create_subscribed_contact(f"person-{index:02d}@example.com", audience, client_record)
+
+    response = client.get(
+        reverse("mailing:operator_contact_search"),
+        {"audience": audience.id, "subscription_status": SubscriptionStatus.SUBSCRIBED},
+    )
+
+    assert response.status_code == 200
+    assert b"Contact Explorer" in response.content
+    assert b"person-00@example.com" in response.content
+    assert b"person-29@example.com" not in response.content
+    assert b"Page 1 of 2" in response.content
+    assert f"audience={audience.id}&amp;subscription_status=subscribed&amp;page=2".encode() in response.content
+
+
+def test_operator_contact_explorer_empty_state(client, operator):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:operator_contact_search"), {"q": "missing@example.com"})
+
+    assert response.status_code == 200
+    assert b"No contacts match these filters" in response.content
 
 
 def test_contact_timeline_is_newest_first_and_metadata_is_operator_readable(campaign, client_record, audience):
@@ -178,11 +410,56 @@ def test_contact_timeline_is_newest_first_and_metadata_is_operator_readable(camp
     assert metadata_summary(newer.metadata) == "scope: campaign"
 
 
+def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
+    client,
+    operator,
+    audience,
+    client_record,
+):
+    client.force_login(operator)
+    contact = create_contact(
+        "blocked@example.com",
+        verified_at=None,
+        email_validation_status=EmailValidationStatus.MANUALLY_INVALID,
+        hard_bounced_at=timezone.now(),
+    )
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience,
+        client=client_record,
+        status=SubscriptionStatus.UNSUBSCRIBED,
+    )
+
+    detail = contact_detail_context(contact)
+    response = client.get(reverse("mailing:operator_contact_detail", args=[contact.id]))
+
+    assert detail.eligibility[0].can_send_marketing is False
+    assert "unverified" in detail.eligibility[0].marketing_reasons
+    assert "invalid email validation: Manually invalid" in detail.eligibility[0].marketing_reasons
+    assert "client unsubscribe" in detail.eligibility[0].marketing_reasons
+    assert detail.eligibility[0].can_send_transactional is False
+    assert "hard bounce" in detail.eligibility[0].transactional_reasons
+    assert response.status_code == 200
+    assert b"Send Eligibility" in response.content
+    assert b"invalid email validation: Manually invalid" in response.content
+    assert b"client unsubscribe" in response.content
+
+
 def test_operator_campaign_list_requires_staff(client):
     response = client.get(reverse("mailing:operator_campaign_list"))
 
     assert response.status_code == 302
     assert "/admin/login/" in response["Location"]
+
+
+def test_operator_audience_views_require_staff(client, audience):
+    list_response = client.get(reverse("mailing:operator_audience_list"))
+    detail_response = client.get(reverse("mailing:operator_audience_detail", args=[audience.id]))
+
+    assert list_response.status_code == 302
+    assert detail_response.status_code == 302
+    assert "/admin/login/" in list_response["Location"]
+    assert "/admin/login/" in detail_response["Location"]
 
 
 def test_operator_campaign_list_renders_recent_campaigns(client, operator, campaign):
@@ -196,6 +473,92 @@ def test_operator_campaign_list_renders_recent_campaigns(client, operator, campa
     assert b"DataTalksClub" in response.content
     assert b"1 / 3" in response.content
     assert b"Create campaign" in response.content
+
+
+def test_audience_list_and_detail_render_summaries_members_history_and_events(
+    client,
+    operator,
+    audience,
+    client_record,
+    campaign,
+):
+    client.force_login(operator)
+    valid = create_subscribed_contact(
+        "valid@example.com",
+        audience,
+        client_record,
+        email_validation_status=EmailValidationStatus.VALID,
+    )
+    invalid = create_subscribed_contact(
+        "invalid@example.com",
+        audience,
+        client_record,
+        email_validation_status=EmailValidationStatus.NO_MX,
+        hard_bounced_at=timezone.now(),
+    )
+    tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+    ContactTag.objects.create(contact=valid, tag=tag)
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=valid,
+        email=valid.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=timezone.now(),
+        first_opened_at=timezone.now(),
+    )
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=invalid,
+        email=invalid.email,
+        status=CampaignRecipientStatus.SKIPPED,
+        skip_reason=CampaignRecipientSkipReason.INVALID_EMAIL,
+    )
+    EmailEvent.objects.create(
+        contact=valid,
+        audience=audience,
+        client=client_record,
+        campaign=campaign,
+        event_type=EmailEventType.OPEN,
+        metadata={"reason": "tracking"},
+    )
+
+    summary = {stat.key: stat.value for stat in audience_summary(audience)}
+    list_response = client.get(reverse("mailing:operator_audience_list"))
+    detail_response = client.get(
+        reverse("mailing:operator_audience_detail", args=[audience.id]),
+        {"email_validation_status": EmailValidationStatus.NO_MX},
+    )
+
+    assert summary["members"] == 2
+    assert summary["subscribed"] == 2
+    assert summary["hard_bounced"] == 1
+    assert list_response.status_code == 200
+    assert b"DataTalksClub" in list_response.content
+    assert detail_response.status_code == 200
+    assert b"Breakdowns" in detail_response.content
+    assert b"No MX" in detail_response.content
+    assert b"invalid@example.com" in detail_response.content
+    assert b"Campaign History" in detail_response.content
+    assert b"Recent Events" in detail_response.content
+    assert b"reason: tracking" in detail_response.content
+
+
+def test_audience_recent_events_filters_by_type(audience, client_record):
+    contact = create_contact("person@example.com")
+    open_event = EmailEvent.objects.create(
+        contact=contact,
+        audience=audience,
+        client=client_record,
+        event_type=EmailEventType.OPEN,
+    )
+    EmailEvent.objects.create(
+        contact=contact,
+        audience=audience,
+        client=client_record,
+        event_type=EmailEventType.CLICK,
+    )
+
+    assert list(audience_recent_events(audience, EmailEventType.OPEN)) == [open_event]
 
 
 def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operator, campaign):
