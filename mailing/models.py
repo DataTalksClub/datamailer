@@ -119,7 +119,7 @@ class Subscription(TimeStampedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=["audience", "client", "status"], name="subs_audience_client_status_idx"),
+            models.Index(fields=["audience", "client", "status"], name="subs_aud_cli_status_idx"),
             models.Index(fields=["contact", "updated_at"], name="subs_contact_updated_idx"),
         ]
 
@@ -281,7 +281,7 @@ class CampaignRecipient(TimeStampedModel):
         ]
         indexes = [
             models.Index(fields=["campaign", "status"], name="campaign_recip_status_idx"),
-            models.Index(fields=["contact", "sent_at"], name="campaign_recip_contact_sent_idx"),
+            models.Index(fields=["contact", "sent_at"], name="camp_recip_contact_sent_idx"),
         ]
 
     def __str__(self):
@@ -358,7 +358,7 @@ class TransactionalMessage(TimeStampedModel):
         ]
         indexes = [
             models.Index(fields=["contact", "created_at"], name="tx_msg_contact_created_idx"),
-            models.Index(fields=["client", "status", "created_at"], name="tx_msg_client_status_created_idx"),
+            models.Index(fields=["client", "status", "created_at"], name="tx_msg_cli_status_created_idx"),
         ]
 
     def __str__(self):
@@ -398,6 +398,7 @@ class EmailEvent(models.Model):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="email_events")
     audience = models.ForeignKey(Audience, on_delete=models.PROTECT, null=True, blank=True, related_name="email_events")
     event_type = models.CharField(max_length=20, choices=EmailEventType.choices)
+    provider_event_id = models.CharField(max_length=255, blank=True)
     url = models.URLField(max_length=2048, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -406,10 +407,18 @@ class EmailEvent(models.Model):
         db_table = "email_events"
         ordering = ["-created_at", "-id"]
         indexes = [
-            models.Index(fields=["contact", "created_at"], name="email_events_contact_created_idx"),
+            models.Index(fields=["contact", "created_at"], name="email_evt_contact_created_idx"),
             models.Index(fields=["campaign", "event_type", "created_at"], name="email_events_campaign_type_idx"),
-            models.Index(fields=["campaign_recipient", "event_type"], name="email_events_recipient_type_idx"),
-            models.Index(fields=["client", "created_at"], name="email_events_client_created_idx"),
+            models.Index(fields=["campaign_recipient", "event_type"], name="email_evt_recipient_type_idx"),
+            models.Index(fields=["client", "created_at"], name="email_evt_client_created_idx"),
+            models.Index(fields=["provider_event_id"], name="email_events_provider_evt_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_event_id"],
+                condition=~models.Q(provider_event_id=""),
+                name="unique_nonempty_provider_event_id",
+            ),
         ]
 
     def __str__(self):

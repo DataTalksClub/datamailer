@@ -66,3 +66,11 @@ def enqueue_transactional_email(payload, *, client=None):
         payload=payload,
         client=client,
     )
+
+
+def enqueue_ses_webhook(payload, *, client=None):
+    return send_sqs_json_message(
+        queue_url=settings.SQS_SES_WEBHOOKS_QUEUE_URL,
+        payload=payload,
+        client=client,
+    )

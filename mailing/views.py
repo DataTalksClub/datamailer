@@ -13,6 +13,7 @@ from mailing.services.api import (
     upsert_contact_for_client,
 )
 from mailing.services.auth import authenticate_bearer_token
+from mailing.services.ses_webhooks import SesWebhookError, SnsSignatureError, ingest_sns_webhook
 from mailing.services.tokens import get_recipient_by_unsubscribe_token
 from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
 from mailing.services.transactional import TransactionalSendRejected, send_transactional_email_for_client
@@ -187,3 +188,27 @@ def api_transactional_send(request):
         return JsonResponse(exc.payload, status=exc.status_code)
 
     return JsonResponse(payload, status=202)
+
+
+@csrf_exempt
+@require_POST
+def ses_webhook(request):
+    try:
+        payload = json_request_body(request)
+        result = ingest_sns_webhook(payload)
+    except SnsSignatureError as exc:
+        return JsonResponse({"error": {"code": "invalid_sns_signature", "message": str(exc)}}, status=exc.status_code)
+    except SesWebhookError as exc:
+        return JsonResponse({"error": {"code": "invalid_sns_message", "message": str(exc)}}, status=exc.status_code)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "type": result.message_type,
+            "enqueued": result.enqueued,
+            "confirmed": result.confirmed,
+        },
+        status=200,
+    )

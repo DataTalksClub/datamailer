@@ -5,6 +5,7 @@ from mailing.queue_contracts import (
     validate_transactional_email_message,
 )
 from mailing.services.campaign_sender import send_campaign_batch
+from mailing.services.ses_webhooks import process_ses_webhook
 from mailing.services.transactional_sender import send_transactional_email_from_queue
 from mailing.sqs import process_sqs_event
 
@@ -37,8 +38,7 @@ def _handle_campaign_email_record(payload, record):
 
 def _handle_ses_webhook_record(payload, record):
     validate_ses_webhook_message(payload)
-    # Future processor deduplicates provider_event_id and correlates SES
-    # message IDs back to campaign_recipients or transactional_messages rows.
+    process_ses_webhook(payload)
 
 
 def _handle_email_event_record(payload, record):

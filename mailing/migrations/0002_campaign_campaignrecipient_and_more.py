@@ -86,7 +86,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name='campaignrecipient',
-            index=models.Index(fields=['contact', 'sent_at'], name='campaign_recip_contact_sent_idx'),
+            index=models.Index(fields=['contact', 'sent_at'], name='camp_recip_contact_sent_idx'),
         ),
         migrations.AddConstraint(
             model_name='campaignrecipient',
