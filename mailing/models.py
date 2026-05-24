@@ -286,3 +286,131 @@ class CampaignRecipient(TimeStampedModel):
 
     def __str__(self):
         return f"{self.campaign_id}: {self.email} ({self.status})"
+
+
+class EmailTemplate(TimeStampedModel):
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="email_templates")
+    key = models.SlugField(max_length=120)
+    name = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255)
+    html_body = models.TextField(blank=True)
+    text_body = models.TextField(blank=True)
+    is_transactional = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "email_templates"
+        ordering = ["client__slug", "key"]
+        constraints = [
+            models.UniqueConstraint(fields=["client", "key"], name="unique_email_template_client_key"),
+        ]
+        indexes = [
+            models.Index(fields=["client", "is_transactional"], name="email_tpl_client_tx_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.key} ({self.client.slug})"
+
+
+class TransactionalMessageStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    SENT = "sent", "Sent"
+    FAILED = "failed", "Failed"
+    SKIPPED = "skipped", "Skipped"
+    BOUNCED = "bounced", "Bounced"
+    COMPLAINED = "complained", "Complained"
+
+
+class TransactionalMessage(TimeStampedModel):
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="transactional_messages")
+    contact = models.ForeignKey(Contact, on_delete=models.PROTECT, related_name="transactional_messages")
+    email = models.EmailField(max_length=320)
+    template = models.ForeignKey(EmailTemplate, on_delete=models.PROTECT, related_name="transactional_messages")
+    template_key = models.CharField(max_length=120)
+    status = models.CharField(
+        max_length=20,
+        choices=TransactionalMessageStatus.choices,
+        default=TransactionalMessageStatus.QUEUED,
+    )
+    idempotency_key = models.CharField(max_length=255, blank=True)
+    subject = models.CharField(max_length=255)
+    html_body = models.TextField(blank=True)
+    text_body = models.TextField(blank=True)
+    context = models.JSONField(default=dict, blank=True)
+    ses_message_id = models.CharField(max_length=255, blank=True, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    first_opened_at = models.DateTimeField(null=True, blank=True)
+    first_clicked_at = models.DateTimeField(null=True, blank=True)
+    open_count = models.PositiveIntegerField(default=0)
+    click_count = models.PositiveIntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "transactional_messages"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "idempotency_key"],
+                condition=~models.Q(idempotency_key=""),
+                name="unique_transactional_client_idempotency",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["contact", "created_at"], name="tx_msg_contact_created_idx"),
+            models.Index(fields=["client", "status", "created_at"], name="tx_msg_client_status_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.email} {self.template_key} ({self.status})"
+
+
+class EmailEventType(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    SKIPPED = "skipped", "Skipped"
+    SENT = "sent", "Sent"
+    DELIVERED = "delivered", "Delivered"
+    OPEN = "open", "Open"
+    CLICK = "click", "Click"
+    UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
+    BOUNCE = "bounce", "Bounce"
+    COMPLAINT = "complaint", "Complaint"
+    FAILED = "failed", "Failed"
+
+
+class EmailEvent(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, null=True, blank=True, related_name="events")
+    campaign_recipient = models.ForeignKey(
+        CampaignRecipient,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="events",
+    )
+    transactional_message = models.ForeignKey(
+        TransactionalMessage,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="events",
+    )
+    contact = models.ForeignKey(Contact, on_delete=models.PROTECT, null=True, blank=True, related_name="email_events")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="email_events")
+    audience = models.ForeignKey(Audience, on_delete=models.PROTECT, null=True, blank=True, related_name="email_events")
+    event_type = models.CharField(max_length=20, choices=EmailEventType.choices)
+    url = models.URLField(max_length=2048, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "email_events"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["contact", "created_at"], name="email_events_contact_created_idx"),
+            models.Index(fields=["campaign", "event_type", "created_at"], name="email_events_campaign_type_idx"),
+            models.Index(fields=["campaign_recipient", "event_type"], name="email_events_recipient_type_idx"),
+            models.Index(fields=["client", "created_at"], name="email_events_client_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} at {self.created_at}"
