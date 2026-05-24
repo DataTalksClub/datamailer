@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}API Docs | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>API Docs</h1>
+      <p>Datamailer-native API reference for staff operators. Client API requests use Bearer authentication with client API keys generated in the operator UI.</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="{% url openapi_json_url %}">OpenAPI JSON</a>
+      <a class="button secondary" href="{% url 'mailing:operator_client_list' %}">Client keys</a>
+    </div>
+  </div>
+
+  <section aria-labelledby="auth">
+    <h2 id="auth">Authentication</h2>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">Scheme</span>
+        Bearer
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Keys</span>
+        Generate or rotate per-client keys from Clients.
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Scope</span>
+        Requests are limited to the authenticated client's organization.
+      </div>
+    </div>
+  </section>
+
+  {% for group in endpoint_groups %}
+    <section aria-labelledby="group-{{ forloop.counter }}">
+      <h2 id="group-{{ forloop.counter }}">{{ group.name }}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Path</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for method, path, purpose in group.endpoints %}
+              <tr>
+                <td class="nowrap"><span class="badge">{{ method }}</span></td>
+                <td><code>{{ path }}</code></td>
+                <td>{{ purpose }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endfor %}
+
+  <section aria-labelledby="examples">
+    <h2 id="examples">Examples</h2>
+    <h3>DataTalksClub contact lifecycle</h3>
+    <pre><code>curl -sS -X POST "$DATAMAILER_URL/api/v1/contacts" \
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "learner@example.com",
+    "audience": "datatalksclub",
+    "client": "dtc-courses",
+    "status": "subscribed",
+    "tags": ["ml-zoomcamp"],
+    "verified": false
+  }'
+
+curl -sS "$DATAMAILER_URL/api/v1/contacts/status?email=learner@example.com&amp;audience=datatalksclub&amp;client=dtc-courses" \
+  -H "Authorization: Bearer $DATAMAILER_API_KEY"
+
+curl -sS -X PATCH "$DATAMAILER_URL/api/v1/contacts/{contact_id}/verification" \
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"audience":"datatalksclub","client":"dtc-courses","verified":true}'
+
+curl -sS "$DATAMAILER_URL/api/v1/contacts?audience=datatalksclub&amp;client=dtc-courses&amp;tags=ml-zoomcamp&amp;limit=100" \
+  -H "Authorization: Bearer $DATAMAILER_API_KEY"</code></pre>
+
+    <h3>AI Shipping Labs transactional and import/export</h3>
+    <pre><code>import requests
+
+base_url = "http://localhost:8000"
+headers = {"Authorization": f"Bearer {datamailer_api_key}"}
+
+requests.post(
+    f"{base_url}/api/v1/transactional/send",
+    headers=headers,
+    json={
+        "email": "user@example.com",
+        "template_key": "account-verification",
+        "idempotency_key": "client-generated-id",
+        "context": {"verification_url": "https://example.com/verify"},
+        "metadata": {"source": "account-flow"},
+    },
+    timeout=10,
+)
+
+requests.post(
+    f"{base_url}/api/v1/contacts/imports",
+    headers=headers,
+    json={
+        "audience": "ai-shipping-labs",
+        "client": "ai-shipping-labs",
+        "dry_run": False,
+        "contacts": [
+            {
+                "email": "subscriber@example.com",
+                "status": "subscribed",
+                "tags": ["newsletter"],
+                "email_validation": {"status": "externally_validated"},
+            }
+        ],
+    },
+    timeout=10,
+)
+
+requests.get(
+    f"{base_url}/api/v1/contacts.csv",
+    headers=headers,
+    params={"audience": "ai-shipping-labs", "client": "ai-shipping-labs"},
+    timeout=10,
+)</code></pre>
+  </section>
+
+  <section aria-labelledby="notes">
+    <h2 id="notes">Notes</h2>
+    <p>Transactional sending uses provisioned transactional templates. API-based template catalog management is planned separately.</p>
+    <p>Public tracking, unsubscribe, and SES webhook routes are documented for integration context; client application endpoints under <code>/api/v1</code> use Bearer authentication.</p>
+  </section>
+{% endblock %}

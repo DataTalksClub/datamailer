@@ -33,6 +33,7 @@ from mailing.services.api import (
     update_contact_verification_for_client,
     upsert_contact_for_client,
 )
+from mailing.services.api_docs import build_openapi_spec, endpoint_groups
 from mailing.services.auth import authenticate_bearer_token
 from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
 from mailing.services.contact_import_export import (
@@ -100,6 +101,23 @@ def pagination_querystring(request):
     params = request.GET.copy()
     params.pop("page", None)
     return params.urlencode()
+
+
+@staff_member_required
+def operator_api_docs(request):
+    return render(
+        request,
+        "mailing/operator/api_docs.html",
+        {
+            "endpoint_groups": endpoint_groups(),
+            "openapi_json_url": "mailing:operator_api_docs_json",
+        },
+    )
+
+
+@staff_member_required
+def operator_api_docs_json(request):
+    return JsonResponse(build_openapi_spec(request), json_dumps_params={"indent": 2})
 
 
 @staff_member_required
