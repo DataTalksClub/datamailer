@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Contacts | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Contacts</h1>
+      <p>Search by email or normalized email.</p>
+    </div>
+    <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">Campaigns</a>
+  </div>
+
+  <form class="toolbar" method="get">
+    <div>
+      <label for="q">Email</label>
+      <input id="q" name="q" type="search" value="{{ query }}" autocomplete="email">
+    </div>
+    <button type="submit">Search</button>
+  </form>
+
+  {% if contacts is not None %}
+    {% if contacts.object_list %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Email</th>
+              <th scope="col">Verified</th>
+              <th scope="col">Global unsubscribe</th>
+              <th scope="col">Hard bounce</th>
+              <th scope="col">Complaint</th>
+              <th scope="col">History</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for contact in contacts %}
+              <tr>
+                <td><a href="{% url 'mailing:operator_contact_detail' contact.id %}">{{ contact.email }}</a></td>
+                <td>{{ contact.verified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ contact.global_unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ contact.hard_bounced_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ contact.complained_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ contact.campaign_recipient_count }} campaigns / {{ contact.transactional_message_count }} transactional</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=contacts querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No contacts match this search.</div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

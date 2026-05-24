@@ -11,6 +11,10 @@
         --ink: #17202a;
         --muted: #5f6b7a;
         --surface: #f6f8fb;
+        --surface-strong: #eef3f8;
+        --accent: #1f6feb;
+        --danger: #b42318;
+        --success: #157347;
       }
 
       body {
@@ -27,8 +31,9 @@
 
       nav {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 24px;
+        gap: 18px;
         max-width: 1120px;
         margin: 0 auto;
         padding: 14px 20px;
@@ -37,6 +42,10 @@
       nav a {
         color: var(--ink);
         text-decoration: none;
+      }
+
+      nav a:hover {
+        text-decoration: underline;
       }
 
       nav .brand {
@@ -55,8 +64,222 @@
         line-height: 1.2;
       }
 
+      h2 {
+        margin: 28px 0 12px;
+        font-size: 20px;
+        line-height: 1.25;
+      }
+
+      h3 {
+        margin: 18px 0 8px;
+        font-size: 16px;
+      }
+
       p {
         color: var(--muted);
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      a:focus-visible,
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 3px solid #8ab4f8;
+        outline-offset: 2px;
+      }
+
+      .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 18px;
+        margin-bottom: 22px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .meta-grid,
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin: 18px 0 24px;
+      }
+
+      .stat,
+      .meta-item,
+      .empty-state {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        background: #fff;
+      }
+
+      .stat-value {
+        display: block;
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+
+      .stat-label,
+      .meta-label {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        color: var(--ink);
+        background: var(--surface-strong);
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .badge.danger {
+        color: var(--danger);
+        background: #fff0ee;
+      }
+
+      .badge.success {
+        color: var(--success);
+        background: #edf8f1;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: 10px;
+        margin: 16px 0;
+      }
+
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      input,
+      select,
+      button,
+      .button {
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 10px;
+        font: inherit;
+        background: #fff;
+      }
+
+      button,
+      .button {
+        color: #fff;
+        border-color: var(--accent);
+        background: var(--accent);
+        cursor: pointer;
+        text-decoration: none;
+      }
+
+      .button.secondary {
+        color: var(--ink);
+        border-color: var(--border);
+        background: #fff;
+      }
+
+      .table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      table {
+        width: 100%;
+        min-width: 760px;
+        border-collapse: collapse;
+        background: #fff;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        background: var(--surface);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .nowrap {
+        white-space: nowrap;
+      }
+
+      .truncate {
+        max-width: 280px;
+        overflow-wrap: anywhere;
+      }
+
+      .pagination {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin: 16px 0;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .timeline-item {
+        border-left: 4px solid var(--accent);
+        padding: 10px 12px;
+        background: var(--surface);
+      }
+
+      @media (max-width: 640px) {
+        main {
+          padding: 24px 14px;
+        }
+
+        .page-header {
+          display: block;
+        }
+
+        .toolbar > * {
+          width: 100%;
+        }
+
+        input,
+        select,
+        button,
+        .button {
+          width: 100%;
+          box-sizing: border-box;
+        }
       }
     </style>
   </head>
@@ -64,6 +287,8 @@
     <header>
       <nav aria-label="Main">
         <a class="brand" href="{% url 'mailing:dashboard' %}">Datamailer</a>
+        <a href="{% url 'mailing:operator_campaign_list' %}">Campaigns</a>
+        <a href="{% url 'mailing:operator_contact_search' %}">Contacts</a>
         <a href="/admin/">Admin</a>
       </nav>
     </header>
