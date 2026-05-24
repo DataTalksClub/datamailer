@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tag.name }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ tag.name }}</h1>
+      <p>{{ tag.audience.name }} / {{ tag.slug }}</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:operator_tag_edit' tag.id %}">Edit tag</a>
+      <a class="button secondary" href="{% url 'mailing:operator_audience_detail' tag.audience_id %}">Audience</a>
+    </div>
+  </div>
+  <div class="meta-grid">
+    <div class="meta-item"><span class="meta-label">Memberships</span>{{ membership_count }}</div>
+    <div class="meta-item"><span class="meta-label">Audience</span>{{ tag.audience.slug }}</div>
+  </div>
+  <section aria-labelledby="audit">
+    <h2 id="audit">Audit</h2>
+    {% include "mailing/operator/_audit.html" with audit_rows=audit_rows %}
+  </section>
+{% endblock %}

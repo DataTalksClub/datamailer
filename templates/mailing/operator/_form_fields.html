@@ -1,0 +1,13 @@
+{% csrf_token %}
+{% if form.non_field_errors %}
+  <div class="form-errors">{{ form.non_field_errors }}</div>
+{% endif %}
+<div class="form-grid">
+  {% for field in form %}
+    <div class="form-field{% if field.field.widget.input_type == 'textarea' %} full{% endif %}">
+      {{ field.label_tag }}
+      {{ field }}
+      {% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
+    </div>
+  {% endfor %}
+</div>
