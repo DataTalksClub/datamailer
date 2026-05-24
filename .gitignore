@@ -11,3 +11,4 @@ dist/
 build/
 staticfiles/
 .tmp/
+.worktrees/
