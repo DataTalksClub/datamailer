@@ -281,6 +281,19 @@ def validate_template(template):
         require(props.get("FunctionResponseTypes") == ["ReportBatchItemFailures"], f"{name} must enable partial batch failures", errors)
         require("ScalingConfig" in props, f"{name} must set maximum event-source concurrency", errors)
 
+    ses_webhook_mapping = resources.get("SesWebhooksEventSourceMapping", {}).get("Properties", {})
+    require(
+        ses_webhook_mapping.get("Enabled", True) is True,
+        "SesWebhooksEventSourceMapping must remain enabled for production webhook processing",
+        errors,
+    )
+    email_events_mapping = resources.get("EmailEventsEventSourceMapping", {}).get("Properties", {})
+    require(
+        email_events_mapping.get("Enabled") is False,
+        "EmailEventsEventSourceMapping must remain explicitly disabled until optional async event processing is enabled",
+        errors,
+    )
+
     resource(resources, "SesConfigurationSet", "AWS::SES::ConfigurationSet", errors)
     resource(resources, "DatamailerDashboard", "AWS::CloudWatch::Dashboard", errors)
 

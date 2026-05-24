@@ -57,11 +57,15 @@ def test_transactional_and_campaign_queues_are_independent():
     assert transactional_queue["Properties"]["RedrivePolicy"] != campaign_queue["Properties"]["RedrivePolicy"]
 
 
-def test_ses_webhook_event_source_is_defined_but_disabled_until_issue_11():
-    mapping = load_json(TEMPLATE)["Resources"]["SesWebhooksEventSourceMapping"]
-    worker = load_json(TEMPLATE)["Resources"]["SesWebhooksWorker"]
-    assert mapping["Properties"]["Enabled"] is False
-    assert {"Key": "DeferredUntilIssue", "Value": "11"} in worker["Properties"]["Tags"]
+def test_ses_webhook_event_source_is_enabled_and_email_events_stays_optional():
+    resources = load_json(TEMPLATE)["Resources"]
+    ses_mapping = resources["SesWebhooksEventSourceMapping"]
+    email_events_mapping = resources["EmailEventsEventSourceMapping"]
+    worker = resources["SesWebhooksWorker"]
+
+    assert ses_mapping["Properties"].get("Enabled", True) is True
+    assert email_events_mapping["Properties"]["Enabled"] is False
+    assert {"Key": "DeferredUntilIssue", "Value": "11"} not in worker["Properties"]["Tags"]
 
 
 def test_lambda_workers_have_distinct_scoped_roles():
