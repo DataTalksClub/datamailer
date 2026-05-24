@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import zipfile
@@ -183,15 +184,7 @@ def parse_member(archive, member, category, report, audience, client, *, dry_run
             report.counts["processed_rows"] += 1
             if dry_run:
                 report.counts["skipped_rows"] += 1
-                report.row_results.append(
-                    {
-                        "file": member.filename,
-                        "row": row_number,
-                        "category": category,
-                        "email": parsed.normalized_email,
-                        "action": "would_import",
-                    }
-                )
+                report.row_results.append(report_row(parsed, "would_import"))
                 continue
 
             result = apply_mailchimp_row(parsed, audience, client)
@@ -400,14 +393,24 @@ def apply_mailchimp_row(parsed: MailchimpRow, audience, client):
     counts[action] += 1
     return {
         "counts": counts,
-        "result": {
-            "file": parsed.archive_member,
-            "row": parsed.row_number,
-            "category": parsed.category,
-            "email": parsed.normalized_email,
-            "action": action,
-        },
+        "result": report_row(parsed, action),
     }
+
+
+def report_row(parsed: MailchimpRow, action):
+    return {
+        "file": parsed.archive_member,
+        "row": parsed.row_number,
+        "category": parsed.category,
+        "subscriber_hash": subscriber_hash(parsed.normalized_email),
+        "action": action,
+    }
+
+
+def subscriber_hash(normalized_email):
+    if not normalized_email:
+        return ""
+    return hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:12]
 
 
 def apply_contact_state(parsed, contact, updates):
