@@ -58,7 +58,7 @@ Use these runbooks for staging and production operations. Commands are examples;
 1. Check SES sending quota, max send rate, bounce rate, and complaint rate.
 2. Pause campaign sends if bounce/complaint alarms fire.
 3. Keep transactional concurrency independent and low.
-4. HUMAN: manually suppress affected contacts after verified bounce/complaint incidents until #11 production wiring is accepted.
+4. Verify the `ses-webhooks` queue drains through the SES webhook Lambda, the related contact suppression/event rows are written, and the `ses-webhooks-dlq` alarm stays clear. Manually suppress affected contacts only if the webhook worker is degraded or DLQ messages require replay.
 5. Resume campaigns only after SES reputation and suppression state are understood.
 
 ## Postgres Restore Drill

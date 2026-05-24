@@ -85,8 +85,8 @@ Each Lambda worker has a dedicated runtime role:
 
 - `TransactionalEmailWorkerRole`: reads/deletes only `transactional-email`, can write only `transactional-email-dlq`, can send through SES, can read the DB secret, and can write only its own Lambda log group.
 - `CampaignEmailWorkerRole`: reads/deletes only `campaign-email`, can write only `campaign-email-dlq`, can send through SES, can read the DB secret, and can write only its own Lambda log group.
-- `SesWebhooksWorkerRole`: reads/deletes only `ses-webhooks`, can write only `ses-webhooks-dlq`, can read the DB secret, and has no SES send permissions. Production event-source processing remains disabled until #11.
-- `EmailEventsWorkerRole`: reads/deletes only `email-events`, can write only `email-events-dlq`, can read the DB secret, and has no SES send permissions.
+- `SesWebhooksWorkerRole`: reads/deletes only `ses-webhooks`, can write only `ses-webhooks-dlq`, can read the DB secret, and has no SES send permissions. Its event-source mapping is active so SES/SNS notifications are processed by the webhook worker.
+- `EmailEventsWorkerRole`: reads/deletes only `email-events`, can write only `email-events-dlq`, can read the DB secret, and has no SES send permissions. Its event-source mapping remains intentionally disabled until optional async event processing is enabled.
 
 The template creates `/aws/lambda/${ProjectName}-${EnvironmentName}-<worker>` log groups with `LambdaLogRetentionDays`; examples use 14 days for staging and 30 days for production. Worker roles use inline runtime permissions instead of broad Lambda execution managed policies so log writes stay scoped to the worker log group.
 
@@ -107,12 +107,11 @@ Per environment, set:
 - Configuration set: `SESConfigurationSetName`.
 - Region: `SESRegion`/`AWS_REGION`.
 - DNS: DKIM, SPF, DMARC, and optional custom MAIL FROM.
-- Event publishing: production webhook processing remains deferred until #11. The `ses-webhooks` queue/DLQ/alarm shape exists now, but the event source mapping is disabled in the template.
+- Event publishing: SES/SNS webhook processing is active through the `ses-webhooks` queue and Lambda event source mapping. Before production sends, smoke-test a bounce/complaint notification path and verify the queue drains, the worker logs the notification, the DLQ stays empty, and alarms route to the on-call channel.
 
 HUMAN checks before production traffic:
 
 - SES sandbox exit and production send quota are approved.
 - DNS records validate in SES.
-- Bounce and complaint routing is verified end to end after #11 lands.
+- Bounce and complaint routing is verified end to end in staging before production sends.
 - Alarm notification routing reaches the on-call channel.
-
