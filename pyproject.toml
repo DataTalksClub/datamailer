@@ -1,0 +1,35 @@
+[project]
+name = "datamailer"
+version = "0.1.0"
+description = "A Django mailing service for audiences, campaigns, transactional email, and engagement tracking."
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.34.0",
+    "dj-database-url>=3.0.0",
+    "django>=6.0.0,<7.0.0",
+    "psycopg2-binary>=2.9.11",
+    "python-dotenv>=1.2.0",
+    "whitenoise>=6.12.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-django>=4.12.0",
+    "ruff>=0.11.0",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "datamailer.settings"
+pythonpath = ["."]
+python_files = ["test_*.py", "*_test.py", "tests.py"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "I", "PLC0415"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["datamailer", "mailing"]
