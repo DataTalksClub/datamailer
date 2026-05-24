@@ -12,9 +12,16 @@ from mailing.forms import CampaignForm
 from mailing.models import Campaign, CampaignStatus
 from mailing.services.api import (
     ApiValidationError,
+    add_contact_tag_for_client,
+    get_contact_history_for_client,
     get_contact_status_for_client,
+    remove_contact_tag_for_client,
+    replace_contact_tags_for_client,
     subscribe_for_client,
     unsubscribe_for_client,
+    update_contact_suppression_for_client,
+    update_contact_validation_for_client,
+    update_contact_verification_for_client,
     upsert_contact_for_client,
 )
 from mailing.services.auth import authenticate_bearer_token
@@ -266,9 +273,29 @@ def validation_error_response(exc):
     )
 
 
+def method_not_allowed_response(allowed_methods):
+    return JsonResponse(
+        {
+            "error": {
+                "code": "method_not_allowed",
+                "allowed_methods": allowed_methods,
+            }
+        },
+        status=405,
+    )
+
+
+def api_request_data(request):
+    if request.body:
+        return json_request_body(request)
+    return request.GET
+
+
 @csrf_exempt
-@require_POST
 def api_contacts(request):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
     client, error_response = authenticate_api_request(request)
     if error_response:
         return error_response
@@ -281,8 +308,10 @@ def api_contacts(request):
     return JsonResponse(payload, status=200)
 
 
-@require_GET
 def api_contact_status(request):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
     client, error_response = authenticate_api_request(request)
     if error_response:
         return error_response
@@ -296,8 +325,10 @@ def api_contact_status(request):
 
 
 @csrf_exempt
-@require_POST
 def api_subscribe(request):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
     client, error_response = authenticate_api_request(request)
     if error_response:
         return error_response
@@ -311,14 +342,121 @@ def api_subscribe(request):
 
 
 @csrf_exempt
-@require_POST
 def api_unsubscribe(request):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
     client, error_response = authenticate_api_request(request)
     if error_response:
         return error_response
 
     try:
         payload = unsubscribe_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_tags(request, contact_id):
+    if request.method != "PUT":
+        return method_not_allowed_response(["PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = replace_contact_tags_for_client(contact_id, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_tag(request, contact_id, tag_slug):
+    if request.method not in {"POST", "DELETE"}:
+        return method_not_allowed_response(["POST", "DELETE"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        data = api_request_data(request)
+        if request.method == "POST":
+            payload = add_contact_tag_for_client(contact_id, tag_slug, data, client)
+        else:
+            payload = remove_contact_tag_for_client(contact_id, tag_slug, data, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_verification(request, contact_id):
+    if request.method != "PATCH":
+        return method_not_allowed_response(["PATCH"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = update_contact_verification_for_client(contact_id, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_validation(request, contact_id):
+    if request.method != "PATCH":
+        return method_not_allowed_response(["PATCH"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = update_contact_validation_for_client(contact_id, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_suppression(request, contact_id):
+    if request.method != "PATCH":
+        return method_not_allowed_response(["PATCH"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = update_contact_suppression_for_client(contact_id, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_contact_history(request, contact_id):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_contact_history_for_client(contact_id, request.GET, client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

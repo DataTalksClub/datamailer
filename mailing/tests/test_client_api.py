@@ -4,14 +4,22 @@ from django.utils import timezone
 
 from mailing.models import (
     Audience,
+    Campaign,
+    CampaignRecipient,
+    CampaignRecipientStatus,
     Client,
     Contact,
     ContactTag,
+    EmailEvent,
+    EmailEventType,
+    EmailTemplate,
     EmailValidationStatus,
     Organization,
     Subscription,
     SubscriptionStatus,
     Tag,
+    TransactionalMessage,
+    TransactionalMessageStatus,
 )
 from mailing.services.auth import authenticate_bearer_token, check_api_key, hash_api_key
 
@@ -73,6 +81,33 @@ def post_json(django_client, url_name, payload, raw_key=API_KEY):
     )
 
 
+def put_json(django_client, url_name, payload, *args, raw_key=API_KEY):
+    return django_client.put(
+        reverse(url_name, args=args),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def patch_json(django_client, url_name, payload, *args, raw_key=API_KEY):
+    return django_client.patch(
+        reverse(url_name, args=args),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def delete_json(django_client, url_name, payload, *args, raw_key=API_KEY):
+    return django_client.delete(
+        reverse(url_name, args=args),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
 def test_api_key_hash_helper_does_not_store_or_match_raw_key(api_client_record):
     assert api_client_record.api_key_hash != API_KEY
     assert check_api_key(API_KEY, api_client_record.api_key_hash) is True
@@ -83,6 +118,15 @@ def test_authentication_rejects_missing_unknown_and_inactive_clients(client, api
     response = client.post(reverse("mailing:api_contacts"), data={}, content_type="application/json")
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "missing_authorization"
+
+    response = client.post(
+        reverse("mailing:api_contacts"),
+        data={},
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Token {API_KEY}",
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_authorization"
 
     response = post_json(client, "mailing:api_contacts", {}, raw_key="unknown-key")
     assert response.status_code == 401
@@ -131,6 +175,40 @@ def test_contact_upsert_is_idempotent_and_scoped_to_authenticated_client(client,
     assert ContactTag.objects.count() == 2
 
 
+def test_contact_upsert_accepts_validation_and_suppression_inputs_idempotently(client, audience, api_client_record):
+    payload = {
+        "email": "person@example.com",
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "status": SubscriptionStatus.SUBSCRIBED,
+        "verified": True,
+        "email_validation": {
+            "status": EmailValidationStatus.EXTERNALLY_VALIDATED,
+            "reason": "provider hygiene import",
+        },
+        "suppression": {
+            "global_unsubscribed": False,
+            "hard_bounced": False,
+            "complained": False,
+        },
+    }
+
+    first = post_json(client, "mailing:api_contacts", payload)
+    second = post_json(client, "mailing:api_contacts", payload)
+
+    contact = Contact.objects.get()
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert contact.email_validation_status == EmailValidationStatus.EXTERNALLY_VALIDATED
+    assert contact.email_validation_reason == "provider hygiene import"
+    assert contact.email_validated_at is not None
+    assert contact.global_unsubscribed_at is None
+    assert second.json()["contact_id"] == contact.id
+    assert second.json()["email_validation"]["status"] == EmailValidationStatus.EXTERNALLY_VALIDATED
+    assert Contact.objects.count() == 1
+    assert Subscription.objects.count() == 1
+
+
 def test_contact_upsert_verified_marks_subscription_not_global_contact(client, audience, api_client_record):
     response = post_json(
         client,
@@ -150,6 +228,146 @@ def test_contact_upsert_verified_marks_subscription_not_global_contact(client, a
     assert contact.verified_at is None
     assert subscription.verified_at is not None
     assert response.json()["can_send_marketing"] is True
+
+
+def test_contact_tag_mutations_are_idempotent_and_campaign_filter_compatible(client, audience, api_client_record):
+    contact = Contact.objects.create(email="person@example.com")
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
+
+    payload = {"audience": audience.slug, "client": api_client_record.slug, "tags": ["ML Zoomcamp", "lead"]}
+    replace_first = put_json(client, "mailing:api_contact_tags", payload, contact.id)
+    replace_second = put_json(client, "mailing:api_contact_tags", payload, contact.id)
+    add_first = client.post(
+        reverse("mailing:api_contact_tag", args=[contact.id, "data-engineering"]),
+        data={"audience": audience.slug, "client": api_client_record.slug},
+        content_type="application/json",
+        **auth_headers(),
+    )
+    add_second = client.post(
+        reverse("mailing:api_contact_tag", args=[contact.id, "data-engineering"]),
+        data={"audience": audience.slug, "client": api_client_record.slug},
+        content_type="application/json",
+        **auth_headers(),
+    )
+    remove_first = delete_json(
+        client,
+        "mailing:api_contact_tag",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        contact.id,
+        "lead",
+    )
+    remove_second = delete_json(
+        client,
+        "mailing:api_contact_tag",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        contact.id,
+        "lead",
+    )
+
+    assert replace_first.status_code == 200
+    assert replace_second.status_code == 200
+    assert add_first.status_code == 200
+    assert add_second.status_code == 200
+    assert remove_first.status_code == 200
+    assert remove_second.status_code == 200
+    assert remove_second.json()["tags"] == ["data-engineering", "ml-zoomcamp"]
+    assert list(
+        ContactTag.objects.filter(contact=contact, tag__audience=audience)
+        .values_list("tag__slug", flat=True)
+        .order_by("tag__slug")
+    ) == [
+        "data-engineering",
+        "ml-zoomcamp",
+    ]
+    campaign = Campaign.objects.create(
+        audience=audience,
+        client=api_client_record,
+        subject="Course starts",
+        include_tags=["ML Zoomcamp"],
+        exclude_tags=["Lead"],
+    )
+    assert campaign.include_tags == ["ml-zoomcamp"]
+    assert campaign.exclude_tags == ["lead"]
+
+
+def test_contact_mutation_endpoints_update_verification_validation_and_suppression(
+    client,
+    audience,
+    api_client_record,
+):
+    contact = Contact.objects.create(email="person@example.com")
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
+    scope = {"audience": audience.slug, "client": api_client_record.slug}
+
+    verification = patch_json(
+        client,
+        "mailing:api_contact_verification",
+        scope | {"verified": True},
+        contact.id,
+    )
+    validation = patch_json(
+        client,
+        "mailing:api_contact_validation",
+        scope | {"status": EmailValidationStatus.NO_MX, "reason": "external hygiene"},
+        contact.id,
+    )
+    suppression = patch_json(
+        client,
+        "mailing:api_contact_suppression",
+        scope | {"global_unsubscribed": True, "hard_bounced": True, "complained": False, "reason": "api"},
+        contact.id,
+    )
+    suppression_repeat = patch_json(
+        client,
+        "mailing:api_contact_suppression",
+        scope | {"global_unsubscribed": True, "hard_bounced": True, "complained": False, "reason": "api"},
+        contact.id,
+    )
+
+    contact.refresh_from_db()
+    subscription = Subscription.objects.get()
+    assert verification.status_code == 200
+    assert subscription.verified_at is not None
+    assert contact.verified_at is not None
+    assert validation.status_code == 200
+    assert contact.email_validation_status == EmailValidationStatus.NO_MX
+    assert contact.email_validation_reason == "external hygiene"
+    assert contact.email_validated_at is not None
+    assert suppression.status_code == 200
+    assert suppression_repeat.status_code == 200
+    assert contact.global_unsubscribed_at is not None
+    assert contact.hard_bounced_at is not None
+    assert contact.complained_at is None
+    assert suppression.json()["can_send_marketing"] is False
+    assert suppression.json()["can_send_transactional"] is False
+    assert EmailEvent.objects.filter(event_type=EmailEventType.UNSUBSCRIBE).count() == 1
+    assert EmailEvent.objects.filter(event_type=EmailEventType.BOUNCE).count() == 1
+
+
+def test_contact_mutation_endpoints_reject_unscoped_contact_ids(client, audience, api_client_record, other_client):
+    contact = Contact.objects.create(email="person@example.com")
+    Subscription.objects.create(contact=contact, audience=audience, client=other_client)
+
+    response = put_json(
+        client,
+        "mailing:api_contact_tags",
+        {"audience": audience.slug, "client": api_client_record.slug, "tags": ["news"]},
+        contact.id,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["fields"]["contact_id"] == "not_found"
+    assert ContactTag.objects.count() == 0
 
 
 def test_contact_status_returns_subscription_suppression_and_eligibility(client, audience, api_client_record):
@@ -337,6 +555,92 @@ def test_unsubscribe_supports_client_audience_and_global_scopes_idempotently(cli
     contact.refresh_from_db()
     assert response.status_code == 200
     assert contact.global_unsubscribed_at is not None
+
+
+def test_contact_history_is_scoped_and_does_not_expose_tokens_or_secrets(client, audience, api_client_record):
+    contact = Contact.objects.create(email="person@example.com")
+    Subscription.objects.create(contact=contact, audience=audience, client=api_client_record)
+    campaign = Campaign.objects.create(audience=audience, client=api_client_record, subject="Newsletter")
+    recipient = CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=contact,
+        email=contact.email,
+        status=CampaignRecipientStatus.SENT,
+        tracking_token_hash="hashed-tracking-token",
+        unsubscribe_token_hash="hashed-unsubscribe-token",
+        sent_at=timezone.now(),
+        open_count=1,
+        click_count=1,
+    )
+    template = EmailTemplate.objects.create(
+        client=api_client_record,
+        key="welcome",
+        name="Welcome",
+        subject="Welcome",
+        is_transactional=True,
+    )
+    message = TransactionalMessage.objects.create(
+        client=api_client_record,
+        contact=contact,
+        email=contact.email,
+        template=template,
+        template_key=template.key,
+        status=TransactionalMessageStatus.SENT,
+        idempotency_key="client-event-1",
+        subject="Welcome",
+        context={"verification_url": "https://example.test/verify/raw-token"},
+        metadata={"api_key": API_KEY},
+    )
+    EmailEvent.objects.create(
+        campaign=campaign,
+        campaign_recipient=recipient,
+        contact=contact,
+        client=api_client_record,
+        audience=audience,
+        event_type=EmailEventType.CLICK,
+        url="https://example.test/account?token=raw-token",
+        metadata={"scope": "client", "api_key": API_KEY, "source": "ses"},
+    )
+    EmailEvent.objects.create(
+        transactional_message=message,
+        contact=contact,
+        client=api_client_record,
+        event_type=EmailEventType.SENT,
+        metadata={"ses_message_id": "ses-123", "secret": "hidden"},
+    )
+
+    response = client.get(
+        reverse("mailing:api_contact_history", args=[contact.id]),
+        {"audience": audience.slug, "client": api_client_record.slug, "limit": "1"},
+        **auth_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contact_id"] == contact.id
+    assert body["campaign_recipients"][0]["id"] == recipient.id
+    assert body["transactional_messages"][0]["id"] == message.id
+    assert body["events"][0]["metadata"] == {"ses_message_id": "ses-123"}
+    serialized = str(body)
+    assert "hashed-tracking-token" not in serialized
+    assert "hashed-unsubscribe-token" not in serialized
+    assert "raw-token" not in serialized
+    assert API_KEY not in serialized
+    assert "secret" not in serialized
+    assert body["next_cursor"] is not None
+
+
+def test_api_errors_are_json_only_and_never_login_redirect(client, api_client_record):
+    response = client.get(reverse("mailing:api_contacts"), follow=False)
+
+    assert response.status_code == 405
+    assert response.headers["Content-Type"].startswith("application/json")
+    assert response.json()["error"]["code"] == "method_not_allowed"
+
+    response = client.get(reverse("mailing:api_contact_status"), follow=False)
+    assert response.status_code == 401
+    assert response.headers["Content-Type"].startswith("application/json")
+    assert "Location" not in response.headers
 
 
 def test_cross_organization_slugs_are_rejected_without_mutation(
