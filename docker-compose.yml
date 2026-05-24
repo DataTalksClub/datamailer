@@ -1,0 +1,15 @@
+services:
+  localstack:
+    image: localstack/localstack:stable
+    profiles: ["aws-local"]
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs,ses
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: "0"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
