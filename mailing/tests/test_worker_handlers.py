@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+import mailing.workers.handlers
 from mailing.sqs import records_from_messages
 from mailing.workers import (
     campaign_email_handler,
@@ -65,6 +66,11 @@ VALID_MESSAGES = {
         },
     },
 }
+
+
+@pytest.fixture(autouse=True)
+def stub_campaign_sender(monkeypatch):
+    monkeypatch.setattr(mailing.workers.handlers, "send_campaign_batch", lambda payload: None)
 
 
 @pytest.mark.parametrize("worker", VALID_MESSAGES.values(), ids=VALID_MESSAGES.keys())
