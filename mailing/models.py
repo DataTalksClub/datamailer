@@ -443,3 +443,24 @@ class EmailEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} at {self.created_at}"
+
+
+class OperatorAudit(models.Model):
+    actor = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="operator_audits")
+    action = models.CharField(max_length=120, db_index=True)
+    target_type = models.CharField(max_length=80, db_index=True)
+    target_id = models.PositiveBigIntegerField(db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "operator_audits"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["target_type", "target_id", "created_at"], name="op_audit_target_created_idx"),
+            models.Index(fields=["actor", "created_at"], name="op_audit_actor_created_idx"),
+        ]
+
+    def __str__(self):
+        actor = self.actor.username if self.actor_id else "unknown"
+        return f"{self.action} {self.target_type}:{self.target_id} by {actor}"

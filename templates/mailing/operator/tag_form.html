@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}{% if mode == "create" %}Create tag{% else %}Edit tag{% endif %} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{% if mode == "create" %}Create tag{% else %}Edit tag{% endif %}</h1>
+      <p>{{ audience.name }} / {{ audience.slug }}</p>
+    </div>
+    <a class="button secondary" href="{% url 'mailing:operator_audience_detail' audience.id %}">Audience</a>
+  </div>
+  <form method="post">
+    {% include "mailing/operator/_form_fields.html" with form=form %}
+    <div class="toolbar"><button type="submit">Save tag</button></div>
+  </form>
+{% endblock %}

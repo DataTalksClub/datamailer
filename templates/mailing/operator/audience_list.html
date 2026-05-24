@@ -6,9 +6,12 @@
   <div class="page-header">
     <div>
       <h1>Audiences</h1>
-      <p>Read-only audience membership and history entry points.</p>
+      <p>Audience membership, history, and management entry points.</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Contact explorer</a>
+    <div class="actions">
+      <a class="button" href="{% url 'mailing:operator_audience_create' %}">Create audience</a>
+      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Contact explorer</a>
+    </div>
   </div>
 
   {% if audiences.object_list %}

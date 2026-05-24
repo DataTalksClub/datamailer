@@ -1,0 +1,19 @@
+{% if audit_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Metadata</th></tr></thead>
+      <tbody>
+        {% for row in audit_rows %}
+          <tr>
+            <td>{{ row.created_at|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ row.actor.username|default:"-" }}</td>
+            <td>{{ row.action }}</td>
+            <td class="truncate">{{ row.metadata }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty-state">No operator audit entries found.</div>
+{% endif %}

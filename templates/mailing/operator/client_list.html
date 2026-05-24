@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Clients | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Clients</h1>
+      <p>Manage client records and single active API keys.</p>
+    </div>
+    <a class="button" href="{% url 'mailing:operator_client_create' %}">Create client</a>
+  </div>
+  {% if clients.object_list %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Client</th><th scope="col">Organization</th><th scope="col">Active</th><th scope="col">API key</th></tr></thead>
+        <tbody>
+          {% for client in clients %}
+            <tr>
+              <td><a href="{% url 'mailing:operator_client_detail' client.id %}">{{ client.name }}</a><div class="muted">{{ client.slug }}</div></td>
+              <td>{{ client.organization.name }}</td>
+              <td>{% if client.is_active %}<span class="badge success">Active</span>{% else %}<span class="badge danger">Inactive</span>{% endif %}</td>
+              <td>{% if client.api_key_hash %}<span class="badge success">Present</span>{% else %}<span class="badge">None</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "mailing/operator/_pagination.html" with page_obj=clients querystring=pagination_querystring %}
+  {% else %}
+    <div class="empty-state">No clients found.</div>
+  {% endif %}
+{% endblock %}

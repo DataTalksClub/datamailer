@@ -1,6 +1,17 @@
 from django import forms
+from django.utils.text import slugify
 
-from mailing.models import Audience, Campaign, CampaignStatus, Client, Tag
+from mailing.models import (
+    Audience,
+    Campaign,
+    CampaignStatus,
+    Client,
+    ContactTag,
+    EmailValidationStatus,
+    Organization,
+    SubscriptionStatus,
+    Tag,
+)
 
 
 class CampaignForm(forms.ModelForm):
@@ -98,3 +109,155 @@ class CampaignForm(forms.ModelForm):
         if commit:
             campaign.save()
         return campaign
+
+
+class AudienceForm(forms.ModelForm):
+    class Meta:
+        model = Audience
+        fields = ["organization", "name", "slug"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["organization"].queryset = Organization.objects.order_by("slug")
+
+    def clean_slug(self):
+        slug = slugify(self.cleaned_data["slug"])
+        if not slug:
+            raise forms.ValidationError("Enter a valid slug.")
+        return slug
+
+    def clean(self):
+        cleaned = super().clean()
+        organization = cleaned.get("organization")
+        slug = cleaned.get("slug")
+        if organization and slug:
+            duplicate = Audience.objects.filter(organization=organization, slug=slug)
+            if self.instance.pk:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+            if duplicate.exists():
+                self.add_error("slug", "Audience slug must be unique within this organization.")
+        return cleaned
+
+
+class ClientForm(forms.ModelForm):
+    class Meta:
+        model = Client
+        fields = ["organization", "name", "slug", "is_active"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["organization"].queryset = Organization.objects.order_by("slug")
+
+    def clean_slug(self):
+        slug = slugify(self.cleaned_data["slug"])
+        if not slug:
+            raise forms.ValidationError("Enter a valid slug.")
+        return slug
+
+    def clean(self):
+        cleaned = super().clean()
+        organization = cleaned.get("organization")
+        slug = cleaned.get("slug")
+        if organization and slug:
+            duplicate = Client.objects.filter(organization=organization, slug=slug)
+            if self.instance.pk:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+            if duplicate.exists():
+                self.add_error("slug", "Client slug must be unique within this organization.")
+        return cleaned
+
+
+class TagForm(forms.ModelForm):
+    class Meta:
+        model = Tag
+        fields = ["name", "slug"]
+
+    def __init__(self, *args, audience=None, **kwargs):
+        self.audience = audience or getattr(kwargs.get("instance"), "audience", None)
+        super().__init__(*args, **kwargs)
+
+    def clean_slug(self):
+        slug = slugify(self.cleaned_data["slug"] or self.cleaned_data.get("name", ""))
+        if not slug:
+            raise forms.ValidationError("Enter a valid slug.")
+        return slug
+
+    def clean(self):
+        cleaned = super().clean()
+        slug = cleaned.get("slug")
+        if self.audience and slug:
+            duplicate = Tag.objects.filter(audience=self.audience, slug=slug)
+            if self.instance.pk:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+            if duplicate.exists():
+                self.add_error("slug", "Tag slug must be unique within this audience.")
+        return cleaned
+
+
+class ContactStateForm(forms.Form):
+    verified_state = forms.ChoiceField(
+        choices=(("unchanged", "Leave unchanged"), ("verified", "Verified"), ("unverified", "Unverified")),
+    )
+    email_validation_status = forms.ChoiceField(choices=EmailValidationStatus.choices)
+    email_validation_reason = forms.CharField(required=False, max_length=255)
+    global_unsubscribed = forms.BooleanField(required=False)
+    hard_bounced = forms.BooleanField(required=False)
+    complained = forms.BooleanField(required=False)
+
+
+class ContactSubscriptionForm(forms.Form):
+    audience = forms.ModelChoiceField(queryset=Audience.objects.none())
+    client = forms.ModelChoiceField(queryset=Client.objects.none(), required=False)
+    status = forms.ChoiceField(choices=SubscriptionStatus.choices)
+    verified = forms.BooleanField(required=False)
+    unsubscribe_reason = forms.CharField(required=False, max_length=255)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["audience"].queryset = Audience.objects.select_related("organization").order_by(
+            "organization__slug", "slug"
+        )
+        self.fields["client"].queryset = Client.objects.select_related("organization").order_by(
+            "organization__slug", "slug"
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        audience = cleaned.get("audience")
+        client = cleaned.get("client")
+        if audience and client and audience.organization_id != client.organization_id:
+            self.add_error("client", "Client must belong to the selected audience organization.")
+        return cleaned
+
+
+class ContactTagAddForm(forms.Form):
+    audience = forms.ModelChoiceField(queryset=Audience.objects.none())
+    tag = forms.ModelChoiceField(queryset=Tag.objects.none(), required=False)
+    new_tag_name = forms.CharField(required=False, max_length=120)
+    new_tag_slug = forms.SlugField(required=False, max_length=120)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["audience"].queryset = Audience.objects.order_by("slug")
+        self.fields["tag"].queryset = Tag.objects.select_related("audience").order_by("audience__slug", "slug")
+
+    def clean(self):
+        cleaned = super().clean()
+        audience = cleaned.get("audience")
+        tag = cleaned.get("tag")
+        new_name = cleaned.get("new_tag_name")
+        if not tag and not new_name:
+            raise forms.ValidationError("Choose an existing tag or enter a new tag name.")
+        if audience and tag and tag.audience_id != audience.id:
+            self.add_error("tag", "Tag must belong to the selected audience.")
+        return cleaned
+
+
+class ContactTagRemoveForm(forms.Form):
+    membership = forms.ModelChoiceField(queryset=ContactTag.objects.none())
+
+    def __init__(self, *args, contact=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["membership"].queryset = ContactTag.objects.filter(contact=contact).select_related(
+            "tag", "tag__audience"
+        )

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{{ client.name }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ client.name }}</h1>
+      <p>{{ client.organization.name }} / {{ client.slug }}</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:operator_client_edit' client.id %}">Edit client</a>
+      <a class="button secondary" href="{% url 'mailing:operator_client_list' %}">All clients</a>
+    </div>
+  </div>
+  {% if raw_api_key %}
+    <div class="message success">
+      <strong>New API key:</strong> <code>{{ raw_api_key }}</code>
+      <div>Copy this now. It will not be shown again.</div>
+    </div>
+  {% endif %}
+  <section aria-labelledby="client-state">
+    <h2 id="client-state">State</h2>
+    <div class="meta-grid">
+      <div class="meta-item"><span class="meta-label">Active</span>{{ client.is_active|yesno:"Yes,No" }}</div>
+      <div class="meta-item"><span class="meta-label">API key</span>{% if client.api_key_hash %}Present{% else %}None{% endif %}</div>
+    </div>
+    <div class="toolbar">
+      <form method="post" action="{% url 'mailing:operator_client_api_key_generate' client.id %}">
+        {% csrf_token %}
+        <button type="submit">{% if client.api_key_hash %}Rotate API key{% else %}Generate API key{% endif %}</button>
+      </form>
+      <form method="post" action="{% url 'mailing:operator_client_api_key_revoke' client.id %}">
+        {% csrf_token %}
+        <button type="submit">Revoke API key</button>
+      </form>
+    </div>
+  </section>
+  <section aria-labelledby="audit">
+    <h2 id="audit">Audit</h2>
+    {% include "mailing/operator/_audit.html" with audit_rows=audit_rows %}
+  </section>
+{% endblock %}

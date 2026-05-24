@@ -24,6 +24,33 @@
     </div>
   </section>
 
+  <section aria-labelledby="manage-contact">
+    <h2 id="manage-contact">Manage Contact</h2>
+    <h3>State</h3>
+    <form method="post" action="{% url 'mailing:operator_contact_state_update' contact.id %}">
+      {% include "mailing/operator/_form_fields.html" with form=contact_state_form %}
+      <div class="toolbar"><button type="submit">Update state</button></div>
+    </form>
+
+    <h3>Subscription</h3>
+    <form method="post" action="{% url 'mailing:operator_contact_subscription_update' contact.id %}">
+      {% include "mailing/operator/_form_fields.html" with form=subscription_form %}
+      <div class="toolbar"><button type="submit">Update subscription</button></div>
+    </form>
+
+    <h3>Add tag</h3>
+    <form method="post" action="{% url 'mailing:operator_contact_tag_add' contact.id %}">
+      {% include "mailing/operator/_form_fields.html" with form=tag_add_form %}
+      <div class="toolbar"><button type="submit">Add tag</button></div>
+    </form>
+
+    <h3>Remove tag</h3>
+    <form method="post" action="{% url 'mailing:operator_contact_tag_remove' contact.id %}">
+      {% include "mailing/operator/_form_fields.html" with form=tag_remove_form %}
+      <div class="toolbar"><button type="submit">Remove tag</button></div>
+    </form>
+  </section>
+
   <section aria-labelledby="eligibility">
     <h2 id="eligibility">Send Eligibility</h2>
     {% if eligibility %}
@@ -223,5 +250,10 @@
     {% else %}
       <div class="empty-state">No email events found.</div>
     {% endif %}
+  </section>
+
+  <section aria-labelledby="audit">
+    <h2 id="audit">Operator Audit</h2>
+    {% include "mailing/operator/_audit.html" with audit_rows=audit_rows %}
   </section>
 {% endblock %}
