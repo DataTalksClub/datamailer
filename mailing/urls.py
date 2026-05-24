@@ -7,4 +7,8 @@ app_name = "mailing"
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("health/", views.health, name="health"),
+    path("api/v1/contacts", views.api_contacts, name="api_contacts"),
+    path("api/v1/contacts/status", views.api_contact_status, name="api_contact_status"),
+    path("api/v1/subscriptions/subscribe", views.api_subscribe, name="api_subscribe"),
+    path("api/v1/subscriptions/unsubscribe", views.api_unsubscribe, name="api_unsubscribe"),
 ]
