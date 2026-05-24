@@ -1,0 +1,4 @@
+email,tags,verified,subscription_status,unsubscribed,global_unsubscribed,hard_bounced,complained,suppressed,unsubscribe_reason
+Duplicate@Example.com,First,true,subscribed,false,false,false,false,false,
+ duplicate@example.COM ,Second,false,unsubscribed,true,false,false,false,false,should be skipped
+unique@example.com,First,false,pending,false,false,false,false,false,

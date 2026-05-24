@@ -1,0 +1,7 @@
+email,tags,verified,subscription_status,unsubscribed,global_unsubscribed,hard_bounced,complained,suppressed,unsubscribe_reason
+valid-before@example.com,Newsletter,true,subscribed,false,false,false,false,false,
+not-an-email,Newsletter,false,subscribed,false,false,false,false,false,
+missing-status@example.com,Newsletter,false,unknown,false,false,false,false,false,
+bad-tag@example.com,;;;,false,subscribed,false,false,false,false,false,
+,Newsletter,false,subscribed,false,false,false,false,false,
+valid-after@example.com,Ops,false,unsubscribed,true,false,false,false,false,opt out
