@@ -60,6 +60,9 @@ def test_mailchimp_import_dry_run_reports_without_writes(capsys, tmp_path, organ
     assert report["counts"]["processed_rows"] == 3
     assert report["counts"]["invalid_rows"] == 1
     assert report["category_counts"] == {"subscribed": 1, "unsubscribed": 2, "cleaned": 1}
+    assert "subscriber_hash" in report["row_results"][0]
+    assert "email" not in report["row_results"][0]
+    assert_report_has_no_row_pii(report)
     assert Contact.objects.count() == 0
     assert Subscription.objects.count() == 0
     assert ContactSourceMetadata.objects.count() == 0
@@ -106,6 +109,8 @@ def test_mailchimp_import_maps_statuses_tags_and_metadata_idempotently(
     assert second_report["counts"]["created"] == 0
     assert second_report["counts"]["updated"] == 0
     assert second_report["counts"]["unchanged"] == 3
+    assert_report_has_no_row_pii(first_report)
+    assert_report_has_no_row_pii(second_report)
 
     subscribed = Contact.objects.get(normalized_email="subscribed@example.com")
     subscribed_subscription = Subscription.objects.get(contact=subscribed, audience=audience, client=client_record)
@@ -208,6 +213,41 @@ def test_mailchimp_import_report_can_be_written_to_path(capsys, tmp_path, organi
     assert capsys.readouterr().out == ""
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["counts"]["rows_seen"] == 1
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "subscribed@example.com" not in report_text
+    assert "Synthetic Subscriber" not in report_text
+    assert "192.0.2.10" not in report_text
+    assert "synthetic note" not in report_text
+
+
+def test_mailchimp_import_stdout_report_has_no_row_pii(capsys, tmp_path, organization, audience, client_record):
+    zip_path = synthetic_mailchimp_zip(tmp_path)
+
+    call_command(
+        "import_mailchimp_zip",
+        "--zip",
+        str(zip_path),
+        "--organization",
+        organization.slug,
+        "--audience",
+        audience.slug,
+        "--client",
+        client_record.slug,
+    )
+
+    output = capsys.readouterr().out
+    assert "subscribed@example.com" not in output
+    assert "unsubscribed@example.com" not in output
+    assert "cleaned@example.com" not in output
+    assert "not-an-email" not in output
+    assert "Synthetic Subscriber" not in output
+    assert "Synthetic Unsubscribed" not in output
+    assert "Synthetic Cleaned" not in output
+    assert "192.0.2.10" not in output
+    assert "192.0.2.20" not in output
+    assert "synthetic note" not in output
+    assert "unsubscribe note" not in output
+    assert "subscriber_hash" in output
 
 
 def synthetic_mailchimp_zip(tmp_path, *, subscribed_only=False):
@@ -372,3 +412,23 @@ def csv_text(headers, rows):
     writer.writerow(headers)
     writer.writerows(rows)
     return output.getvalue()
+
+
+def assert_report_has_no_row_pii(report):
+    serialized = json.dumps(report)
+    for value in (
+        "subscribed@example.com",
+        "unsubscribed@example.com",
+        "cleaned@example.com",
+        "not-an-email",
+        "Synthetic Subscriber",
+        "Synthetic Unsubscribed",
+        "Synthetic Cleaned",
+        "192.0.2.10",
+        "192.0.2.20",
+        "192.0.2.30",
+        "synthetic note",
+        "unsubscribe note",
+        "cleaned note",
+    ):
+        assert value not in serialized
