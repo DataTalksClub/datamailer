@@ -41,6 +41,14 @@ Before starting, read:
 5. Remove `needs grooming` and add labels.
 6. Comment with a grooming summary.
 
+## Compatibility Scoping
+
+Datamailer is pre-production, so the default is no backwards compatibility for internal APIs, schemas, commands, fixtures, UI flows, worker contracts, or operational scripts. Groom issues toward the clean current Datamailer design.
+
+Only call for compatibility when there is a real external client or migration requirement. If compatibility is needed, the groomed issue must explicitly identify the client, migration window, required tests, observability, and removal plan.
+
+Client integration requirements are valid product work, but specify them as first-class Datamailer APIs and workflows. Do not accidentally require compatibility shims, aliases, duplicated legacy endpoints, cloned old ASL payloads, or permanent legacy behavior unless that migration path is deliberately accepted in the issue.
+
 ## Groomed Issue Template
 
 ```markdown
