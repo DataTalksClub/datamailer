@@ -4,7 +4,6 @@ from uuid import uuid4
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
-from django.template import Context, Template
 
 from mailing.models import (
     EmailEvent,
@@ -16,6 +15,8 @@ from mailing.models import (
 from mailing.queue_contracts import CONTRACT_VERSION, TRANSACTIONAL_EMAIL_CONTRACT, validate_transactional_email_message
 from mailing.services.api import ApiValidationError, isoformat
 from mailing.services.contacts import is_transactional_email_allowed, normalize_email, upsert_contact
+from mailing.services.transactional_catalog import validate_template_context
+from mailing.services.transactional_rendering import render_template_string
 from mailing.sqs import enqueue_transactional_email
 
 
@@ -41,6 +42,8 @@ def send_transactional_email_for_client(data, authenticated_client):
     existing = find_existing_message(authenticated_client, payload["idempotency_key"])
     if existing is not None:
         return response_payload(TransactionalSendResult(existing, idempotent_replay=True, enqueued=False))
+
+    validate_template_context(template, payload["context"])
 
     with transaction.atomic():
         contact, _ = upsert_contact(payload["email"])
@@ -136,6 +139,7 @@ def get_transactional_template(client, template_key):
         client=client,
         key=template_key,
         is_transactional=True,
+        is_active=True,
     ).first()
     if template is None:
         raise ApiValidationError({"template_key": "not_found"}, status_code=404)
@@ -173,12 +177,6 @@ def create_transactional_message(*, client, contact, template, payload, idempote
         metadata=payload["metadata"],
         last_error=last_error,
     )
-
-
-def render_template_string(value, context):
-    if not value:
-        return ""
-    return Template(value).render(Context(context, autoescape=False))
 
 
 def append_transactional_event(message, event_type, metadata):

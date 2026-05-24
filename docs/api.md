@@ -202,13 +202,14 @@ Request:
 ```json
 {
   "email": "person@example.com",
-  "template_key": "email_verification",
-  "idempotency_key": "client-event-123",
+  "template_key": "email-verification",
+  "idempotency_key": "verify-user-123-email-1",
   "context": {
-    "verification_url": "https://example.com/verify/token"
+    "name": "Person",
+    "verification_url": "https://client.example/verify/placeholder"
   },
   "metadata": {
-    "user_id": "42"
+    "source": "email-verification"
   }
 }
 ```
@@ -221,7 +222,75 @@ Use cases:
 - Course enrollment notification.
 - Payment or account notices.
 
-Transactional sends should be logged and trackable. They should not require marketing subscription, but they must respect hard suppression states.
+Transactional sends should be logged and trackable. They should not require marketing subscription, but they must respect hard suppression states. If the selected template declares required context variables, missing values return a JSON validation error before Datamailer creates contacts, messages, events, or queue payloads.
+
+Template keys are client-scoped and visible to staff in `/operator/templates/`. Operators can inspect each transactional template's required context and placeholder example context there.
+
+Registration/welcome example:
+
+```bash
+curl -sS -X POST "$DATAMAILER_URL/api/v1/transactional/send" \
+  -H "Authorization: Bearer <client-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "person@example.com",
+    "template_key": "registration-welcome",
+    "idempotency_key": "registration-user-123",
+    "context": {"name": "Person", "course_name": "ML Zoomcamp"},
+    "metadata": {"source": "registration"}
+  }'
+```
+
+Password reset example:
+
+```bash
+curl -sS -X POST "$DATAMAILER_URL/api/v1/transactional/send" \
+  -H "Authorization: Bearer <client-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "person@example.com",
+    "template_key": "password-reset",
+    "idempotency_key": "password-reset-user-123-request-456",
+    "context": {"reset_url": "https://client.example/reset/placeholder"},
+    "metadata": {"source": "password-reset"}
+  }'
+```
+
+Email verification lifecycle:
+
+1. The client app creates its own verification URL and sends it through `/api/v1/transactional/send`.
+2. The user completes verification in the client app, not in Datamailer.
+3. The client app marks the Datamailer contact verified with `PATCH /api/v1/contacts/{contact_id}/verification` and the audience/client scope.
+4. Datamailer marketing eligibility uses the verified, subscription, validation, and suppression state.
+
+```python
+import requests
+
+headers = {"Authorization": "Bearer <client-api-key>"}
+
+requests.post(
+    f"{datamailer_url}/api/v1/transactional/send",
+    headers=headers,
+    json={
+        "email": "person@example.com",
+        "template_key": "email-verification",
+        "idempotency_key": "verify-user-123-email-1",
+        "context": {
+            "name": "Person",
+            "verification_url": "https://client.example/verify/placeholder",
+        },
+        "metadata": {"source": "email-verification"},
+    },
+    timeout=10,
+)
+
+requests.patch(
+    f"{datamailer_url}/api/v1/contacts/{contact_id}/verification",
+    headers=headers,
+    json={"audience": "datatalksclub", "client": "dtc-courses", "verified": True},
+    timeout=10,
+)
+```
 
 ## Public Tracking Endpoints
 

@@ -53,6 +53,8 @@ urlpatterns = [
     ),
     path("operator/api-docs/", views.operator_api_docs, name="operator_api_docs"),
     path("operator/api-docs/openapi.json", views.operator_api_docs_json, name="operator_api_docs_json"),
+    path("operator/templates/", views.operator_template_catalog, name="operator_template_catalog"),
+    path("operator/templates/<int:template_id>/", views.operator_template_detail, name="operator_template_detail"),
     path("t/o/<str:tracking_token>.gif", views.tracking_open, name="tracking_open"),
     path("t/c/<str:tracking_token>", views.tracking_click, name="tracking_click"),
     path("unsubscribe/<str:unsubscribe_token>", views.public_unsubscribe, name="public_unsubscribe"),

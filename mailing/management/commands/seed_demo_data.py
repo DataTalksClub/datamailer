@@ -296,25 +296,51 @@ def upsert_templates(clients):
             "dtc-courses",
             "email-verification",
             "Email Verification",
+            "Verify a course account email after the client app creates its verification URL.",
             "Verify your DataTalksClub email",
-            "<p>Hello {{ name }}, confirm your email.</p>",
-            "Hello {{ name }}, confirm your email.",
+            "<p>Hello {{ name }}, confirm your email: <a href=\"{{ verification_url }}\">Verify email</a>.</p>",
+            "Hello {{ name }}, confirm your email: {{ verification_url }}",
+            [
+                {"name": "name", "description": "Recipient display name."},
+                {"name": "verification_url", "description": "Client-generated verification URL."},
+            ],
+            {"name": "Alex", "verification_url": "https://client.example/verify/placeholder"},
         ),
         (
             "dtc-courses",
             "password-reset",
             "Password Reset",
+            "Send a client-generated password reset URL.",
             "Reset your DataTalksClub password",
             "<p>Use this reset link: {{ reset_url }}</p>",
             "Use this reset link: {{ reset_url }}",
+            [{"name": "reset_url", "description": "Client-generated password reset URL."}],
+            {"reset_url": "https://client.example/reset/placeholder"},
+        ),
+        (
+            "dtc-courses",
+            "registration-welcome",
+            "Registration Welcome",
+            "Welcome a learner after registration.",
+            "Welcome to DataTalksClub",
+            "<p>Hello {{ name }}, your {{ course_name }} registration is confirmed.</p>",
+            "Hello {{ name }}, your {{ course_name }} registration is confirmed.",
+            [
+                {"name": "name", "description": "Recipient display name."},
+                {"name": "course_name", "description": "Course or program name."},
+            ],
+            {"name": "Alex", "course_name": "ML Zoomcamp"},
         ),
         (
             "asl-platform",
             "workshop-reminder",
             "Workshop Reminder",
+            "Remind AI Shipping Labs users about an upcoming workshop.",
             "Your AI Shipping Labs workshop starts soon",
             "<p>Your workshop starts at {{ starts_at }}.</p>",
             "Your workshop starts at {{ starts_at }}.",
+            [{"name": "starts_at", "description": "Human-readable workshop start time."}],
+            {"starts_at": "2026-06-01 16:00 UTC"},
         ),
     ]
     return {
@@ -326,10 +352,14 @@ def upsert_templates(clients):
                 "subject": subject,
                 "html_body": html_body,
                 "text_body": text_body,
+                "description": description,
+                "required_context": required_context,
+                "example_context": example_context,
                 "is_transactional": True,
+                "is_active": True,
             },
         )
-        for client_slug, key, name, subject, html_body, text_body in specs
+        for client_slug, key, name, description, subject, html_body, text_body, required_context, example_context in specs
     }
 
 
@@ -552,7 +582,13 @@ def upsert_transactional_messages(clients, contacts, templates, now):
                 "subject": template.subject,
                 "html_body": template.html_body,
                 "text_body": template.text_body,
-                "context": {"name": contact.email.split("@")[0], "reset_url": "https://example.com/reset", "starts_at": "tomorrow"},
+                "context": {
+                    "name": contact.email.split("@")[0],
+                    "verification_url": "https://client.example/verify/placeholder",
+                    "reset_url": "https://client.example/reset/placeholder",
+                    "starts_at": "tomorrow",
+                    "course_name": "ML Zoomcamp",
+                },
                 "metadata": {"seed": "demo"},
                 "ses_message_id": f"demo-transactional-{key}" if status != TransactionalMessageStatus.QUEUED else "",
                 "sent_at": None,

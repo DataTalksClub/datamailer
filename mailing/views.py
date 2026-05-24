@@ -82,6 +82,11 @@ from mailing.services.ses_webhooks import SesWebhookError, SnsSignatureError, in
 from mailing.services.tokens import get_recipient_by_unsubscribe_token
 from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
 from mailing.services.transactional import TransactionalSendRejected, send_transactional_email_for_client
+from mailing.services.transactional_catalog import (
+    catalog_context,
+    filter_transactional_templates,
+    transactional_template_queryset,
+)
 
 
 def health(request):
@@ -118,6 +123,41 @@ def operator_api_docs(request):
 @staff_member_required
 def operator_api_docs_json(request):
     return JsonResponse(build_openapi_spec(request), json_dumps_params={"indent": 2})
+
+
+@staff_member_required
+def operator_template_catalog(request):
+    client_id = request.GET.get("client", "")
+    templates = paginate(
+        request,
+        filter_transactional_templates(transactional_template_queryset(), client_id),
+        per_page=25,
+    )
+    clients = Client.objects.filter(email_templates__is_transactional=True).distinct().order_by(
+        "organization__slug",
+        "slug",
+    )
+    return render(
+        request,
+        "mailing/operator/template_catalog.html",
+        {
+            "templates": templates,
+            "clients": clients,
+            "active_client_id": int(client_id) if client_id.isdigit() else "",
+            "pagination_querystring": pagination_querystring(request),
+        },
+    )
+
+
+@staff_member_required
+def operator_template_detail(request, template_id):
+    template = get_object_or_404(transactional_template_queryset(), pk=template_id)
+    recent_messages = template.transactional_messages.select_related("contact").order_by("-created_at", "-id")[:10]
+    return render(
+        request,
+        "mailing/operator/template_detail.html",
+        catalog_context(template) | {"recent_messages": recent_messages},
+    )
 
 
 @staff_member_required

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}{{ template.key }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ template.name }}</h1>
+      <p>{{ template.client.name }} / <code>{{ template.key }}</code></p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:operator_template_catalog' %}">All templates</a>
+    </div>
+  </div>
+
+  <section aria-labelledby="template-state">
+    <h2 id="template-state">State</h2>
+    <div class="meta-grid">
+      <div class="meta-item"><span class="meta-label">Client</span>{{ template.client.slug }}</div>
+      <div class="meta-item"><span class="meta-label">Type</span>{% if template.is_transactional %}Transactional{% else %}Campaign only{% endif %}</div>
+      <div class="meta-item"><span class="meta-label">Active</span>{{ template.is_active|yesno:"Yes,No" }}</div>
+      <div class="meta-item"><span class="meta-label">Updated</span>{{ template.updated_at|date:"Y-m-d H:i" }}</div>
+    </div>
+    {% if template.description %}
+      <p>{{ template.description }}</p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="context">
+    <h2 id="context">Context Contract</h2>
+    {% if requirements %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for requirement in requirements %}
+              <tr>
+                <td><code>{{ requirement.name }}</code></td>
+                <td>{{ requirement.description|default:"Required by this template." }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">No required context variables configured.</div>
+    {% endif %}
+
+    <h3>Example context</h3>
+    {% if example_context %}
+      <pre><code>{{ example_context }}</code></pre>
+    {% else %}
+      <div class="empty-state">No example context configured.</div>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="preview">
+    <h2 id="preview">Safe Preview</h2>
+    {% if preview.subject %}
+      <div class="meta-item"><span class="meta-label">Subject</span>{{ preview.subject }}</div>
+    {% endif %}
+    {% if preview.text_body %}
+      <h3>Text</h3>
+      <pre><code>{{ preview.text_body }}</code></pre>
+    {% endif %}
+    {% if preview.html_body %}
+      <h3>HTML</h3>
+      <pre><code>{{ preview.html_body }}</code></pre>
+    {% endif %}
+    {% if not preview %}
+      <div class="empty-state">No previewable body content.</div>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="recent-messages">
+    <h2 id="recent-messages">Recent Messages</h2>
+    {% if recent_messages %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Last error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for message in recent_messages %}
+              <tr>
+                <td>{{ message.email }}</td>
+                <td><span class="badge">{{ message.status }}</span></td>
+                <td class="nowrap">{{ message.created_at|date:"Y-m-d H:i" }}</td>
+                <td>{{ message.last_error }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">No recent transactional messages.</div>
+    {% endif %}
+  </section>
+{% endblock %}
