@@ -165,6 +165,33 @@
         margin: 16px 0;
       }
 
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        align-items: end;
+        margin: 16px 0;
+      }
+
+      .checkbox-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 6px 12px;
+      }
+
+      .checkbox-list label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--ink);
+        font-weight: 400;
+      }
+
+      .checkbox-list input {
+        width: auto;
+        min-height: 0;
+      }
+
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -353,6 +380,7 @@
       <nav aria-label="Main">
         <a class="brand" href="{% url 'mailing:dashboard' %}">Datamailer</a>
         <a href="{% url 'mailing:operator_campaign_list' %}">Campaigns</a>
+        <a href="{% url 'mailing:operator_audience_list' %}">Audiences</a>
         <a href="{% url 'mailing:operator_contact_search' %}">Contacts</a>
         <a href="/admin/">Admin</a>
       </nav>

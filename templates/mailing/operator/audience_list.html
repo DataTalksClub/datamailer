@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Audiences | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Audiences</h1>
+      <p>Read-only audience membership and history entry points.</p>
+    </div>
+    <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Contact explorer</a>
+  </div>
+
+  {% if audiences.object_list %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Audience</th>
+            <th scope="col">Organization</th>
+            <th scope="col">Members</th>
+            <th scope="col">Subscriptions</th>
+            <th scope="col">Campaigns</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for audience in audiences %}
+            <tr>
+              <td><a href="{% url 'mailing:operator_audience_detail' audience.id %}">{{ audience.name }}</a></td>
+              <td>{{ audience.organization.name }}</td>
+              <td>{{ audience.contact_count }}</td>
+              <td>{{ audience.subscription_count }}</td>
+              <td>{{ audience.campaign_count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "mailing/operator/_pagination.html" with page_obj=audiences querystring=pagination_querystring %}
+  {% else %}
+    <div class="empty-state">No audiences found.</div>
+  {% endif %}
+{% endblock %}

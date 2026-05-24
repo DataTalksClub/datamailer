@@ -1,54 +1,179 @@
 {% extends "base.html" %}
 
-{% block title %}Contacts | Datamailer{% endblock %}
+{% block title %}Contact Explorer | Datamailer{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Contacts</h1>
-      <p>Search by email or normalized email.</p>
+      <h1>Contact Explorer</h1>
+      <p>Filter contacts by audience, subscription, validation, suppression, campaign state, and engagement.</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">Campaigns</a>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">Audiences</a>
+      <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">Campaigns</a>
+    </div>
   </div>
 
-  <form class="toolbar" method="get">
-    <div>
-      <label for="q">Email</label>
-      <input id="q" name="q" type="search" value="{{ query }}" autocomplete="email">
+  <form method="get">
+    <div class="filter-grid">
+      <div>
+        <label for="q">Email</label>
+        <input id="q" name="q" type="search" value="{{ filters.query }}" autocomplete="email">
+      </div>
+      <div>
+        <label for="audience">Audience</label>
+        <select id="audience" name="audience">
+          <option value="">Any audience</option>
+          {% for audience in options.audiences %}
+            <option value="{{ audience.id }}"{% if audience.id == filters.audience_id %} selected{% endif %}>{{ audience.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="client">Client</label>
+        <select id="client" name="client">
+          <option value="">Any client</option>
+          {% for client in options.clients %}
+            <option value="{{ client.id }}"{% if client.id == filters.client_id %} selected{% endif %}>{{ client.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="subscription_status">Subscription</label>
+        <select id="subscription_status" name="subscription_status">
+          <option value="">Any subscription</option>
+          {% for choice in options.subscription_statuses %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.subscription_status %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="verified">Verified</label>
+        <select id="verified" name="verified">
+          <option value="">Any verified state</option>
+          {% for choice in options.verified_states %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.verified_state %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="email_validation_status">Validation</label>
+        <select id="email_validation_status" name="email_validation_status">
+          <option value="">Any validation state</option>
+          {% for choice in options.email_validation_statuses %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.email_validation_status %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="suppression">Suppression</label>
+        <select id="suppression" name="suppression">
+          <option value="">Any suppression</option>
+          {% for choice in options.suppression_states %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.suppression_state %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="campaign_status">Campaign status</label>
+        <select id="campaign_status" name="campaign_status">
+          <option value="">Any campaign status</option>
+          {% for choice in options.campaign_statuses %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.campaign_status %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="skip_reason">Skip reason</label>
+        <select id="skip_reason" name="skip_reason">
+          <option value="">Any skip reason</option>
+          {% for choice in options.skip_reasons %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.skip_reason %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="engagement">Engagement</label>
+        <select id="engagement" name="engagement">
+          <option value="">Any engagement</option>
+          {% for choice in options.engagement_states %}
+            <option value="{{ choice.value }}"{% if choice.value == filters.engagement %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="inactive_since">Inactive since</label>
+        <input id="inactive_since" name="inactive_since" type="date" value="{{ filters.inactive_since|date:'Y-m-d' }}">
+      </div>
     </div>
-    <button type="submit">Search</button>
+
+    <h2>Tags</h2>
+    <div class="filter-grid">
+      <div>
+        <label>Include tags</label>
+        <div class="checkbox-list">
+          {% for tag in options.tags %}
+            <label><input type="checkbox" name="include_tags" value="{{ tag.slug }}"{% if tag.slug in filters.include_tags %} checked{% endif %}>{{ tag.audience.slug }}/{{ tag.slug }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <label>Exclude tags</label>
+        <div class="checkbox-list">
+          {% for tag in options.tags %}
+            <label><input type="checkbox" name="exclude_tags" value="{{ tag.slug }}"{% if tag.slug in filters.exclude_tags %} checked{% endif %}>{{ tag.audience.slug }}/{{ tag.slug }}</label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button type="submit">Apply filters</button>
+      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Clear</a>
+    </div>
   </form>
 
   {% if contacts is not None %}
-    {% if contacts.object_list %}
+    {% if contact_rows %}
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th scope="col">Email</th>
-              <th scope="col">Verified</th>
               <th scope="col">Validation</th>
-              <th scope="col">Global unsubscribe</th>
-              <th scope="col">Hard bounce</th>
-              <th scope="col">Complaint</th>
-              <th scope="col">History</th>
+              <th scope="col">Suppression</th>
+              <th scope="col">Subscriptions</th>
+              <th scope="col">Tags</th>
+              <th scope="col">Last sent</th>
+              <th scope="col">Last opened</th>
+              <th scope="col">Last clicked</th>
+              <th scope="col">Recent issue</th>
             </tr>
           </thead>
           <tbody>
-            {% for contact in contacts %}
+            {% for row in contact_rows %}
               <tr>
-                <td><a href="{% url 'mailing:operator_contact_detail' contact.id %}">{{ contact.email }}</a></td>
-                <td>{{ contact.verified_at|date:"Y-m-d H:i"|default:"-" }}</td>
                 <td>
-                  <span class="badge">{{ contact.get_email_validation_status_display }}</span>
-                  {% if contact.email_validation_reason %}
-                    <span class="muted">{{ contact.email_validation_reason }}</span>
-                  {% endif %}
+                  <a href="{% url 'mailing:operator_contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
+                  <div class="muted">{{ row.contact.normalized_email }}</div>
+                  <div>{% if row.contact.verified_at %}<span class="badge success">Verified</span>{% else %}<span class="badge">Unverified</span>{% endif %}</div>
                 </td>
-                <td>{{ contact.global_unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td>{{ contact.hard_bounced_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td>{{ contact.complained_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td>{{ contact.campaign_recipient_count }} campaigns / {{ contact.transactional_message_count }} transactional</td>
+                <td>
+                  <span class="badge">{{ row.contact.get_email_validation_status_display }}</span>
+                  {% if row.contact.email_validation_reason %}<div class="muted truncate">{{ row.contact.email_validation_reason }}</div>{% endif %}
+                </td>
+                <td>
+                  {% if row.contact.global_unsubscribed_at %}<span class="badge danger">Global unsubscribe</span>{% endif %}
+                  {% if row.contact.hard_bounced_at %}<span class="badge danger">Hard bounce</span>{% endif %}
+                  {% if row.contact.complained_at %}<span class="badge danger">Complaint</span>{% endif %}
+                  {% if not row.contact.global_unsubscribed_at and not row.contact.hard_bounced_at and not row.contact.complained_at %}<span class="muted">-</span>{% endif %}
+                </td>
+                <td class="truncate">{{ row.subscription_summary }}</td>
+                <td class="truncate">{{ row.tag_summary }}</td>
+                <td class="nowrap">{{ row.last_sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ row.last_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ row.last_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="truncate">{{ row.recent_issue|default:"-" }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -56,7 +181,9 @@
       </div>
       {% include "mailing/operator/_pagination.html" with page_obj=contacts querystring=pagination_querystring %}
     {% else %}
-      <div class="empty-state">No contacts match this search.</div>
+      <div class="empty-state">No contacts match these filters.</div>
     {% endif %}
+  {% else %}
+    <div class="empty-state">Apply a filter to search contacts.</div>
   {% endif %}
 {% endblock %}

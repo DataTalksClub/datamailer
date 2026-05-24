@@ -24,6 +24,38 @@
     </div>
   </section>
 
+  <section aria-labelledby="eligibility">
+    <h2 id="eligibility">Send Eligibility</h2>
+    {% if eligibility %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Scope</th>
+              <th scope="col">Marketing</th>
+              <th scope="col">Marketing reasons</th>
+              <th scope="col">Transactional</th>
+              <th scope="col">Transactional reasons</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in eligibility %}
+              <tr>
+                <td>{{ item.scope }}</td>
+                <td>{% if item.can_send_marketing %}<span class="badge success">Can send</span>{% else %}<span class="badge danger">Blocked</span>{% endif %}</td>
+                <td>{{ item.marketing_reasons|join:", " }}</td>
+                <td>{% if item.can_send_transactional %}<span class="badge success">Can send</span>{% else %}<span class="badge danger">Blocked</span>{% endif %}</td>
+                <td>{{ item.transactional_reasons|join:", " }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">No eligibility scopes found.</div>
+    {% endif %}
+  </section>
+
   <section aria-labelledby="subscriptions">
     <h2 id="subscriptions">Subscriptions</h2>
     {% if subscriptions %}
@@ -82,6 +114,9 @@
               <th scope="col">Delivered</th>
               <th scope="col">Opened</th>
               <th scope="col">Clicked</th>
+              <th scope="col">Issue</th>
+              <th scope="col">SES message</th>
+              <th scope="col">Counts</th>
               <th scope="col">Last error</th>
             </tr>
           </thead>
@@ -90,12 +125,16 @@
               <tr>
                 <td class="truncate">
                   <a href="{% url 'mailing:operator_campaign_detail' recipient.campaign_id %}#recipient-{{ recipient.id }}">{{ recipient.campaign.subject }}</a>
+                  <div class="muted">{{ recipient.campaign.client.name }} / {{ recipient.campaign.audience.name }}</div>
                 </td>
                 <td><span class="badge">{{ recipient.get_status_display }}</span></td>
                 <td>{{ recipient.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
                 <td>{{ recipient.delivered_at|date:"Y-m-d H:i"|default:"-" }}</td>
                 <td>{{ recipient.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
                 <td>{{ recipient.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ recipient.get_skip_reason_display|default:"-" }}</td>
+                <td class="truncate">{{ recipient.ses_message_id|default:"-" }}</td>
+                <td class="nowrap">{{ recipient.open_count }} opens / {{ recipient.click_count }} clicks</td>
                 <td class="truncate">{{ recipient.last_error|default:"-" }}</td>
               </tr>
             {% endfor %}
@@ -121,11 +160,18 @@
               <th scope="col">Subject</th>
               <th scope="col">Created</th>
               <th scope="col">Sent</th>
+              <th scope="col">Delivered</th>
+              <th scope="col">Opened</th>
+              <th scope="col">Clicked</th>
+              <th scope="col">Counts</th>
+              <th scope="col">SES message</th>
+              <th scope="col">Metadata</th>
               <th scope="col">Last error</th>
             </tr>
           </thead>
           <tbody>
-            {% for message in transactional_history %}
+            {% for row in transactional_rows %}
+              {% with message=row.message %}
               <tr>
                 <td>{{ message.template_key }}</td>
                 <td>{{ message.client.name }}</td>
@@ -133,8 +179,15 @@
                 <td class="truncate">{{ message.subject }}</td>
                 <td>{{ message.created_at|date:"Y-m-d H:i" }}</td>
                 <td>{{ message.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ message.delivered_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ message.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ message.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ message.open_count }} opens / {{ message.click_count }} clicks</td>
+                <td class="truncate">{{ message.ses_message_id|default:"-" }}</td>
+                <td class="truncate">{{ row.metadata_summary|default:"-" }}</td>
                 <td class="truncate">{{ message.last_error|default:"-" }}</td>
               </tr>
+              {% endwith %}
             {% endfor %}
           </tbody>
         </table>
