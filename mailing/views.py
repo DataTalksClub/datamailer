@@ -13,6 +13,7 @@ from mailing.services.api import (
     upsert_contact_for_client,
 )
 from mailing.services.auth import authenticate_bearer_token
+from mailing.services.transactional import TransactionalSendRejected, send_transactional_email_for_client
 
 
 def health(request):
@@ -121,3 +122,20 @@ def api_unsubscribe(request):
         return validation_error_response(exc)
 
     return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+@require_POST
+def api_transactional_send(request):
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = send_transactional_email_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+    except TransactionalSendRejected as exc:
+        return JsonResponse(exc.payload, status=exc.status_code)
+
+    return JsonResponse(payload, status=202)

@@ -7,9 +7,12 @@ from mailing.models import (
     Client,
     Contact,
     ContactTag,
+    EmailEvent,
+    EmailTemplate,
     Organization,
     Subscription,
     Tag,
+    TransactionalMessage,
 )
 
 
@@ -169,3 +172,57 @@ class CampaignRecipientAdmin(admin.ModelAdmin):
         "ses_message_id",
     )
     autocomplete_fields = ("campaign", "contact")
+
+
+@admin.register(EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at", "updated_at")
+    list_display = ("key", "name", "client", "is_transactional", "updated_at")
+    list_filter = ("client", "is_transactional")
+    search_fields = ("key", "name", "subject", "client__name", "client__slug")
+    autocomplete_fields = ("client",)
+
+
+class EmailEventInline(admin.TabularInline):
+    model = EmailEvent
+    extra = 0
+    fields = ("event_type", "created_at", "metadata")
+    readonly_fields = ("event_type", "created_at", "metadata")
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(TransactionalMessage)
+class TransactionalMessageAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at", "updated_at")
+    list_display = ("email", "template_key", "client", "status", "idempotency_key", "created_at")
+    list_filter = ("status", "client", "template")
+    search_fields = (
+        "email",
+        "contact__email",
+        "contact__normalized_email",
+        "template_key",
+        "idempotency_key",
+        "ses_message_id",
+    )
+    autocomplete_fields = ("client", "contact", "template")
+    inlines = (EmailEventInline,)
+
+
+@admin.register(EmailEvent)
+class EmailEventAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at",)
+    list_display = ("event_type", "client", "contact", "transactional_message", "campaign", "created_at")
+    list_filter = ("event_type", "client")
+    search_fields = (
+        "contact__email",
+        "contact__normalized_email",
+        "client__name",
+        "client__slug",
+        "transactional_message__email",
+        "transactional_message__template_key",
+        "campaign__subject",
+    )
+    autocomplete_fields = ("campaign", "campaign_recipient", "transactional_message", "contact", "client", "audience")
