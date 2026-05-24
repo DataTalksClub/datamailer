@@ -1,10 +1,13 @@
 import json
 
+from django.contrib.admin.views.decorators import staff_member_required
+from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from mailing.models import Campaign
 from mailing.services.api import (
     ApiValidationError,
     get_contact_status_for_client,
@@ -13,6 +16,19 @@ from mailing.services.api import (
     upsert_contact_for_client,
 )
 from mailing.services.auth import authenticate_bearer_token
+from mailing.services.operator_ui import (
+    RECIPIENT_FILTER_LABELS,
+    campaign_queryset,
+    campaign_recipient_queryset,
+    campaign_stats,
+    contact_campaign_history,
+    contact_detail_queryset,
+    contact_event_timeline,
+    contact_search_queryset,
+    contact_transactional_history,
+    event_context,
+    metadata_summary,
+)
 from mailing.services.ses_webhooks import SesWebhookError, SnsSignatureError, ingest_sns_webhook
 from mailing.services.tokens import get_recipient_by_unsubscribe_token
 from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
@@ -25,6 +41,86 @@ def health(request):
 
 def dashboard(request):
     return render(request, "mailing/dashboard.html")
+
+
+def paginate(request, queryset, *, per_page):
+    paginator = Paginator(queryset, per_page)
+    return paginator.get_page(request.GET.get("page"))
+
+
+def pagination_querystring(request):
+    params = request.GET.copy()
+    params.pop("page", None)
+    return params.urlencode()
+
+
+@staff_member_required
+def operator_campaign_list(request):
+    campaigns = paginate(request, campaign_queryset(), per_page=25)
+    return render(
+        request,
+        "mailing/operator/campaign_list.html",
+        {"campaigns": campaigns, "pagination_querystring": pagination_querystring(request)},
+    )
+
+
+@staff_member_required
+def operator_campaign_detail(request, campaign_id):
+    campaign = get_object_or_404(
+        Campaign.objects.select_related("client", "audience", "audience__organization"),
+        pk=campaign_id,
+    )
+    active_filter = request.GET.get("filter", "")
+    recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
+    return render(
+        request,
+        "mailing/operator/campaign_detail.html",
+        {
+            "campaign": campaign,
+            "stats": campaign_stats(campaign),
+            "recipients": recipients,
+            "recipient_filter_labels": RECIPIENT_FILTER_LABELS,
+            "active_filter": active_filter if active_filter in RECIPIENT_FILTER_LABELS else "",
+            "pagination_querystring": pagination_querystring(request),
+        },
+    )
+
+
+@staff_member_required
+def operator_contact_search(request):
+    query = request.GET.get("q", "")
+    contacts = paginate(request, contact_search_queryset(query), per_page=25) if query.strip() else None
+    return render(
+        request,
+        "mailing/operator/contact_search.html",
+        {"query": query, "contacts": contacts, "pagination_querystring": pagination_querystring(request)},
+    )
+
+
+@staff_member_required
+def operator_contact_detail(request, contact_id):
+    contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+    events = paginate(request, contact_event_timeline(contact), per_page=50)
+    event_rows = [
+        {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
+        for event in events.object_list
+    ]
+    campaign_history = paginate(request, contact_campaign_history(contact), per_page=25)
+    transactional_history = paginate(request, contact_transactional_history(contact), per_page=25)
+    return render(
+        request,
+        "mailing/operator/contact_detail.html",
+        {
+            "contact": contact,
+            "subscriptions": contact.subscriptions.all(),
+            "contact_tags": contact.contact_tags.all(),
+            "campaign_history": campaign_history,
+            "transactional_history": transactional_history,
+            "events": events,
+            "event_rows": event_rows,
+            "pagination_querystring": pagination_querystring(request),
+        },
+    )
 
 
 def transparent_gif_response(*, status=200):

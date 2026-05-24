@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}{{ contact.email }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ contact.email }}</h1>
+      <p>{{ contact.normalized_email }}</p>
+    </div>
+    <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}?q={{ contact.normalized_email }}">Back to search</a>
+  </div>
+
+  <section aria-labelledby="contact-state">
+    <h2 id="contact-state">State</h2>
+    <div class="meta-grid">
+      <div class="meta-item"><span class="meta-label">Verified</span>{{ contact.verified_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Global unsubscribe</span>{{ contact.global_unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Hard bounce</span>{{ contact.hard_bounced_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Complaint</span>{{ contact.complained_at|date:"Y-m-d H:i"|default:"-" }}</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="subscriptions">
+    <h2 id="subscriptions">Subscriptions</h2>
+    {% if subscriptions %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Audience</th>
+              <th scope="col">Client</th>
+              <th scope="col">Status</th>
+              <th scope="col">Verified</th>
+              <th scope="col">Unsubscribed</th>
+              <th scope="col">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for subscription in subscriptions %}
+              <tr>
+                <td>{{ subscription.audience.name }}</td>
+                <td>{{ subscription.client.name|default:"Audience-wide" }}</td>
+                <td><span class="badge">{{ subscription.get_status_display }}</span></td>
+                <td>{{ subscription.verified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ subscription.unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ subscription.unsubscribe_reason|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">No subscriptions found.</div>
+    {% endif %}
+
+    <h3>Tags</h3>
+    {% if contact_tags %}
+      <p>
+        {% for membership in contact_tags %}
+          <span class="badge">{{ membership.tag.name }}</span>
+        {% endfor %}
+      </p>
+    {% else %}
+      <p class="muted">No tags found.</p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="campaign-history">
+    <h2 id="campaign-history">Campaign History</h2>
+    {% if campaign_history.object_list %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Campaign</th>
+              <th scope="col">Status</th>
+              <th scope="col">Sent</th>
+              <th scope="col">Delivered</th>
+              <th scope="col">Opened</th>
+              <th scope="col">Clicked</th>
+              <th scope="col">Last error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for recipient in campaign_history %}
+              <tr>
+                <td class="truncate">
+                  <a href="{% url 'mailing:operator_campaign_detail' recipient.campaign_id %}#recipient-{{ recipient.id }}">{{ recipient.campaign.subject }}</a>
+                </td>
+                <td><span class="badge">{{ recipient.get_status_display }}</span></td>
+                <td>{{ recipient.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ recipient.delivered_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ recipient.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ recipient.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="truncate">{{ recipient.last_error|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=campaign_history querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No campaign recipient history found.</div>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="transactional-history">
+    <h2 id="transactional-history">Transactional Messages</h2>
+    {% if transactional_history.object_list %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Template</th>
+              <th scope="col">Client</th>
+              <th scope="col">Status</th>
+              <th scope="col">Subject</th>
+              <th scope="col">Created</th>
+              <th scope="col">Sent</th>
+              <th scope="col">Last error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for message in transactional_history %}
+              <tr>
+                <td>{{ message.template_key }}</td>
+                <td>{{ message.client.name }}</td>
+                <td><span class="badge">{{ message.get_status_display }}</span></td>
+                <td class="truncate">{{ message.subject }}</td>
+                <td>{{ message.created_at|date:"Y-m-d H:i" }}</td>
+                <td>{{ message.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="truncate">{{ message.last_error|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=transactional_history querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No transactional messages found.</div>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="event-timeline">
+    <h2 id="event-timeline">Event Timeline</h2>
+    {% if event_rows %}
+      <div class="timeline">
+        {% for row in event_rows %}
+          <article class="timeline-item">
+            <strong>{{ row.event.get_event_type_display }}</strong>
+            <span class="muted">{{ row.event.created_at|date:"Y-m-d H:i:s" }}</span>
+            <div>{{ row.context }}</div>
+            {% if row.event.client or row.event.audience %}
+              <div class="muted">{{ row.event.client.name|default:"-" }} / {{ row.event.audience.name|default:"-" }}</div>
+            {% endif %}
+            {% if row.event.url %}
+              <div class="truncate"><a href="{{ row.event.url }}">{{ row.event.url }}</a></div>
+            {% endif %}
+            {% if row.metadata_summary %}
+              <div class="muted truncate">{{ row.metadata_summary }}</div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=events querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No email events found.</div>
+    {% endif %}
+  </section>
+{% endblock %}

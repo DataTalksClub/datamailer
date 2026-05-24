@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}{{ campaign.subject }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ campaign.subject }}</h1>
+      <p>{{ campaign.client.name }} / {{ campaign.audience.name }}</p>
+    </div>
+    <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">All campaigns</a>
+  </div>
+
+  <section aria-labelledby="campaign-summary">
+    <h2 id="campaign-summary">Summary</h2>
+    <div class="meta-grid">
+      <div class="meta-item"><span class="meta-label">Status</span><span class="badge">{{ campaign.get_status_display }}</span></div>
+      <div class="meta-item"><span class="meta-label">Client</span>{{ campaign.client.name }}</div>
+      <div class="meta-item"><span class="meta-label">Audience</span>{{ campaign.audience.name }}</div>
+      <div class="meta-item"><span class="meta-label">Scheduled</span>{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Sent</span>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="campaign-stats">
+    <h2 id="campaign-stats">Stats</h2>
+    <div class="stats-grid">
+      {% for stat in stats %}
+        <div class="stat">
+          <span class="stat-label">{{ stat.label }}</span>
+          <span class="stat-value">{{ stat.value }}</span>
+          {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="campaign-recipients">
+    <h2 id="campaign-recipients">Recipients</h2>
+    <form class="toolbar" method="get">
+      <div>
+        <label for="filter">Filter</label>
+        <select id="filter" name="filter">
+          <option value="">All recipients</option>
+          {% for key, label in recipient_filter_labels.items %}
+            <option value="{{ key }}"{% if key == active_filter %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Apply</button>
+      {% if active_filter %}
+        <a class="button secondary" href="{% url 'mailing:operator_campaign_detail' campaign.id %}">Clear</a>
+      {% endif %}
+    </form>
+
+    {% if recipients.object_list %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Email</th>
+              <th scope="col">Status</th>
+              <th scope="col">Skip reason</th>
+              <th scope="col">Sent</th>
+              <th scope="col">Delivered</th>
+              <th scope="col">Opened</th>
+              <th scope="col">Clicked</th>
+              <th scope="col">Counts</th>
+              <th scope="col">SES message</th>
+              <th scope="col">Last error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for recipient in recipients %}
+              <tr id="recipient-{{ recipient.id }}">
+                <td class="truncate">
+                  <a href="{% url 'mailing:operator_contact_detail' recipient.contact_id %}">{{ recipient.email }}</a>
+                </td>
+                <td><span class="badge">{{ recipient.get_status_display }}</span></td>
+                <td>{{ recipient.get_skip_reason_display|default:"-" }}</td>
+                <td class="nowrap">{{ recipient.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ recipient.delivered_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ recipient.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ recipient.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="nowrap">{{ recipient.open_count }} opens / {{ recipient.click_count }} clicks</td>
+                <td class="truncate">{{ recipient.ses_message_id|default:"-" }}</td>
+                <td class="truncate">{{ recipient.last_error|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "mailing/operator/_pagination.html" with page_obj=recipients querystring=pagination_querystring %}
+    {% else %}
+      <div class="empty-state">No recipients match this filter.</div>
+    {% endif %}
+  </section>
+{% endblock %}
