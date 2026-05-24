@@ -67,7 +67,7 @@ Use separate queues and Lambda workers for operational isolation:
 transactional-email -> transactional sender Lambda
 campaign-email      -> campaign sender Lambda
 ses-webhooks        -> webhook processor Lambda
-event-ingest        -> tracking/event processor Lambda, optional
+email-events        -> tracking/event processor Lambda, optional
 ```
 
 This is acceptable from a cost perspective.
