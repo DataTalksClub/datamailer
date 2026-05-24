@@ -9,7 +9,16 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
-from mailing.models import Audience, Client, Contact, ContactTag, Subscription, SubscriptionStatus, Tag
+from mailing.models import (
+    Audience,
+    Client,
+    Contact,
+    ContactTag,
+    EmailValidationStatus,
+    Subscription,
+    SubscriptionStatus,
+    Tag,
+)
 from mailing.services.contacts import normalize_email
 
 REQUIRED_COLUMNS = ("email",)
@@ -18,6 +27,8 @@ SUPPORTED_COLUMNS = (
     "tags",
     "verified",
     "subscription_status",
+    "email_validation_status",
+    "email_validation_reason",
     "unsubscribed",
     "global_unsubscribed",
     "hard_bounced",
@@ -34,6 +45,7 @@ SUBSCRIPTION_VALUES = {
     SubscriptionStatus.SUBSCRIBED,
     SubscriptionStatus.UNSUBSCRIBED,
 }
+EMAIL_VALIDATION_VALUES = {choice.value for choice in EmailValidationStatus}
 
 
 @dataclass(frozen=True)
@@ -51,6 +63,8 @@ class ParsedRow:
     tags: list[str]
     verified: bool
     subscription_status: str
+    email_validation_status: str | None
+    email_validation_reason: str
     unsubscribed: bool
     global_unsubscribed: bool
     hard_bounced: bool
@@ -90,6 +104,7 @@ class ImportReport:
             "tags_created": 0,
             "tag_memberships_created": 0,
             "verified_applied": 0,
+            "email_validation_applied": 0,
             "unsubscribed_applied": 0,
             "global_unsubscribed_applied": 0,
             "hard_bounced_applied": 0,
@@ -176,6 +191,7 @@ def import_audience_csv(csv_path, target: ImportTarget, *, dry_run=False):
                         "action": "would_import",
                         "tags": [slugify(tag) for tag in parsed.tags],
                         "subscription_status": parsed.subscription_status or SubscriptionStatus.PENDING,
+                        "email_validation_status": parsed.email_validation_status or EmailValidationStatus.UNKNOWN,
                     }
                 )
                 continue
@@ -251,6 +267,16 @@ def parse_row(row_number, raw_row):
     if subscription_status not in SUBSCRIPTION_VALUES:
         errors.append("subscription_status must be blank, pending, subscribed, or unsubscribed")
 
+    has_email_validation_columns = "email_validation_status" in raw_row or "email_validation_reason" in raw_row
+    email_validation_status = None
+    if has_email_validation_columns:
+        email_validation_status = clean(raw_row.get("email_validation_status")).casefold() or EmailValidationStatus.UNKNOWN
+        if email_validation_status not in EMAIL_VALIDATION_VALUES:
+            errors.append(
+                "email_validation_status must be blank, unknown, valid, invalid_syntax, no_mx, "
+                "disposable, risky, manually_invalid, or externally_validated"
+            )
+
     tags = parse_tags(raw_row.get("tags"), errors)
     return (
         ParsedRow(
@@ -260,6 +286,8 @@ def parse_row(row_number, raw_row):
             tags=tags,
             verified=verified,
             subscription_status=subscription_status,
+            email_validation_status=email_validation_status,
+            email_validation_reason=clean(raw_row.get("email_validation_reason")),
             unsubscribed=unsubscribed,
             global_unsubscribed=global_unsubscribed,
             hard_bounced=hard_bounced,
@@ -323,6 +351,7 @@ def apply_row(parsed: ParsedRow, audience, client):
         "action": "unchanged",
         "tags": [],
         "subscription_status": None,
+        "email_validation_status": parsed.email_validation_status or contact.email_validation_status,
         "preserved_existing_opt_out": False,
     }
 
@@ -347,6 +376,22 @@ def apply_row(parsed: ParsedRow, audience, client):
             changed = True
     if parsed.suppressed and "global_unsubscribed_at" in contact_updates:
         counts["suppressed_applied"] += 1
+
+    if parsed.email_validation_status is not None and (
+        parsed.email_validation_status != contact.email_validation_status
+        or parsed.email_validation_reason != contact.email_validation_reason
+    ):
+        contact.email_validation_status = parsed.email_validation_status
+        contact.email_validation_reason = parsed.email_validation_reason
+        contact_updates.extend(["email_validation_status", "email_validation_reason"])
+        if parsed.email_validation_status != EmailValidationStatus.UNKNOWN:
+            contact.email_validated_at = now
+            contact_updates.append("email_validated_at")
+        elif contact.email_validated_at is not None:
+            contact.email_validated_at = None
+            contact_updates.append("email_validated_at")
+        counts["email_validation_applied"] += 1
+        changed = True
 
     if contact_updates or (not contact_created and contact.email == parsed.email and changed):
         contact_updates.extend(["email", "updated_at"])

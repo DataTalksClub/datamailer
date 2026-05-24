@@ -27,6 +27,7 @@
             <tr>
               <th scope="col">Email</th>
               <th scope="col">Verified</th>
+              <th scope="col">Validation</th>
               <th scope="col">Global unsubscribe</th>
               <th scope="col">Hard bounce</th>
               <th scope="col">Complaint</th>
@@ -38,6 +39,12 @@
               <tr>
                 <td><a href="{% url 'mailing:operator_contact_detail' contact.id %}">{{ contact.email }}</a></td>
                 <td>{{ contact.verified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>
+                  <span class="badge">{{ contact.get_email_validation_status_display }}</span>
+                  {% if contact.email_validation_reason %}
+                    <span class="muted">{{ contact.email_validation_reason }}</span>
+                  {% endif %}
+                </td>
                 <td>{{ contact.global_unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</td>
                 <td>{{ contact.hard_bounced_at|date:"Y-m-d H:i"|default:"-" }}</td>
                 <td>{{ contact.complained_at|date:"Y-m-d H:i"|default:"-" }}</td>

@@ -4,7 +4,17 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from mailing.admin import ContactAdmin, SubscriptionAdmin, TagAdmin
-from mailing.models import Audience, Client, Contact, ContactTag, Organization, Subscription, SubscriptionStatus, Tag
+from mailing.models import (
+    Audience,
+    Client,
+    Contact,
+    ContactTag,
+    EmailValidationStatus,
+    Organization,
+    Subscription,
+    SubscriptionStatus,
+    Tag,
+)
 from mailing.services import (
     assign_tag,
     get_contact_suppression_state,
@@ -54,6 +64,9 @@ def test_contact_save_normalizes_email_before_persistence():
 
     assert contact.email == "Person@Example.COM"
     assert contact.normalized_email == "person@example.com"
+    assert contact.verified_at is None
+    assert contact.email_validation_status == EmailValidationStatus.UNKNOWN
+    assert contact.email_validated_at is None
 
 
 def test_normalized_email_is_unique():
@@ -216,6 +229,29 @@ def test_hard_bounce_or_complaint_blocks_transactional_eligibility(audience, cli
     assert is_marketing_email_allowed(allowed, audience, client) is True
 
 
+@pytest.mark.parametrize(
+    "validation_status",
+    [
+        EmailValidationStatus.INVALID_SYNTAX,
+        EmailValidationStatus.NO_MX,
+        EmailValidationStatus.DISPOSABLE,
+        EmailValidationStatus.RISKY,
+        EmailValidationStatus.MANUALLY_INVALID,
+    ],
+)
+def test_invalid_email_validation_blocks_marketing_eligibility(audience, client, validation_status):
+    contact = Contact.objects.create(
+        email="person@example.com",
+        verified_at=timezone.now(),
+        email_validation_status=validation_status,
+        email_validated_at=timezone.now(),
+    )
+    subscribe_contact(contact, audience, client)
+
+    assert is_marketing_email_allowed(contact, audience, client) is False
+    assert is_transactional_email_allowed(contact) is True
+
+
 def test_admin_registers_search_and_filters_for_core_records():
     contact_admin = admin.site._registry[Contact]
     subscription_admin = admin.site._registry[Subscription]
@@ -224,6 +260,7 @@ def test_admin_registers_search_and_filters_for_core_records():
     assert isinstance(contact_admin, ContactAdmin)
     assert "normalized_email" in contact_admin.search_fields
     assert "subscriptions__audience__slug" in contact_admin.search_fields
+    assert "email_validation_status" in contact_admin.list_filter
     assert "global_unsubscribed_at" in contact_admin.list_filter
     assert isinstance(subscription_admin, SubscriptionAdmin)
     assert "status" in subscription_admin.list_filter

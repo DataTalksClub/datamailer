@@ -14,6 +14,7 @@ from mailing.models import (
     EmailEvent,
     EmailEventType,
     EmailTemplate,
+    EmailValidationStatus,
     Organization,
     Subscription,
     SubscriptionStatus,
@@ -120,10 +121,37 @@ def test_campaign_recipient_filter_mapping(campaign):
 
 
 def test_contact_search_uses_normalized_email(audience, client_record):
-    contact = create_contact("Person@Example.COM")
+    contact = create_contact(
+        "Person@Example.COM",
+        email_validation_status=EmailValidationStatus.NO_MX,
+        email_validation_reason="domain missing MX",
+        email_validated_at=timezone.now(),
+    )
     Subscription.objects.create(contact=contact, audience=audience, client=client_record)
 
     assert list(contact_search_queryset(" person@example.com ")) == [contact]
+
+
+def test_operator_contact_views_show_email_validation_status(client, operator, audience, client_record):
+    client.force_login(operator)
+    contact = create_contact(
+        "Person@Example.COM",
+        email_validation_status=EmailValidationStatus.MANUALLY_INVALID,
+        email_validation_reason="operator marked bad",
+        email_validated_at=timezone.now(),
+    )
+    Subscription.objects.create(contact=contact, audience=audience, client=client_record)
+
+    search_response = client.get(reverse("mailing:operator_contact_search"), {"q": "person@example.com"})
+    detail_response = client.get(reverse("mailing:operator_contact_detail", args=[contact.id]))
+
+    assert search_response.status_code == 200
+    assert b"Manually invalid" in search_response.content
+    assert b"operator marked bad" in search_response.content
+    assert detail_response.status_code == 200
+    assert b"Validation" in detail_response.content
+    assert b"Manually invalid" in detail_response.content
+    assert b"operator marked bad" in detail_response.content
 
 
 def test_contact_timeline_is_newest_first_and_metadata_is_operator_readable(campaign, client_record, audience):

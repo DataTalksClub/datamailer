@@ -13,6 +13,7 @@ from mailing.models import (
     Client,
     Contact,
     ContactTag,
+    EmailValidationStatus,
     Organization,
     Subscription,
     SubscriptionStatus,
@@ -177,6 +178,13 @@ def test_snapshot_applies_include_and_exclude_tag_filters(campaign, audience, cl
             None,
             "complaint",
         ),
+        (
+            "invalid@example.com",
+            {"email_validation_status": EmailValidationStatus.NO_MX, "email_validated_at": timezone.now()},
+            SubscriptionStatus.SUBSCRIBED,
+            None,
+            "invalid_email",
+        ),
         ("suppressed@example.com", {}, SubscriptionStatus.PENDING, None, "suppressed"),
     ],
 )
@@ -207,6 +215,7 @@ def test_snapshot_records_explicit_skip_reasons(
 def test_duplicate_skip_reason_is_available_for_imported_or_manually_classified_rows():
     assert CampaignRecipientSkipReason.DUPLICATE == "duplicate"
     assert "duplicate" in {choice for choice, _label in CampaignRecipientSkipReason.choices}
+    assert CampaignRecipientSkipReason.INVALID_EMAIL == "invalid_email"
 
 
 def test_snapshot_is_idempotent_and_does_not_rewrite_existing_rows(campaign, audience, client):

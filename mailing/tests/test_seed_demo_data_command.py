@@ -13,6 +13,7 @@ from mailing.models import (
     EmailEvent,
     EmailEventType,
     EmailTemplate,
+    EmailValidationStatus,
     Organization,
     Subscription,
     SubscriptionStatus,
@@ -106,13 +107,20 @@ def test_seed_demo_data_creates_representative_campaign_and_contact_states():
 
     verified = Contact.objects.get(normalized_email="alex.verified@example.com")
     unverified = Contact.objects.get(normalized_email="bailey.unverified@example.com")
+    invalid = Contact.objects.get(normalized_email="lina.failed@example.com")
     global_unsubscribed = Contact.objects.get(normalized_email="casey.global-unsub@example.com")
     hard_bounced = Contact.objects.get(normalized_email="drew.hard-bounce@example.com")
     complained = Contact.objects.get(normalized_email="erin.complaint@example.com")
     multi = Contact.objects.get(normalized_email="harper.multi@example.com")
 
     assert verified.verified_at is not None
+    assert verified.email_validation_status == EmailValidationStatus.VALID
+    assert verified.email_validated_at is not None
     assert unverified.verified_at is None
+    assert unverified.email_validation_status == EmailValidationStatus.UNKNOWN
+    assert unverified.email_validated_at is None
+    assert invalid.email_validation_status == EmailValidationStatus.MANUALLY_INVALID
+    assert invalid.email_validation_reason == "demo manual hygiene review"
     assert global_unsubscribed.global_unsubscribed_at is not None
     assert hard_bounced.hard_bounced_at is not None
     assert complained.complained_at is not None

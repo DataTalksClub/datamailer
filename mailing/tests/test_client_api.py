@@ -2,7 +2,17 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from mailing.models import Audience, Client, Contact, ContactTag, Organization, Subscription, SubscriptionStatus, Tag
+from mailing.models import (
+    Audience,
+    Client,
+    Contact,
+    ContactTag,
+    EmailValidationStatus,
+    Organization,
+    Subscription,
+    SubscriptionStatus,
+    Tag,
+)
 from mailing.services.auth import authenticate_bearer_token, check_api_key, hash_api_key
 
 pytestmark = pytest.mark.django_db
@@ -143,7 +153,12 @@ def test_contact_upsert_verified_marks_subscription_not_global_contact(client, a
 
 
 def test_contact_status_returns_subscription_suppression_and_eligibility(client, audience, api_client_record):
-    contact = Contact.objects.create(email="person@example.com")
+    contact = Contact.objects.create(
+        email="person@example.com",
+        email_validation_status=EmailValidationStatus.VALID,
+        email_validation_reason="imported hygiene check",
+        email_validated_at=timezone.now(),
+    )
     Subscription.objects.create(
         contact=contact,
         audience=audience,
@@ -161,6 +176,9 @@ def test_contact_status_returns_subscription_suppression_and_eligibility(client,
     body = response.json()
     assert body["exists"] is True
     assert body["verified"] is False
+    assert body["email_validation"]["status"] == EmailValidationStatus.VALID
+    assert body["email_validation"]["reason"] == "imported hygiene check"
+    assert body["email_validation"]["validated_at"] is not None
     assert body["global_unsubscribed"] is False
     assert body["hard_bounced"] is False
     assert body["complained"] is False
@@ -190,6 +208,28 @@ def test_contact_status_returns_subscription_suppression_and_eligibility(client,
     assert response.json()["hard_bounced"] is True
     assert response.json()["can_send_transactional"] is False
 
+    contact.hard_bounced_at = None
+    contact.global_unsubscribed_at = None
+    contact.email_validation_status = EmailValidationStatus.MANUALLY_INVALID
+    contact.email_validation_reason = "operator review"
+    contact.save(
+        update_fields=[
+            "hard_bounced_at",
+            "global_unsubscribed_at",
+            "email_validation_status",
+            "email_validation_reason",
+            "updated_at",
+        ]
+    )
+    response = client.get(
+        reverse("mailing:api_contact_status"),
+        {"email": "person@example.com", "audience": audience.slug, "client": api_client_record.slug},
+        **auth_headers(),
+    )
+    assert response.json()["email_validation"]["status"] == EmailValidationStatus.MANUALLY_INVALID
+    assert response.json()["email_validation"]["reason"] == "operator review"
+    assert response.json()["can_send_marketing"] is False
+
 
 def test_status_lookup_does_not_expose_contact_without_authenticated_client_subscription(
     client,
@@ -206,6 +246,7 @@ def test_status_lookup_does_not_expose_contact_without_authenticated_client_subs
 
     assert response.status_code == 200
     assert response.json()["exists"] is False
+    assert response.json()["email_validation"]["status"] == EmailValidationStatus.UNKNOWN
     assert response.json()["can_send_transactional"] is False
 
 

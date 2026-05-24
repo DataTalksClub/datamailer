@@ -66,12 +66,21 @@ class ContactAdmin(admin.ModelAdmin):
         "email",
         "normalized_email",
         "verified_at",
+        "email_validation_status",
+        "email_validated_at",
         "global_unsubscribed_at",
         "hard_bounced_at",
         "complained_at",
         "updated_at",
     )
-    list_filter = ("verified_at", "global_unsubscribed_at", "hard_bounced_at", "complained_at")
+    list_filter = (
+        "verified_at",
+        "email_validation_status",
+        "email_validated_at",
+        "global_unsubscribed_at",
+        "hard_bounced_at",
+        "complained_at",
+    )
     search_fields = ("email", "normalized_email", "subscriptions__audience__slug", "subscriptions__client__slug")
     inlines = (SubscriptionInline, ContactTagInline)
 

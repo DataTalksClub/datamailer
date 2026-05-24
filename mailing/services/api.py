@@ -114,6 +114,20 @@ def subscription_payload(subscription):
     }
 
 
+def email_validation_payload(contact):
+    if contact is None:
+        return {
+            "status": "unknown",
+            "reason": "",
+            "validated_at": None,
+        }
+    return {
+        "status": contact.email_validation_status,
+        "reason": contact.email_validation_reason,
+        "validated_at": isoformat(contact.email_validated_at),
+    }
+
+
 def contact_status_payload(contact, audience, client, *, exists=True, requested_email=""):
     audience_subscription = None
     client_subscription = None
@@ -136,6 +150,7 @@ def contact_status_payload(contact, audience, client, *, exists=True, requested_
             "exists": False,
             "verified": False,
             "verified_at": None,
+            "email_validation": email_validation_payload(None),
             "global_unsubscribed": False,
             "hard_bounced": False,
             "complained": False,
@@ -156,6 +171,7 @@ def contact_status_payload(contact, audience, client, *, exists=True, requested_
         "exists": True,
         "verified": contact.verified_at is not None,
         "verified_at": isoformat(contact.verified_at),
+        "email_validation": email_validation_payload(contact),
         "global_unsubscribed": contact.global_unsubscribed_at is not None,
         "hard_bounced": contact.hard_bounced_at is not None,
         "complained": contact.complained_at is not None,

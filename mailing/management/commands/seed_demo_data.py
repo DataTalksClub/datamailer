@@ -17,6 +17,7 @@ from mailing.models import (
     EmailEvent,
     EmailEventType,
     EmailTemplate,
+    EmailValidationStatus,
     Organization,
     Subscription,
     SubscriptionStatus,
@@ -184,24 +185,53 @@ def upsert_tags(audiences):
 
 def upsert_contacts(now):
     contact_specs = [
-        ("alex.verified@example.com", {"verified_at": now}),
-        ("bailey.unverified@example.com", {"verified_at": None}),
-        ("casey.global-unsub@example.com", {"verified_at": now, "global_unsubscribed_at": now}),
-        ("drew.hard-bounce@example.com", {"verified_at": now, "hard_bounced_at": now}),
-        ("erin.complaint@example.com", {"verified_at": now, "complained_at": now}),
-        ("fatima.client-unsub@example.com", {"verified_at": now}),
-        ("gabe.audience-unsub@example.com", {"verified_at": now}),
-        ("harper.multi@example.com", {"verified_at": now}),
-        ("ivy.suppressed@example.com", {"verified_at": now}),
-        ("jules.clicked@example.com", {"verified_at": now}),
-        ("kai.pending@example.com", {"verified_at": now}),
-        ("lina.failed@example.com", {"verified_at": now}),
+        ("alex.verified@example.com", {"verified_at": now, "email_validation_status": EmailValidationStatus.VALID}),
+        ("bailey.unverified@example.com", {"verified_at": None, "email_validation_status": EmailValidationStatus.UNKNOWN}),
+        (
+            "casey.global-unsub@example.com",
+            {"verified_at": now, "global_unsubscribed_at": now, "email_validation_status": EmailValidationStatus.VALID},
+        ),
+        (
+            "drew.hard-bounce@example.com",
+            {"verified_at": now, "hard_bounced_at": now, "email_validation_status": EmailValidationStatus.NO_MX},
+        ),
+        (
+            "erin.complaint@example.com",
+            {"verified_at": now, "complained_at": now, "email_validation_status": EmailValidationStatus.RISKY},
+        ),
+        ("fatima.client-unsub@example.com", {"verified_at": now, "email_validation_status": EmailValidationStatus.VALID}),
+        ("gabe.audience-unsub@example.com", {"verified_at": now, "email_validation_status": EmailValidationStatus.VALID}),
+        (
+            "harper.multi@example.com",
+            {"verified_at": now, "email_validation_status": EmailValidationStatus.EXTERNALLY_VALIDATED},
+        ),
+        ("ivy.suppressed@example.com", {"verified_at": now, "email_validation_status": EmailValidationStatus.UNKNOWN}),
+        ("jules.clicked@example.com", {"verified_at": now, "email_validation_status": EmailValidationStatus.VALID}),
+        ("kai.pending@example.com", {"verified_at": now, "email_validation_status": EmailValidationStatus.UNKNOWN}),
+        (
+            "lina.failed@example.com",
+            {
+                "verified_at": now,
+                "email_validation_status": EmailValidationStatus.MANUALLY_INVALID,
+                "email_validation_reason": "demo manual hygiene review",
+            },
+        ),
     ]
     return {
         email: upsert_model(
             Contact,
             {"normalized_email": email},
-            {"email": email, "global_unsubscribed_at": None, "hard_bounced_at": None, "complained_at": None} | fields,
+            {
+                "email": email,
+                "email_validation_reason": "",
+                "email_validated_at": now
+                if fields["email_validation_status"] != EmailValidationStatus.UNKNOWN
+                else None,
+                "global_unsubscribed_at": None,
+                "hard_bounced_at": None,
+                "complained_at": None,
+            }
+            | fields,
         )
         for email, fields in contact_specs
     }
