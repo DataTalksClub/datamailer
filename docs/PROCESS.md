@@ -200,6 +200,28 @@ If a local or remote `screenshots` branch exists, delete that branch, reupload t
 - Unsubscribe and suppression logic require focused tests.
 - Keep the frontend thin: Django templates/admin first, HTMX only when useful, no SPA by default.
 
+## Compatibility Policy Before Production
+
+Datamailer is pre-production. The default is no backwards compatibility for internal APIs, schemas, commands, fixtures, UI flows, worker contracts, or operational scripts. Prefer the clean current Datamailer design over preserving old behavior.
+
+Do not add compatibility shims, aliases, duplicated legacy endpoints, cloned old payload shapes, or long-lived deprecated behavior unless a GitHub issue explicitly scopes the compatibility work. That issue must identify:
+
+- the real external client or migration requirement;
+- the migration window;
+- the required tests;
+- the observability needed to know whether the compatibility path is still used;
+- the removal plan.
+
+Client integration requirements are allowed and expected. They should be designed as first-class Datamailer APIs and workflows for AI Shipping Labs and other clients, not accidental backwards compatibility or a permanent clone of old ASL endpoints unless the issue explicitly accepts that migration path.
+
+Role expectations:
+
+- Orchestrators should route compatibility requests through explicit GitHub issues before implementation starts.
+- Product Managers should only specify compatibility when there is a real external client or migration need, and must include the client, migration window, tests, observability, and removal plan.
+- Software Engineers should reject unscoped compatibility shims, aliases, duplicated legacy endpoints, and legacy behavior cloning as out of scope.
+- Testers should flag unrequested compatibility paths as scope creep.
+- On-Call Engineers should fix current Datamailer behavior and should not preserve failing legacy behavior unless the related issue explicitly requires it.
+
 ## Labels
 
 | Category | Labels |

@@ -36,6 +36,8 @@ git diff
 Check for:
 
 - Scope creep.
+- Unrequested backwards-compatibility shims, aliases, duplicated legacy endpoints, cloned old payload shapes, or long-lived deprecated behavior. Datamailer is pre-production, so flag these as scope creep unless the issue explicitly scopes the compatibility path with client, migration window, tests, observability, and removal plan.
+- Client integration requirements implemented as first-class Datamailer APIs rather than accidental legacy compatibility.
 - Missing tests.
 - Hardcoded secrets.
 - Real AWS dependency in local tests.

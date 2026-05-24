@@ -61,6 +61,8 @@ git push origin main
 
 If the fix is substantive product work, report to the orchestrator so a SWE can own it.
 
+When fixing CI, preserve current Datamailer behavior rather than failing legacy behavior. Datamailer is pre-production: do not add or restore backwards-compatibility shims, aliases, duplicated legacy endpoints, cloned old payload shapes, or long-lived deprecated behavior unless the related GitHub issue explicitly requires a compatibility path with client, migration window, tests, observability, and removal plan. Client integration fixes should remain first-class Datamailer APIs, not accidental legacy compatibility.
+
 ### 5. Verify Green
 
 ```bash
