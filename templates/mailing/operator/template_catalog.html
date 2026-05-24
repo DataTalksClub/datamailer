@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Transactional Templates | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Transactional Templates</h1>
+      <p>Template keys, required context, and recent send state for client transactional emails.</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:operator_api_docs' %}">API docs</a>
+    </div>
+  </div>
+
+  <form class="toolbar" method="get">
+    <div>
+      <label for="client">Client</label>
+      <select id="client" name="client">
+        <option value="">All clients</option>
+        {% for client in clients %}
+          <option value="{{ client.id }}"{% if active_client_id == client.id %} selected{% endif %}>{{ client.name }} / {{ client.slug }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if templates.object_list %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Required context</th>
+            <th>Messages</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for template in templates.object_list %}
+            <tr>
+              <td>
+                <a href="{% url 'mailing:operator_template_detail' template.id %}"><code>{{ template.key }}</code></a>
+                <div class="muted">{{ template.name }}</div>
+              </td>
+              <td>{{ template.client.name }}<div class="muted">{{ template.client.slug }}</div></td>
+              <td>
+                {% if template.is_active %}
+                  <span class="badge success">Active</span>
+                {% else %}
+                  <span class="badge danger">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if template.required_context %}
+                  <code>{{ template.required_context }}</code>
+                {% else %}
+                  <span class="muted">None</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ template.total_message_count }}
+                <div class="muted">queued {{ template.queued_count }} / sent {{ template.sent_count }} / skipped {{ template.skipped_count }} / failed {{ template.failed_count }}</div>
+              </td>
+              <td class="nowrap">{{ template.updated_at|date:"Y-m-d H:i" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "mailing/operator/_pagination.html" with page_obj=templates querystring=pagination_querystring %}
+  {% else %}
+    <div class="empty-state">No transactional templates found.</div>
+  {% endif %}
+{% endblock %}

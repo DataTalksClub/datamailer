@@ -342,7 +342,7 @@ OPENAPI_SPEC = {
             "post": {
                 "tags": ["Transactional"],
                 "summary": "Send transactional email",
-                "description": "Queues one transactional email. The template catalog is planned for a later API and templates may be provisioned externally.",
+                "description": "Queues one transactional email for an active client-scoped template. Required context is validated from template catalog metadata before any contact, message, event, or queue mutation.",
                 "security": [{"BearerAuth": []}],
                 "requestBody": json_body("#/components/schemas/TransactionalSendRequest"),
                 "responses": bearer_responses(

@@ -61,7 +61,7 @@ def test_seed_demo_data_is_idempotent_and_creates_local_admin():
         "Subscription": 16,
         "Campaign": 4,
         "CampaignRecipient": 12,
-        "EmailTemplate": 3,
+        "EmailTemplate": 4,
         "TransactionalMessage": 6,
         "EmailEvent": 21,
     }
@@ -141,7 +141,17 @@ def test_seed_demo_data_creates_transactional_history_and_hashed_api_keys():
     assert set(EmailTemplate.objects.values_list("key", flat=True)) == {
         "email-verification",
         "password-reset",
+        "registration-welcome",
         "workshop-reminder",
+    }
+    verification_template = EmailTemplate.objects.get(key="email-verification")
+    assert verification_template.required_context == [
+        {"name": "name", "description": "Recipient display name."},
+        {"name": "verification_url", "description": "Client-generated verification URL."},
+    ]
+    assert verification_template.example_context == {
+        "name": "Alex",
+        "verification_url": "https://client.example/verify/placeholder",
     }
     assert set(TransactionalMessage.objects.values_list("status", flat=True)) == {
         TransactionalMessageStatus.QUEUED,

@@ -113,7 +113,15 @@ def test_api_docs_page_does_not_render_secret_examples(client, staff_user):
     page = response.content.decode()
 
     assert response.status_code == 200
+    assert "registration-welcome" in page
+    assert "password-reset" in page
+    assert "email-verification" in page
+    assert "/api/v1/contacts/{contact_id}/verification" in page
+    assert "https://client.example/verify/placeholder" in page
+    assert "https://client.example/reset/placeholder" in page
     assert "Authorization: Token" not in page
     assert "api_key_hash" not in page
     assert "tracking_token_hash" not in page
     assert "unsubscribe_token_hash" not in page
+    assert "verify/token" not in page
+    assert "reset/token" not in page

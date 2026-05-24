@@ -84,7 +84,7 @@ curl -sS -X PATCH "$DATAMAILER_URL/api/v1/contacts/{contact_id}/verification" \
 curl -sS "$DATAMAILER_URL/api/v1/contacts?audience=datatalksclub&amp;client=dtc-courses&amp;tags=ml-zoomcamp&amp;limit=100" \
   -H "Authorization: Bearer $DATAMAILER_API_KEY"</code></pre>
 
-    <h3>AI Shipping Labs transactional and import/export</h3>
+    <h3>Transactional registration, reset, and verification</h3>
     <pre><code>import requests
 
 base_url = "http://localhost:8000"
@@ -95,10 +95,48 @@ requests.post(
     headers=headers,
     json={
         "email": "user@example.com",
-        "template_key": "account-verification",
-        "idempotency_key": "client-generated-id",
-        "context": {"verification_url": "https://example.com/verify"},
-        "metadata": {"source": "account-flow"},
+        "template_key": "registration-welcome",
+        "idempotency_key": "registration-user-123",
+        "context": {"name": "User", "course_name": "ML Zoomcamp"},
+        "metadata": {"source": "registration"},
+    },
+    timeout=10,
+)
+
+requests.post(
+    f"{base_url}/api/v1/transactional/send",
+    headers=headers,
+    json={
+        "email": "user@example.com",
+        "template_key": "password-reset",
+        "idempotency_key": "password-reset-user-123-request-456",
+        "context": {"reset_url": "https://client.example/reset/placeholder"},
+        "metadata": {"source": "password-reset"},
+    },
+    timeout=10,
+)
+
+requests.post(
+    f"{base_url}/api/v1/transactional/send",
+    headers=headers,
+    json={
+        "email": "user@example.com",
+        "template_key": "email-verification",
+        "idempotency_key": "verify-user-123-email-1",
+        "context": {"name": "User", "verification_url": "https://client.example/verify/placeholder"},
+        "metadata": {"source": "email-verification"},
+    },
+    timeout=10,
+)
+
+# After the user verifies in the client app, mark the Datamailer contact verified.
+requests.patch(
+    f"{base_url}/api/v1/contacts/{contact_id}/verification",
+    headers=headers,
+    json={
+        "audience": "datatalksclub",
+        "client": "dtc-courses",
+        "verified": True,
     },
     timeout=10,
 )
@@ -132,7 +170,8 @@ requests.get(
 
   <section aria-labelledby="notes">
     <h2 id="notes">Notes</h2>
-    <p>Transactional sending uses provisioned transactional templates. API-based template catalog management is planned separately.</p>
+    <p>Transactional templates are visible to staff in the operator template catalog. Client apps generate verification and reset URLs, pass them as context, and complete verification in their own app before marking the Datamailer contact verified.</p>
+    <p>Hard-bounced or complained contacts are blocked for transactional sends. Missing required template context returns a JSON validation error before Datamailer creates a contact, message, event, or queue payload.</p>
     <p>Public tracking, unsubscribe, and SES webhook routes are documented for integration context; client application endpoints under <code>/api/v1</code> use Bearer authentication.</p>
   </section>
 {% endblock %}

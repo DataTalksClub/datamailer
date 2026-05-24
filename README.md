@@ -45,6 +45,7 @@ Log in at `/admin/login/` with:
 The operator UI uses Django staff auth, so unauthenticated users are redirected to `/admin/login/`.
 Staff users can open the local API reference at `/operator/api-docs/`; the OpenAPI JSON is available at
 `/operator/api-docs/openapi.json`.
+Transactional template keys and required context are visible to staff at `/operator/templates/`.
 
 Client applications authenticate to `/api/v1` with Bearer authentication. In the operator UI, open
 `/operator/clients/`, create or select a client, then generate or rotate that client's API key. The raw key is

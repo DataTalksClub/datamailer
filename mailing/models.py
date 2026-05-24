@@ -338,10 +338,14 @@ class EmailTemplate(TimeStampedModel):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="email_templates")
     key = models.SlugField(max_length=120)
     name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
     subject = models.CharField(max_length=255)
     html_body = models.TextField(blank=True)
     text_body = models.TextField(blank=True)
+    required_context = models.JSONField(default=list, blank=True)
+    example_context = models.JSONField(default=dict, blank=True)
     is_transactional = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = "email_templates"
@@ -351,6 +355,7 @@ class EmailTemplate(TimeStampedModel):
         ]
         indexes = [
             models.Index(fields=["client", "is_transactional"], name="email_tpl_client_tx_idx"),
+            models.Index(fields=["client", "is_transactional", "is_active"], name="email_tpl_tx_active_idx"),
         ]
 
     def __str__(self):

@@ -873,6 +873,55 @@ def test_contact_search_and_detail_render_operator_context(client, operator, aud
     assert b"scope: global" in detail_response.content
 
 
+def test_transactional_template_catalog_is_staff_only(client, operator, client_record):
+    template = EmailTemplate.objects.create(
+        client=client_record,
+        key="email-verification",
+        name="Email Verification",
+        description="Verify a client account email.",
+        subject="Verify {{ product }}",
+        text_body="Verify at {{ verification_url }}",
+        required_context=[
+            {"name": "product", "description": "Product name."},
+            {"name": "verification_url", "description": "Client-generated verification URL."},
+        ],
+        example_context={
+            "product": "Datamailer",
+            "verification_url": "https://client.example/verify/placeholder",
+        },
+    )
+
+    anonymous = client.get(reverse("mailing:operator_template_catalog"))
+    assert anonymous.status_code == 302
+    assert "/admin/login/" in anonymous["Location"]
+    anonymous_detail = client.get(reverse("mailing:operator_template_detail", args=[template.id]))
+    assert anonymous_detail.status_code == 302
+    assert "/admin/login/" in anonymous_detail["Location"]
+
+    regular_user = get_user_model().objects.create_user("regular", "regular@example.com", "password", is_staff=False)
+    client.force_login(regular_user)
+    non_staff = client.get(reverse("mailing:operator_template_catalog"))
+    assert non_staff.status_code == 302
+    assert "/admin/login/" in non_staff["Location"]
+    non_staff_detail = client.get(reverse("mailing:operator_template_detail", args=[template.id]))
+    assert non_staff_detail.status_code == 302
+    assert "/admin/login/" in non_staff_detail["Location"]
+
+    client.force_login(operator)
+    list_response = client.get(reverse("mailing:operator_template_catalog"))
+    detail_response = client.get(reverse("mailing:operator_template_detail", args=[template.id]))
+
+    assert list_response.status_code == 200
+    assert b"email-verification" in list_response.content
+    assert b"Active" in list_response.content
+    assert b"verification_url" in list_response.content
+    assert detail_response.status_code == 200
+    assert b"Verify a client account email." in detail_response.content
+    assert b"Client-generated verification URL." in detail_response.content
+    assert b"https://client.example/verify/placeholder" in detail_response.content
+    assert b"Verify at https://client.example/verify/placeholder" in detail_response.content
+
+
 def test_contact_detail_paginates_events(client, operator, campaign, client_record, audience):
     client.force_login(operator)
     contact = create_contact("person@example.com")

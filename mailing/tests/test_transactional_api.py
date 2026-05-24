@@ -159,6 +159,64 @@ def test_transactional_idempotency_reuses_existing_message_without_enqueue(clien
     assert len(enqueued) == 1
 
 
+def test_transactional_required_context_rejects_before_mutation_or_enqueue(client, api_client_record, monkeypatch):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    template = EmailTemplate.objects.create(
+        client=api_client_record,
+        key="password-reset",
+        name="Password Reset",
+        subject="Reset",
+        text_body="Reset at {{ reset_url }}",
+        required_context=[{"name": "reset_url", "description": "Client-generated reset URL."}],
+        example_context={"reset_url": "https://client.example/reset/placeholder"},
+    )
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "idempotency_key": "missing-context",
+            "context": {},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"context.reset_url": "required"}
+    assert Contact.objects.count() == 0
+    assert TransactionalMessage.objects.count() == 0
+    assert EmailEvent.objects.count() == 0
+    assert enqueued == []
+
+
+def test_transactional_idempotent_replay_does_not_revalidate_required_context(client, api_client_record, monkeypatch):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    template = EmailTemplate.objects.create(
+        client=api_client_record,
+        key="email-verification",
+        name="Email verification",
+        subject="Verify",
+        required_context=["verification_url"],
+    )
+    payload = {
+        "email": "person@example.com",
+        "template_key": template.key,
+        "idempotency_key": "verify-replay",
+        "context": {"verification_url": "https://client.example/verify/placeholder"},
+    }
+
+    first = post_transactional(client, payload)
+    second = post_transactional(client, payload | {"context": {}})
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert second.json()["idempotent_replay"] is True
+    assert TransactionalMessage.objects.count() == 1
+    assert len(enqueued) == 1
+
+
 def test_transactional_send_does_not_require_verified_or_marketing_subscribed_contact(
     client,
     audience,
@@ -287,6 +345,37 @@ def test_missing_or_campaign_only_template_returns_clear_404_without_mutation(
         {
             "email": "person@example.com",
             "template_key": "campaign-layout",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["fields"] == {"template_key": "not_found"}
+    assert Contact.objects.count() == 0
+    assert TransactionalMessage.objects.count() == 0
+    assert EmailEvent.objects.count() == 0
+    assert enqueued == []
+
+
+def test_inactive_transactional_template_returns_clear_404_without_mutation(
+    client,
+    api_client_record,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    EmailTemplate.objects.create(
+        client=api_client_record,
+        key="inactive",
+        name="Inactive",
+        subject="Inactive",
+        is_active=False,
+    )
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": "inactive",
         },
     )
 
