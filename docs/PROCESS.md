@@ -112,6 +112,22 @@ For parallel worktrees:
 
 Do not use `gh pr create` or `gh pr merge` unless the user explicitly changes the process.
 
+## Agent Worktrees
+
+Use repo-local `.worktrees/` for future Datamailer agent worktrees. Worktree paths must follow:
+
+```text
+.worktrees/issue-N-slug
+```
+
+Example:
+
+```bash
+git worktree add .worktrees/issue-29-worktree-location -b issue-29-worktree-location main
+```
+
+Do not create new Datamailer agent worktrees under `/home/alexey/git/datamailer-worktrees`. If any external Datamailer worktrees still exist, treat them as temporary leftovers for already-active issues only. The current external issue #27 worktree may remain until issue #27 finishes, then should be cleaned up.
+
 ## How To Pick Issues
 
 ```bash
