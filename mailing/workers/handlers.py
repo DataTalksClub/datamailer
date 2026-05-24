@@ -4,6 +4,7 @@ from mailing.queue_contracts import (
     validate_ses_webhook_message,
     validate_transactional_email_message,
 )
+from mailing.services.transactional_sender import send_transactional_email_from_queue
 from mailing.sqs import process_sqs_event
 
 
@@ -25,8 +26,7 @@ def email_events_handler(event, context=None):
 
 def _handle_transactional_email_record(payload, record):
     validate_transactional_email_message(payload)
-    # Future sender loads transactional_messages by transactional_message_id and
-    # enforces (client_id, idempotency_key) before any SES call.
+    send_transactional_email_from_queue(payload)
 
 
 def _handle_campaign_email_record(payload, record):
