@@ -68,7 +68,10 @@ VALID_MESSAGES = {
 
 
 @pytest.mark.parametrize("worker", VALID_MESSAGES.values(), ids=VALID_MESSAGES.keys())
-def test_worker_handler_accepts_valid_sqs_event(worker):
+def test_worker_handler_accepts_valid_sqs_event(worker, monkeypatch):
+    if worker["handler"] is transactional_email_handler:
+        monkeypatch.setattr("mailing.workers.handlers.send_transactional_email_from_queue", lambda payload: None)
+
     event = _event_from_payloads([("message-1", worker["payload"])])
 
     assert worker["handler"](event, None) == {"batchItemFailures": []}
@@ -85,7 +88,10 @@ def test_worker_handler_rejects_invalid_sqs_record(worker):
 
 
 @pytest.mark.parametrize("worker", VALID_MESSAGES.values(), ids=VALID_MESSAGES.keys())
-def test_worker_handler_returns_partial_batch_failures(worker):
+def test_worker_handler_returns_partial_batch_failures(worker, monkeypatch):
+    if worker["handler"] is transactional_email_handler:
+        monkeypatch.setattr("mailing.workers.handlers.send_transactional_email_from_queue", lambda payload: None)
+
     invalid_payload = worker["payload"].copy()
     invalid_payload.pop("contract")
     event = _event_from_payloads(
