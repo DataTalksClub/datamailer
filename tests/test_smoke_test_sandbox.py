@@ -1,3 +1,6 @@
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +8,8 @@ from botocore.exceptions import ClientError
 from django.utils import timezone
 
 from scripts import smoke_test_sandbox as smoke
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def aws_error(code):
@@ -302,6 +307,19 @@ def test_send_simulator_email_includes_configuration_set():
     assert ses.sent[0]["Source"] == "sender@example.com"
     assert ses.sent[0]["Destination"] == {"ToAddresses": ["success@simulator.amazonses.com"]}
     assert ses.sent[0]["ConfigurationSetName"] == "datamailer-sandbox"
+
+
+def test_smoke_script_help_runs_from_scripts_directory():
+    result = subprocess.run(
+        [sys.executable, "smoke_test_sandbox.py", "--help"],
+        cwd=PROJECT_ROOT / "scripts",
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--ses-event-smoke" in result.stdout
 
 
 @pytest.mark.django_db

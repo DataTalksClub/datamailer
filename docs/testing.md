@@ -64,3 +64,11 @@ make smoke-sandbox-ses-events
 ```
 
 The command preflights the configured SES sender identity before sending. If no verified email sender is available, it prints a warning and skips the live simulator sends without requiring SES production access.
+
+Before running this command locally, make sure the normal Django runtime is ready:
+
+- `.env` exists, for example from `make setup`.
+- The local database is reachable.
+- Migrations have been applied with `make migrate`.
+
+The smoke creates temporary transactional-message rows in the configured local database, sends three SES mailbox simulator messages, waits for SES to publish the related SNS/SQS events, runs the webhook worker path, and verifies delivery, bounce, and complaint effects in the database. SES can emit multiple notifications for one send, so the command drains SQS until the expected database effects are observed or the timeout expires.

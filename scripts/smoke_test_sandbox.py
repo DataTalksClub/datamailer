@@ -13,6 +13,10 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 REQUIRED_QUEUES = ("transactional-email", "campaign-email", "ses-webhooks", "email-events")
 ENV_QUEUE_URLS = {
     "transactional-email": "SQS_TRANSACTIONAL_EMAIL_QUEUE_URL",
@@ -360,6 +364,8 @@ def receive_ses_webhook_messages(sqs, queue_url, *, wait_seconds, batch_size=10,
         batch = response.get("Messages", [])
         if batch:
             messages.extend(batch)
+            if expected_count is None:
+                break
             if expected_count is not None and len(messages) >= expected_count:
                 break
         else:
@@ -425,6 +431,11 @@ def verify_smoke_database_effects(messages_by_label):
     return results
 
 
+def smoke_database_effects_complete(messages_by_label):
+    results = verify_smoke_database_effects(messages_by_label)
+    return results and all(result.status != "FAIL" for result in results)
+
+
 def run_ses_event_smoke(config, session, args):
     sesv2 = session.client("sesv2", region_name=config["region"])
     ses = session.client("ses", region_name=config["region"])
@@ -473,18 +484,26 @@ def run_ses_event_smoke(config, session, args):
     if set(messages_by_label) != set(SIMULATOR_RECIPIENTS):
         return results
 
-    raw_messages = receive_ses_webhook_messages(
-        sqs,
-        queue_url,
-        wait_seconds=args.ses_event_timeout,
-        expected_count=len(messages_by_label),
-    )
-    worker_response = process_ses_webhook_messages(sqs, queue_url, raw_messages)
-    failed = worker_response.get("batchItemFailures", [])
-    if failed:
-        results.append(fail("SES webhook worker", f"failed_batch_items={failed}"))
-    elif raw_messages:
-        results.append(pass_("SES webhook worker", f"processed_messages={len(raw_messages)}"))
+    processed_messages = 0
+    failed_batch_items = []
+    deadline = time.monotonic() + args.ses_event_timeout
+    while time.monotonic() < deadline and not smoke_database_effects_complete(messages_by_label):
+        raw_messages = receive_ses_webhook_messages(
+            sqs,
+            queue_url,
+            wait_seconds=min(10, max(1, int(deadline - time.monotonic()))),
+            expected_count=None,
+        )
+        if not raw_messages:
+            continue
+        worker_response = process_ses_webhook_messages(sqs, queue_url, raw_messages)
+        processed_messages += len(raw_messages)
+        failed_batch_items.extend(worker_response.get("batchItemFailures", []))
+
+    if failed_batch_items:
+        results.append(fail("SES webhook worker", f"failed_batch_items={failed_batch_items}"))
+    elif processed_messages:
+        results.append(pass_("SES webhook worker", f"processed_messages={processed_messages}"))
     else:
         results.append(fail("SES webhook worker", f"no messages observed within {args.ses_event_timeout}s"))
 
