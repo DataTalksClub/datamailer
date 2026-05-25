@@ -1,4 +1,4 @@
-.PHONY: setup migrate run localstack test test-aws-local lint validate-infra format
+.PHONY: setup migrate run localstack test test-aws-local lint validate-infra smoke-sandbox format
 
 setup:
 	@test -f .env || cp .env.example .env
@@ -26,6 +26,9 @@ lint:
 
 validate-infra:
 	uv run python scripts/validate_infra.py
+
+smoke-sandbox:
+	uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer-sandbox
 
 format:
 	uv run ruff format .
