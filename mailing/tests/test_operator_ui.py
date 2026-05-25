@@ -527,6 +527,124 @@ def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
     assert b"client unsubscribe" in response.content
 
 
+def test_contact_detail_renders_summary_before_management_and_debug_sections(
+    client,
+    operator,
+    audience,
+    client_record,
+    campaign,
+):
+    client.force_login(operator)
+    contact = create_subscribed_contact(
+        "sendable@example.com",
+        audience,
+        client_record,
+        email_validation_status=EmailValidationStatus.VALID,
+        email_validated_at=timezone.now(),
+    )
+    tag = Tag.objects.create(audience=audience, name="Long Newsletter Audience Tag", slug="long-newsletter")
+    ContactTag.objects.create(contact=contact, tag=tag)
+    recipient = CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=contact,
+        email=contact.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=timezone.now(),
+        delivered_at=timezone.now(),
+        first_opened_at=timezone.now(),
+        first_clicked_at=timezone.now(),
+    )
+    create_transactional_message(contact, client_record, sent_at=timezone.now())
+    EmailEvent.objects.create(
+        contact=contact,
+        campaign=campaign,
+        campaign_recipient=recipient,
+        client=client_record,
+        audience=audience,
+        event_type=EmailEventType.CLICK,
+        url="https://example.com/click",
+        metadata={"scope": "campaign"},
+    )
+
+    response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Can send marketing" in html
+    assert "Can send transactional" in html
+    assert "Last sent" in html
+    assert "Long Newsletter Audience Tag" in html
+    assert "Recent Activity" in html
+    assert "Campaign: Weekly update" in html
+    assert f"/campaigns/{campaign.id}/#recipient-{recipient.id}" in html
+    assert html.index("Send Eligibility") < html.index("Membership and Tags") < html.index("Recent Activity")
+    assert html.index("Recent Activity") < html.index("Manage contact state, subscriptions, and tags")
+    assert html.index("Full event timeline and audit details") > html.index("Recent Activity")
+
+
+def test_contact_detail_summary_shows_blocked_reasons_and_secondary_raw_details(
+    client,
+    operator,
+    audience,
+    client_record,
+):
+    client.force_login(operator)
+    contact = create_contact(
+        "blocked@example.com",
+        email_validation_status=EmailValidationStatus.RISKY,
+        email_validation_reason="provider risk score",
+        global_unsubscribed_at=timezone.now(),
+        hard_bounced_at=timezone.now(),
+        complained_at=timezone.now(),
+    )
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience,
+        client=client_record,
+        status=SubscriptionStatus.UNSUBSCRIBED,
+        unsubscribe_reason="requested",
+    )
+    EmailEvent.objects.create(
+        contact=contact,
+        client=client_record,
+        audience=audience,
+        event_type=EmailEventType.BOUNCE,
+        metadata={"bounce_type": "Permanent"},
+    )
+
+    response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Risky" in html
+    assert "Globally unsubscribed" in html
+    assert "Cannot send marketing" in html
+    assert "Cannot send transactional" in html
+    assert "global unsubscribe" in html
+    assert "client unsubscribe" in html
+    assert "hard bounce" in html
+    assert "complaint" in html
+    assert "bounce_type: Permanent" in html
+    assert html.index("bounce_type: Permanent") > html.index("Full event timeline and audit details")
+
+
+def test_contact_detail_no_membership_explains_not_subscribed_and_no_activity(client, operator):
+    client.force_login(operator)
+    contact = create_contact("quiet@example.com", email_validation_status=EmailValidationStatus.UNKNOWN)
+
+    response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "No subscriptions" in html
+    assert "Unknown" in html
+    assert "Cannot send marketing" in html
+    assert "not subscribed" in html
+    assert "Can send transactional" in html
+    assert "No data" in html
+    assert "No recent campaign, transactional, or contact events found." in html
+
+
 def test_campaign_list_requires_staff(client):
     response = client.get(reverse("mailing:campaign_list"))
 
@@ -1038,4 +1156,4 @@ def test_contact_detail_paginates_events(client, operator, campaign, client_reco
 
     assert response.status_code == 200
     assert b"Page 1 of 2" in response.content
-    assert response.content.count(b"Open") == 50
+    assert response.content.count(b"<strong>Open</strong>") == 50

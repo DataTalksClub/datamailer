@@ -146,10 +146,47 @@ class EligibilityItem:
 
 
 @dataclass(frozen=True)
+class Badge:
+    label: str
+    tone: str = "neutral"
+
+
+@dataclass(frozen=True)
+class ContactMetric:
+    label: str
+    value: object | None
+    tone: str = "neutral"
+
+
+@dataclass(frozen=True)
+class SendabilitySummary:
+    marketing_badge: Badge
+    marketing_reasons: tuple[str, ...]
+    transactional_badge: Badge
+    transactional_reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ContactActivity:
+    occurred_at: object | None
+    badge: Badge
+    title: str
+    detail: str
+    href: str = ""
+    metadata: str = ""
+
+
+@dataclass(frozen=True)
 class ContactDetailContext:
     eligibility: list[EligibilityItem]
     subscriptions: QuerySet[Subscription]
     contact_tags: QuerySet[ContactTag]
+    verification_badge: Badge
+    validation_badge: Badge
+    subscription_badge: Badge
+    sendability: SendabilitySummary
+    metrics: list[ContactMetric]
+    recent_activity: list[ContactActivity]
 
 
 def rate(numerator: int, denominator: int) -> str:
@@ -524,14 +561,169 @@ def contact_detail_context(contact: Contact) -> ContactDetailContext:
         "client__slug",
         "id",
     )
+    eligibility = eligibility_items(contact, subscriptions)
     return ContactDetailContext(
-        eligibility=eligibility_items(contact, subscriptions),
+        eligibility=eligibility,
         subscriptions=subscriptions,
         contact_tags=contact.contact_tags.select_related("tag", "tag__audience").order_by(
             "tag__audience__slug",
             "tag__slug",
         ),
+        verification_badge=verification_badge(contact),
+        validation_badge=validation_badge(contact),
+        subscription_badge=subscription_badge(contact, subscriptions),
+        sendability=sendability_summary(eligibility),
+        metrics=contact_metrics(contact),
+        recent_activity=recent_contact_activity(contact),
     )
+
+
+def verification_badge(contact: Contact) -> Badge:
+    if contact.verified_at:
+        return Badge("Verified", "success")
+    return Badge("Unverified", "warning")
+
+
+def validation_badge(contact: Contact) -> Badge:
+    label = contact.get_email_validation_status_display()
+    if contact.email_validation_status in {
+        EmailValidationStatus.VALID,
+        EmailValidationStatus.EXTERNALLY_VALIDATED,
+    }:
+        return Badge(label, "success")
+    if contact.email_validation_status in {
+        EmailValidationStatus.RISKY,
+        EmailValidationStatus.UNKNOWN,
+    }:
+        return Badge(label, "warning" if contact.email_validation_status == EmailValidationStatus.RISKY else "neutral")
+    return Badge(label, "danger")
+
+
+def subscription_badge(contact: Contact, subscriptions) -> Badge:
+    if contact.global_unsubscribed_at:
+        return Badge("Globally unsubscribed", "danger")
+    if contact.complained_at:
+        return Badge("Complained", "danger")
+    if contact.hard_bounced_at:
+        return Badge("Hard bounced", "danger")
+    statuses = [subscription.status for subscription in subscriptions]
+    if SubscriptionStatus.SUBSCRIBED in statuses:
+        return Badge("Subscribed", "success")
+    if SubscriptionStatus.UNSUBSCRIBED in statuses:
+        return Badge("Unsubscribed", "danger")
+    if SubscriptionStatus.PENDING in statuses:
+        return Badge("Pending", "warning")
+    return Badge("No subscriptions", "neutral")
+
+
+def sendability_summary(eligibility: list[EligibilityItem]) -> SendabilitySummary:
+    marketing_can_send = any(item.can_send_marketing for item in eligibility)
+    transactional_can_send = any(item.can_send_transactional for item in eligibility)
+    return SendabilitySummary(
+        marketing_badge=Badge("Can send marketing" if marketing_can_send else "Cannot send marketing", "success" if marketing_can_send else "danger"),
+        marketing_reasons=unique_reasons(
+            reason for item in eligibility for reason in item.marketing_reasons if marketing_can_send is False or reason != "eligible"
+        )
+        or ("eligible in at least one subscription scope",),
+        transactional_badge=Badge(
+            "Can send transactional" if transactional_can_send else "Cannot send transactional",
+            "success" if transactional_can_send else "danger",
+        ),
+        transactional_reasons=unique_reasons(
+            reason for item in eligibility for reason in item.transactional_reasons if transactional_can_send is False or reason != "eligible"
+        )
+        or ("eligible",),
+    )
+
+
+def unique_reasons(reasons) -> tuple[str, ...]:
+    seen = []
+    for reason in reasons:
+        if reason and reason not in seen:
+            seen.append(reason)
+    return tuple(seen)
+
+
+def contact_metrics(contact: Contact) -> list[ContactMetric]:
+    campaign_rows = CampaignRecipient.objects.filter(contact=contact)
+    transactional_rows = contact.transactional_messages.all()
+    return [
+        ContactMetric("Last sent", latest_datetime(campaign_rows.aggregate(value=Max("sent_at"))["value"], transactional_rows.aggregate(value=Max("sent_at"))["value"]), "success"),
+        ContactMetric("Last opened", latest_datetime(campaign_rows.aggregate(value=Max("first_opened_at"))["value"], transactional_rows.aggregate(value=Max("first_opened_at"))["value"]), "success"),
+        ContactMetric("Last clicked", latest_datetime(campaign_rows.aggregate(value=Max("first_clicked_at"))["value"], transactional_rows.aggregate(value=Max("first_clicked_at"))["value"]), "success"),
+        ContactMetric("Last bounce", latest_datetime(contact.hard_bounced_at, EmailEvent.objects.filter(contact=contact, event_type=EmailEventType.BOUNCE).aggregate(value=Max("created_at"))["value"]), "danger"),
+        ContactMetric("Last complaint", latest_datetime(contact.complained_at, EmailEvent.objects.filter(contact=contact, event_type=EmailEventType.COMPLAINT).aggregate(value=Max("created_at"))["value"]), "danger"),
+        ContactMetric("Last unsubscribe", latest_datetime(contact.global_unsubscribed_at, EmailEvent.objects.filter(contact=contact, event_type=EmailEventType.UNSUBSCRIBE).aggregate(value=Max("created_at"))["value"]), "danger"),
+    ]
+
+
+def latest_datetime(*values):
+    present = [value for value in values if value is not None]
+    return max(present) if present else None
+
+
+def recent_contact_activity(contact: Contact) -> list[ContactActivity]:
+    rows: list[ContactActivity] = []
+    for event in contact_event_timeline(contact)[:8]:
+        rows.append(
+            ContactActivity(
+                event.created_at,
+                Badge(event.get_event_type_display(), event_tone(event.event_type)),
+                event_context(event),
+                event.url or "Email event recorded",
+            )
+        )
+    for recipient in contact_campaign_history(contact)[:5]:
+        rows.append(
+            ContactActivity(
+                recipient.sent_at or recipient.created_at,
+                Badge(recipient.get_status_display(), delivery_tone(recipient.status)),
+                f"Campaign: {recipient.campaign.subject}",
+                f"{recipient.campaign.client.name} / {recipient.campaign.audience.name}",
+                href=f"/campaigns/{recipient.campaign_id}/#recipient-{recipient.id}",
+                metadata=recipient.last_error or recipient.get_skip_reason_display(),
+            )
+        )
+    for message in contact_transactional_history(contact)[:5]:
+        rows.append(
+            ContactActivity(
+                message.sent_at or message.created_at,
+                Badge(message.get_status_display(), delivery_tone(message.status)),
+                f"Transactional: {message.template_key}",
+                message.subject,
+                metadata=message.last_error or metadata_summary(message.metadata),
+            )
+        )
+    rows.sort(key=lambda row: (row.occurred_at is not None, row.occurred_at), reverse=True)
+    return rows[:10]
+
+
+def event_tone(event_type: str) -> str:
+    if event_type in {EmailEventType.DELIVERED, EmailEventType.OPEN, EmailEventType.CLICK, EmailEventType.SENT}:
+        return "success"
+    if event_type in {EmailEventType.BOUNCE, EmailEventType.COMPLAINT, EmailEventType.UNSUBSCRIBE, EmailEventType.FAILED}:
+        return "danger"
+    if event_type in {EmailEventType.SKIPPED, EmailEventType.QUEUED}:
+        return "warning"
+    return "neutral"
+
+
+def delivery_tone(status: str) -> str:
+    if status in {CampaignRecipientStatus.SENT, TransactionalMessageStatus.SENT}:
+        return "success"
+    if status in {
+        CampaignRecipientStatus.BOUNCED,
+        CampaignRecipientStatus.COMPLAINED,
+        CampaignRecipientStatus.UNSUBSCRIBED,
+        CampaignRecipientStatus.FAILED,
+        TransactionalMessageStatus.BOUNCED,
+        TransactionalMessageStatus.COMPLAINED,
+        TransactionalMessageStatus.FAILED,
+    }:
+        return "danger"
+    if status in {CampaignRecipientStatus.SKIPPED, TransactionalMessageStatus.SKIPPED, CampaignRecipientStatus.PENDING, TransactionalMessageStatus.QUEUED}:
+        return "warning"
+    return "neutral"
 
 
 def eligibility_items(contact: Contact, subscriptions) -> list[EligibilityItem]:

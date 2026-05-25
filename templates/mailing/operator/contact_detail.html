@@ -3,56 +3,190 @@
 {% block title %}{{ contact.email }} | Datamailer{% endblock %}
 
 {% block content %}
-  <div class="page-header">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{% url 'mailing:contact_search' %}?q={{ contact.normalized_email }}">Contacts</a>
+    <span aria-hidden="true">/</span>
+    <span>{{ contact.normalized_email }}</span>
+  </nav>
+
+  <div class="page-header contact-header">
     <div>
       <h1>{{ contact.email }}</h1>
-      <p>{{ contact.normalized_email }}</p>
+      <p class="contact-subtitle">{{ contact.normalized_email }}</p>
+      <div class="badge-row" aria-label="Contact state">
+        <span class="badge {{ verification_badge.tone }}">{{ verification_badge.label }}</span>
+        <span class="badge {{ validation_badge.tone }}">Validation: {{ validation_badge.label }}</span>
+        <span class="badge {{ subscription_badge.tone }}">{{ subscription_badge.label }}</span>
+      </div>
     </div>
-    <a class="button secondary" href="{% url 'mailing:contact_search' %}?q={{ contact.normalized_email }}">Back to search</a>
+    <a class="button secondary" href="#manage-contact">Manage contact</a>
   </div>
 
-  <section aria-labelledby="contact-state">
-    <h2 id="contact-state">State</h2>
-    <div class="meta-grid">
-      <div class="meta-item"><span class="meta-label">Verified</span>{{ contact.verified_at|date:"Y-m-d H:i"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Validation</span>{{ contact.get_email_validation_status_display }}</div>
-      <div class="meta-item"><span class="meta-label">Validated</span>{{ contact.email_validated_at|date:"Y-m-d H:i"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Validation reason</span>{{ contact.email_validation_reason|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Global unsubscribe</span>{{ contact.global_unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Hard bounce</span>{{ contact.hard_bounced_at|date:"Y-m-d H:i"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Complaint</span>{{ contact.complained_at|date:"Y-m-d H:i"|default:"-" }}</div>
+  <section class="detail-section contact-summary" aria-labelledby="sendability">
+    <div class="section-header">
+      <div>
+        <h2 id="sendability">Send Eligibility</h2>
+        <p>Can Datamailer email this contact, and why?</p>
+      </div>
+    </div>
+    <div class="detail-grid contact-summary-grid">
+      <article class="summary-panel">
+        <div class="summary-panel-header">
+          <span class="badge {{ sendability.marketing_badge.tone }}">{{ sendability.marketing_badge.label }}</span>
+        </div>
+        <ul class="reason-list">
+          {% for reason in sendability.marketing_reasons %}
+            <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+      <article class="summary-panel">
+        <div class="summary-panel-header">
+          <span class="badge {{ sendability.transactional_badge.tone }}">{{ sendability.transactional_badge.label }}</span>
+        </div>
+        <ul class="reason-list">
+          {% for reason in sendability.transactional_reasons %}
+            <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </article>
     </div>
   </section>
 
-  <section aria-labelledby="manage-contact">
-    <h2 id="manage-contact">Manage Contact</h2>
-    <h3>State</h3>
-    <form method="post" action="{% url 'mailing:contact_state_update' contact.normalized_email %}">
-      {% include "mailing/operator/_form_fields.html" with form=contact_state_form %}
-      <div class="toolbar"><button type="submit">Update state</button></div>
-    </form>
-
-    <h3>Subscription</h3>
-    <form method="post" action="{% url 'mailing:contact_subscription_update' contact.normalized_email %}">
-      {% include "mailing/operator/_form_fields.html" with form=subscription_form %}
-      <div class="toolbar"><button type="submit">Update subscription</button></div>
-    </form>
-
-    <h3>Add tag</h3>
-    <form method="post" action="{% url 'mailing:contact_tag_add' contact.normalized_email %}">
-      {% include "mailing/operator/_form_fields.html" with form=tag_add_form %}
-      <div class="toolbar"><button type="submit">Add tag</button></div>
-    </form>
-
-    <h3>Remove tag</h3>
-    <form method="post" action="{% url 'mailing:contact_tag_remove' contact.normalized_email %}">
-      {% include "mailing/operator/_form_fields.html" with form=tag_remove_form %}
-      <div class="toolbar"><button type="submit">Remove tag</button></div>
-    </form>
+  <section class="detail-section" aria-labelledby="engagement">
+    <div class="section-header">
+      <h2 id="engagement">Engagement and Delivery</h2>
+    </div>
+    <div class="stats-grid contact-metrics">
+      {% for metric in metrics %}
+        <div class="stat">
+          <span class="stat-label">{{ metric.label }}</span>
+          {% if metric.value %}
+            <span class="metric-value">{{ metric.value|date:"Y-m-d H:i" }}</span>
+          {% else %}
+            <span class="badge neutral">No data</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
   </section>
 
-  <section aria-labelledby="eligibility">
-    <h2 id="eligibility">Send Eligibility</h2>
+  <section class="detail-section" aria-labelledby="membership">
+    <div class="section-header">
+      <h2 id="membership">Membership and Tags</h2>
+    </div>
+    <div class="detail-grid">
+      <div>
+        <h3>Subscriptions</h3>
+        {% if subscriptions %}
+          <div class="compact-list">
+            {% for subscription in subscriptions %}
+              <article class="compact-row">
+                <div class="compact-row-main">
+                  <strong>{{ subscription.audience.name }}</strong>
+                  <span class="muted">{{ subscription.client.name|default:"Audience-wide" }}</span>
+                </div>
+                <div class="compact-row-meta">
+                  {% if subscription.status == "subscribed" %}
+                    <span class="badge success">{{ subscription.get_status_display }}</span>
+                  {% elif subscription.status == "unsubscribed" %}
+                    <span class="badge danger">{{ subscription.get_status_display }}</span>
+                  {% else %}
+                    <span class="badge warning">{{ subscription.get_status_display }}</span>
+                  {% endif %}
+                  {% if subscription.verified_at %}
+                    <span class="badge success">Verified</span>
+                  {% else %}
+                    <span class="badge warning">Unverified</span>
+                  {% endif %}
+                  {% if subscription.unsubscribe_reason %}
+                    <span class="muted truncate">{{ subscription.unsubscribe_reason }}</span>
+                  {% endif %}
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state">No subscriptions found.</div>
+        {% endif %}
+      </div>
+      <div>
+        <h3>Tags</h3>
+        {% if contact_tags %}
+          <div class="tag-cloud">
+            {% for membership in contact_tags %}
+              <span class="badge neutral">{{ membership.tag.name }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state">No tags found.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="detail-section" aria-labelledby="recent-activity">
+    <div class="section-header">
+      <h2 id="recent-activity">Recent Activity</h2>
+    </div>
+    {% if recent_activity %}
+      <div class="timeline activity-timeline">
+        {% for row in recent_activity %}
+          <article class="timeline-item">
+            <div class="activity-row-header">
+              <span class="badge {{ row.badge.tone }}">{{ row.badge.label }}</span>
+              <span class="muted nowrap">{{ row.occurred_at|date:"Y-m-d H:i:s"|default:"No timestamp" }}</span>
+            </div>
+            <strong>
+              {% if row.href %}
+                <a href="{{ row.href }}">{{ row.title }}</a>
+              {% else %}
+                {{ row.title }}
+              {% endif %}
+            </strong>
+            <div class="truncate">{{ row.detail }}</div>
+            {% if row.metadata %}
+              <div class="muted truncate">{{ row.metadata }}</div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No recent campaign, transactional, or contact events found.</div>
+    {% endif %}
+  </section>
+
+  <details class="detail-section secondary-section" id="manage-contact">
+    <summary>Manage contact state, subscriptions, and tags</summary>
+    <div class="form-stack">
+      <form method="post" action="{% url 'mailing:contact_state_update' contact.normalized_email %}">
+        <h3>State</h3>
+        {% include "mailing/operator/_form_fields.html" with form=contact_state_form %}
+        <div class="toolbar"><button type="submit">Update state</button></div>
+      </form>
+
+      <form method="post" action="{% url 'mailing:contact_subscription_update' contact.normalized_email %}">
+        <h3>Subscription</h3>
+        {% include "mailing/operator/_form_fields.html" with form=subscription_form %}
+        <div class="toolbar"><button type="submit">Update subscription</button></div>
+      </form>
+
+      <form method="post" action="{% url 'mailing:contact_tag_add' contact.normalized_email %}">
+        <h3>Add tag</h3>
+        {% include "mailing/operator/_form_fields.html" with form=tag_add_form %}
+        <div class="toolbar"><button type="submit">Add tag</button></div>
+      </form>
+
+      <form method="post" action="{% url 'mailing:contact_tag_remove' contact.normalized_email %}">
+        <h3>Remove tag</h3>
+        {% include "mailing/operator/_form_fields.html" with form=tag_remove_form %}
+        <div class="toolbar"><button type="submit">Remove tag</button></div>
+      </form>
+    </div>
+  </details>
+
+  <details class="detail-section secondary-section">
+    <summary>Full send eligibility by scope</summary>
     {% if eligibility %}
       <div class="table-wrap">
         <table>
@@ -81,55 +215,10 @@
     {% else %}
       <div class="empty-state">No eligibility scopes found.</div>
     {% endif %}
-  </section>
+  </details>
 
-  <section aria-labelledby="subscriptions">
-    <h2 id="subscriptions">Subscriptions</h2>
-    {% if subscriptions %}
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Audience</th>
-              <th scope="col">Client</th>
-              <th scope="col">Status</th>
-              <th scope="col">Verified</th>
-              <th scope="col">Unsubscribed</th>
-              <th scope="col">Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for subscription in subscriptions %}
-              <tr>
-                <td>{{ subscription.audience.name }}</td>
-                <td>{{ subscription.client.name|default:"Audience-wide" }}</td>
-                <td><span class="badge">{{ subscription.get_status_display }}</span></td>
-                <td>{{ subscription.verified_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td>{{ subscription.unsubscribed_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td>{{ subscription.unsubscribe_reason|default:"-" }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="empty-state">No subscriptions found.</div>
-    {% endif %}
-
-    <h3>Tags</h3>
-    {% if contact_tags %}
-      <p>
-        {% for membership in contact_tags %}
-          <span class="badge">{{ membership.tag.name }}</span>
-        {% endfor %}
-      </p>
-    {% else %}
-      <p class="muted">No tags found.</p>
-    {% endif %}
-  </section>
-
-  <section aria-labelledby="campaign-history">
-    <h2 id="campaign-history">Campaign History</h2>
+  <details class="detail-section secondary-section">
+    <summary>Campaign history</summary>
     {% if campaign_history.object_list %}
       <div class="table-wrap">
         <table>
@@ -172,10 +261,10 @@
     {% else %}
       <div class="empty-state">No campaign recipient history found.</div>
     {% endif %}
-  </section>
+  </details>
 
-  <section aria-labelledby="transactional-history">
-    <h2 id="transactional-history">Transactional Messages</h2>
+  <details class="detail-section secondary-section">
+    <summary>Transactional Messages</summary>
     {% if transactional_history.object_list %}
       <div class="table-wrap">
         <table>
@@ -223,10 +312,11 @@
     {% else %}
       <div class="empty-state">No transactional messages found.</div>
     {% endif %}
-  </section>
+  </details>
 
-  <section aria-labelledby="event-timeline">
-    <h2 id="event-timeline">Event Timeline</h2>
+  <details class="detail-section secondary-section">
+    <summary>Full event timeline and audit details</summary>
+    <h3>Event timeline</h3>
     {% if event_rows %}
       <div class="timeline">
         {% for row in event_rows %}
@@ -250,10 +340,8 @@
     {% else %}
       <div class="empty-state">No email events found.</div>
     {% endif %}
-  </section>
 
-  <section aria-labelledby="audit">
-    <h2 id="audit">Product Audit</h2>
+    <h3>Product audit</h3>
     {% include "mailing/operator/_audit.html" with audit_rows=audit_rows %}
-  </section>
+  </details>
 {% endblock %}
