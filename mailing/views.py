@@ -64,6 +64,7 @@ from mailing.services.operator_management import (
 )
 from mailing.services.operator_ui import (
     RECIPIENT_FILTER_LABELS,
+    active_contact_filters,
     audience_breakdowns,
     audience_campaign_history,
     audience_detail_queryset,
@@ -286,6 +287,7 @@ def contact_search(request):
             "options": contact_explorer_options(),
             "contacts": contacts,
             "contact_rows": rows,
+            "active_filters": active_contact_filters(filters),
             "pagination_querystring": pagination_querystring(request),
         },
     )

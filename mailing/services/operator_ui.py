@@ -143,6 +143,12 @@ class ContactResultRow:
 
 
 @dataclass(frozen=True)
+class ActiveFilter:
+    label: str
+    value: str
+
+
+@dataclass(frozen=True)
 class EligibilityItem:
     scope: str
     can_send_marketing: bool
@@ -461,6 +467,38 @@ def contact_explorer_options():
         "skip_reasons": choices_from_text_choices(CampaignRecipientSkipReason),
         "engagement_states": [Choice(value=key, label=label) for key, label in ENGAGEMENT_FILTER_LABELS.items()],
     }
+
+
+def active_contact_filters(filters: ContactExplorerFilters) -> list[ActiveFilter]:
+    chips = []
+    if filters.query:
+        chips.append(ActiveFilter("Email", filters.query))
+    if filters.audience_id:
+        audience = Audience.objects.filter(pk=filters.audience_id).first()
+        chips.append(ActiveFilter("Audience", audience.name if audience else str(filters.audience_id)))
+    if filters.client_id:
+        client = Client.objects.filter(pk=filters.client_id).first()
+        chips.append(ActiveFilter("Client", client.name if client else str(filters.client_id)))
+    if filters.subscription_status:
+        chips.append(ActiveFilter("Subscription", SubscriptionStatus(filters.subscription_status).label))
+    if filters.verified_state:
+        chips.append(ActiveFilter("Verification", VERIFIED_FILTER_LABELS[filters.verified_state]))
+    if filters.email_validation_status:
+        chips.append(ActiveFilter("Validation", EmailValidationStatus(filters.email_validation_status).label))
+    if filters.suppression_state:
+        chips.append(ActiveFilter("Suppression", SUPPRESSION_FILTER_LABELS[filters.suppression_state]))
+    if filters.campaign_status:
+        chips.append(ActiveFilter("Campaign", CampaignRecipientStatus(filters.campaign_status).label))
+    if filters.skip_reason:
+        chips.append(ActiveFilter("Skip reason", CampaignRecipientSkipReason(filters.skip_reason).label))
+    if filters.engagement:
+        value = ENGAGEMENT_FILTER_LABELS[filters.engagement]
+        if filters.engagement == "inactive_since" and filters.inactive_since:
+            value = f"{value} {filters.inactive_since.isoformat()}"
+        chips.append(ActiveFilter("Engagement", value))
+    chips.extend(ActiveFilter("Includes tag", tag) for tag in filters.include_tags)
+    chips.extend(ActiveFilter("Excludes tag", tag) for tag in filters.exclude_tags)
+    return chips
 
 
 def parse_contact_explorer_filters(params, *, forced_audience_id=None) -> ContactExplorerFilters:

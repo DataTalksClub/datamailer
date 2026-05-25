@@ -30,6 +30,7 @@ from mailing.models import (
 from mailing.services.campaigns import estimate_campaign_recipients
 from mailing.services.operator_ui import (
     ContactExplorerFilters,
+    active_contact_filters,
     audience_recent_events,
     audience_summary,
     campaign_recipient_queryset,
@@ -418,6 +419,36 @@ def test_parse_contact_explorer_filters_rejects_unknown_values(audience):
     assert filters.engagement == "inactive_since"
 
 
+def test_active_contact_filters_summarize_applied_filter_state(audience, client_record):
+    filters = ContactExplorerFilters(
+        query="person@example.com",
+        audience_id=audience.id,
+        client_id=client_record.id,
+        include_tags=("newsletter",),
+        exclude_tags=("inactive",),
+        subscription_status=SubscriptionStatus.SUBSCRIBED,
+        verified_state="verified",
+        email_validation_status=EmailValidationStatus.VALID,
+        suppression_state="hard_bounced",
+        engagement="inactive_since",
+        inactive_since=timezone.datetime(2026, 5, 1).date(),
+    )
+
+    chips = active_contact_filters(filters)
+    labels = [(chip.label, chip.value) for chip in chips]
+
+    assert ("Email", "person@example.com") in labels
+    assert ("Audience", "DataTalksClub") in labels
+    assert ("Client", "DTC Courses") in labels
+    assert ("Subscription", "Subscribed") in labels
+    assert ("Verification", "Verified") in labels
+    assert ("Validation", "Valid") in labels
+    assert ("Suppression", "Hard bounced") in labels
+    assert ("Engagement", "Inactive since 2026-05-01") in labels
+    assert ("Includes tag", "newsletter") in labels
+    assert ("Excludes tag", "inactive") in labels
+
+
 def test_operator_contact_views_show_email_validation_status(client, operator, audience, client_record):
     client.force_login(operator)
     contact = create_contact(
@@ -527,6 +558,116 @@ def test_operator_contact_explorer_renders_filters_and_pagination_querystring(cl
     assert f"audience={audience.id}&amp;subscription_status=subscribed&amp;page=2".encode() in response.content
 
 
+def test_operator_contact_explorer_renders_redesigned_filter_groups_and_result_hierarchy(
+    client,
+    operator,
+    audience,
+    client_record,
+    campaign,
+):
+    client.force_login(operator)
+    now = timezone.now()
+    tag = Tag.objects.create(
+        audience=audience,
+        name="Very Long Newsletter Segment For Returning Learners",
+        slug="very-long-newsletter-segment-for-returning-learners",
+    )
+    reachable = create_subscribed_contact(
+        "Reachable.Person.With.Long.Address@example.com",
+        audience,
+        client_record,
+        email_validation_status=EmailValidationStatus.VALID,
+    )
+    ContactTag.objects.create(contact=reachable, tag=tag)
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=reachable,
+        email=reachable.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=now - timedelta(days=3),
+        first_opened_at=now - timedelta(days=2),
+    )
+    create_subscribed_contact(
+        "blocked@example.com",
+        audience,
+        client_record,
+        verified=False,
+        status=SubscriptionStatus.UNSUBSCRIBED,
+        email_validation_status=EmailValidationStatus.RISKY,
+        hard_bounced_at=now,
+    )
+
+    response = client.get(
+        reverse("mailing:contact_search"),
+        {
+            "audience": audience.id,
+            "subscription_status": SubscriptionStatus.SUBSCRIBED,
+            "verified": "verified",
+            "email_validation_status": EmailValidationStatus.VALID,
+            "engagement": "not_clicked",
+            "include_tags": tag.slug,
+        },
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Scope" in html
+    assert "State" in html
+    assert "Activity" in html
+    assert "Tags" in html
+    assert "Applied filters" in html
+    assert "Audience: DataTalksClub" in html
+    assert "Subscription: Subscribed" in html
+    assert "Validation: Valid" in html
+    assert "Includes tag: very-long-newsletter-segment-for-returning-learners" in html
+    assert 'class="table-wrap contact-explorer-table"' in html
+    assert "Sendability" in html
+    assert "Audience and subscription" in html
+    assert "Engagement" in html
+    assert "Last activity" in html
+    assert "Opens:" in html
+    assert "Clicks:" in html
+    assert 'class="data-truncate" href="/contacts/reachable.person.with.long.address@example.com/"' in html
+    assert "Subscribed" in html
+    assert "Verified" in html
+    assert "Valid" in html
+    assert "very-long-newsletter-segment-for-returning-learners" in html
+    assert "blocked@example.com" not in html
+    assert "/operator/" not in html
+    assert f"/contacts/{reachable.id}/" not in html
+
+
+def test_operator_contact_explorer_badges_suppressed_unverified_and_no_activity_states(
+    client,
+    operator,
+    audience,
+    client_record,
+):
+    client.force_login(operator)
+    contact = create_subscribed_contact(
+        "suppressed@example.com",
+        audience,
+        client_record,
+        verified=False,
+        status=SubscriptionStatus.UNSUBSCRIBED,
+        email_validation_status=EmailValidationStatus.MANUALLY_INVALID,
+        email_validation_reason="manual block",
+        hard_bounced_at=timezone.now(),
+    )
+
+    response = client.get(reverse("mailing:contact_search"), {"q": contact.normalized_email})
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'href="/contacts/suppressed@example.com/"' in html
+    assert "Hard bounced" in html
+    assert "Manually invalid" in html
+    assert "Unverified" in html
+    assert "manual block" in html
+    assert "No activity" in html
+    assert 'class="data-truncate">datatalks-club/dtc-courses: unsubscribed' in html
+
+
 def test_operator_contact_explorer_empty_state(client, operator):
     client.force_login(operator)
 
@@ -534,6 +675,7 @@ def test_operator_contact_explorer_empty_state(client, operator):
 
     assert response.status_code == 200
     assert b"No contacts match these filters" in response.content
+    assert b"Change the email, audience, state, tag, or engagement filters" in response.content
 
 
 def test_contact_timeline_is_newest_first_and_metadata_is_operator_readable(campaign, client_record, audience):
