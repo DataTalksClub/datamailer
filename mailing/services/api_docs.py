@@ -172,7 +172,7 @@ OPENAPI_SPEC = {
     "info": {
         "title": "Datamailer Native API",
         "version": "1.0.0",
-        "description": "Local staff reference for implemented Datamailer endpoints. Client API routes use Bearer authentication with Datamailer client API keys. Transactional templates are planned for catalog management and may be provisioned externally for now.",
+        "description": "Local staff reference for implemented Datamailer endpoints. Client API routes use Bearer authentication with named Datamailer client API keys. Transactional templates are planned for catalog management and may be provisioned externally for now.",
     },
     "servers": [{"url": "/"}],
     "tags": [

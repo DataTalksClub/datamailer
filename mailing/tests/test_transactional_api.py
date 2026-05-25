@@ -20,7 +20,7 @@ from mailing.models import (
     TransactionalMessageStatus,
 )
 from mailing.queue_contracts import validate_transactional_email_message
-from mailing.services.auth import hash_api_key
+from mailing.services.auth import create_client_api_key
 from mailing.sqs import json_body, records_from_messages
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -35,12 +35,13 @@ def organization():
 
 @pytest.fixture
 def api_client_record(organization):
-    return Client.objects.create(
+    client = Client.objects.create(
         organization=organization,
         name="DTC Courses",
         slug="dtc-courses",
-        api_key_hash=hash_api_key(API_KEY),
     )
+    create_client_api_key(client=client, name="Transactional test", raw_api_key=API_KEY)
+    return client
 
 
 @pytest.fixture
@@ -50,12 +51,13 @@ def audience(organization):
 
 @pytest.fixture
 def other_client(organization):
-    return Client.objects.create(
+    client = Client.objects.create(
         organization=organization,
         name="DTC Newsletter",
         slug="dtc-newsletter",
-        api_key_hash=hash_api_key("other-key"),
     )
+    create_client_api_key(client=client, name="Other test", raw_api_key="other-key")
+    return client
 
 
 @pytest.fixture

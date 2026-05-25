@@ -6,6 +6,7 @@ from mailing.models import (
     Campaign,
     CampaignStatus,
     Client,
+    ClientApiKey,
     ContactTag,
     EmailValidationStatus,
     Organization,
@@ -164,6 +165,29 @@ class ClientForm(forms.ModelForm):
                 duplicate = duplicate.exclude(pk=self.instance.pk)
             if duplicate.exists():
                 self.add_error("slug", "Client slug must be unique within this organization.")
+        return cleaned
+
+
+class ClientApiKeyForm(forms.ModelForm):
+    class Meta:
+        model = ClientApiKey
+        fields = ["name", "notes"]
+
+    def __init__(self, *args, client=None, **kwargs):
+        self.client = client
+        super().__init__(*args, **kwargs)
+        self.fields["notes"].required = False
+
+    def clean_name(self):
+        return self.cleaned_data["name"].strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        name = cleaned.get("name")
+        if self.client and name:
+            duplicate = ClientApiKey.objects.filter(client=self.client, name=name, revoked_at__isnull=True)
+            if duplicate.exists():
+                self.add_error("name", "Active API key names must be unique for this client.")
         return cleaned
 
 

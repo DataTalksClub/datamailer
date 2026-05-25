@@ -17,7 +17,7 @@ from mailing.models import (
     SubscriptionStatus,
     Tag,
 )
-from mailing.services.auth import hash_api_key
+from mailing.services.auth import create_client_api_key
 
 pytestmark = pytest.mark.django_db
 
@@ -41,12 +41,13 @@ def second_audience(organization):
 
 @pytest.fixture
 def api_client_record(organization):
-    return Client.objects.create(
+    client = Client.objects.create(
         organization=organization,
         name="DTC Courses",
         slug="dtc-courses",
-        api_key_hash=hash_api_key(API_KEY),
     )
+    create_client_api_key(client=client, name="Bulk test", raw_api_key=API_KEY)
+    return client
 
 
 @pytest.fixture

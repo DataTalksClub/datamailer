@@ -53,9 +53,27 @@ Important fields:
 - `organization_id`
 - `name`
 - `slug`
-- `api_key_hash`
 - `is_active`
 - `created_at`
+
+### client_api_keys
+
+Represents named Bearer credentials for client integrations.
+
+Important fields:
+
+- `id`
+- `client_id`
+- `name`
+- `key_hash`
+- `public_id`
+- `notes`
+- `last_used_at`
+- `revoked_at`
+- `created_at`
+- `updated_at`
+
+Only hashes are stored. `public_id` is safe to display as `dm_<public_id>` in the operator UI, API docs, and audit metadata. `revoked_at IS NULL` means active, and active key names are unique per client.
 
 ### contacts
 

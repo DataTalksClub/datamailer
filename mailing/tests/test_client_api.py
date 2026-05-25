@@ -8,6 +8,7 @@ from mailing.models import (
     CampaignRecipient,
     CampaignRecipientStatus,
     Client,
+    ClientApiKey,
     Contact,
     ContactTag,
     EmailEvent,
@@ -21,7 +22,7 @@ from mailing.models import (
     TransactionalMessage,
     TransactionalMessageStatus,
 )
-from mailing.services.auth import authenticate_bearer_token, check_api_key, hash_api_key
+from mailing.services.auth import authenticate_bearer_token, check_api_key, create_client_api_key
 
 pytestmark = pytest.mark.django_db
 
@@ -40,12 +41,13 @@ def audience(organization):
 
 @pytest.fixture
 def api_client_record(organization):
-    return Client.objects.create(
+    client = Client.objects.create(
         organization=organization,
         name="DTC Courses",
         slug="dtc-courses",
-        api_key_hash=hash_api_key(API_KEY),
     )
+    create_client_api_key(client=client, name="Test key", raw_api_key=API_KEY)
+    return client
 
 
 @pytest.fixture
@@ -60,12 +62,13 @@ def other_audience(other_org):
 
 @pytest.fixture
 def other_client(other_org):
-    return Client.objects.create(
+    client = Client.objects.create(
         organization=other_org,
         name="AI Shipping Labs",
         slug="ai-shipping-labs",
-        api_key_hash=hash_api_key("other-key"),
     )
+    create_client_api_key(client=client, name="Other key", raw_api_key="other-key")
+    return client
 
 
 def auth_headers(raw_key=API_KEY):
@@ -109,9 +112,10 @@ def delete_json(django_client, url_name, payload, *args, raw_key=API_KEY):
 
 
 def test_api_key_hash_helper_does_not_store_or_match_raw_key(api_client_record):
-    assert api_client_record.api_key_hash != API_KEY
-    assert check_api_key(API_KEY, api_client_record.api_key_hash) is True
-    assert check_api_key("wrong", api_client_record.api_key_hash) is False
+    api_key = ClientApiKey.objects.get(client=api_client_record, name="Test key")
+    assert api_key.key_hash != API_KEY
+    assert check_api_key(API_KEY, api_key.key_hash) is True
+    assert check_api_key("wrong", api_key.key_hash) is False
 
 
 def test_authentication_rejects_missing_unknown_and_inactive_clients(client, api_client_record):
@@ -145,6 +149,24 @@ def test_authentication_helper_returns_active_client(api_client_record):
 
     assert result.is_authenticated is True
     assert result.client.id == api_client_record.id
+    api_key = ClientApiKey.objects.get(client=api_client_record, name="Test key")
+    assert api_key.last_used_at is not None
+
+
+def test_authentication_accepts_multiple_active_keys_and_rejects_revoked_key(api_client_record):
+    second_key, second_raw = create_client_api_key(client=api_client_record, name="CI staging")
+
+    assert authenticate_bearer_token(f"Bearer {API_KEY}").client == api_client_record
+    assert authenticate_bearer_token(f"Bearer {second_raw}").client == api_client_record
+
+    first_key = ClientApiKey.objects.get(client=api_client_record, name="Test key")
+    first_key.revoked_at = timezone.now()
+    first_key.save(update_fields=["revoked_at", "updated_at"])
+
+    assert authenticate_bearer_token(f"Bearer {API_KEY}").error == "invalid_api_key"
+    assert authenticate_bearer_token(f"Bearer {second_raw}").client == api_client_record
+    second_key.refresh_from_db()
+    assert second_key.last_used_at is not None
 
 
 def test_contact_upsert_is_idempotent_and_scoped_to_authenticated_client(client, audience, api_client_record):

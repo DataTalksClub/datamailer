@@ -6,21 +6,21 @@
   <div class="page-header">
     <div>
       <h1>Clients</h1>
-      <p>Manage client records and single active API keys.</p>
+      <p>Manage client records and named API keys.</p>
     </div>
     <a class="button" href="{% url 'mailing:client_create' %}">Create client</a>
   </div>
   {% if clients.object_list %}
     <div class="table-wrap">
       <table>
-        <thead><tr><th scope="col">Client</th><th scope="col">Organization</th><th scope="col">Active</th><th scope="col">API key</th></tr></thead>
+        <thead><tr><th scope="col">Client</th><th scope="col">Organization</th><th scope="col">Active</th><th scope="col">Active API keys</th></tr></thead>
         <tbody>
           {% for client in clients %}
             <tr>
               <td><a href="{% url 'mailing:client_detail' client.id %}">{{ client.name }}</a><div class="muted">{{ client.slug }}</div></td>
               <td>{{ client.organization.name }}</td>
               <td>{% if client.is_active %}<span class="badge success">Active</span>{% else %}<span class="badge danger">Inactive</span>{% endif %}</td>
-              <td>{% if client.api_key_hash %}<span class="badge success">Present</span>{% else %}<span class="badge">None</span>{% endif %}</td>
+              <td>{{ client.active_api_key_count }}</td>
             </tr>
           {% endfor %}
         </tbody>

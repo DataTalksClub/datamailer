@@ -13,9 +13,10 @@
       <a class="button secondary" href="{% url 'mailing:client_list' %}">All clients</a>
     </div>
   </div>
-  {% if raw_api_key %}
+  {% if raw_api_key_context %}
     <div class="message success">
-      <strong>New API key:</strong> <code>{{ raw_api_key }}</code>
+      <strong>New API key for {{ raw_api_key_context.name }} ({{ raw_api_key_context.prefix }}):</strong>
+      <code>{{ raw_api_key_context.raw_key }}</code>
       <div>Copy this now. It will not be shown again.</div>
     </div>
   {% endif %}
@@ -23,18 +24,72 @@
     <h2 id="client-state">State</h2>
     <div class="meta-grid">
       <div class="meta-item"><span class="meta-label">Active</span>{{ client.is_active|yesno:"Yes,No" }}</div>
-      <div class="meta-item"><span class="meta-label">API key</span>{% if client.api_key_hash %}Present{% else %}None{% endif %}</div>
+      <div class="meta-item"><span class="meta-label">Active API keys</span>{{ client.active_api_key_count }}</div>
     </div>
-    <div class="toolbar">
-      <form method="post" action="{% url 'mailing:client_api_key_generate' client.id %}">
-        {% csrf_token %}
-        <button type="submit">{% if client.api_key_hash %}Rotate API key{% else %}Generate API key{% endif %}</button>
-      </form>
-      <form method="post" action="{% url 'mailing:client_api_key_revoke' client.id %}">
-        {% csrf_token %}
-        <button type="submit">Revoke API key</button>
-      </form>
+  </section>
+  <section aria-labelledby="api-keys">
+    <div class="section-header">
+      <div>
+        <h2 id="api-keys">API keys</h2>
+        <p class="muted">Named credentials for each integration. Raw keys are shown only once.</p>
+      </div>
     </div>
+    <form method="post" action="{% url 'mailing:client_api_key_create' client.id %}" class="form-grid">
+      {% csrf_token %}
+      {% include "mailing/operator/_form_fields.html" with form=key_form %}
+      <div class="actions">
+        <button type="submit">Create API key</button>
+      </div>
+    </form>
+    {% if api_keys %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Prefix</th>
+              <th scope="col">State</th>
+              <th scope="col">Created</th>
+              <th scope="col">Last used</th>
+              <th scope="col">Revoked</th>
+              <th scope="col">Notes</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for api_key in api_keys %}
+              <tr>
+                <td>{{ api_key.name }}</td>
+                <td><code>{{ api_key.display_prefix }}</code></td>
+                <td>
+                  {% if api_key.revoked_at %}
+                    <span class="badge danger">Revoked</span>
+                  {% else %}
+                    <span class="badge success">Active</span>
+                  {% endif %}
+                </td>
+                <td>{{ api_key.created_at|date:"Y-m-d H:i" }}</td>
+                <td>{% if api_key.last_used_at %}{{ api_key.last_used_at|date:"Y-m-d H:i" }}{% else %}<span class="muted">Never</span>{% endif %}</td>
+                <td>{% if api_key.revoked_at %}{{ api_key.revoked_at|date:"Y-m-d H:i" }}{% else %}<span class="muted">-</span>{% endif %}</td>
+                <td>{% if api_key.notes %}{{ api_key.notes }}{% else %}<span class="muted">-</span>{% endif %}</td>
+                <td>
+                  {% if not api_key.revoked_at %}
+                    <form method="post" action="{% url 'mailing:client_api_key_revoke' client.id api_key.id %}">
+                      {% csrf_token %}
+                      <button type="submit" class="danger" onclick="return confirm('Revoke this API key?');">Revoke</button>
+                    </form>
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">No API keys found.</div>
+    {% endif %}
   </section>
   <section aria-labelledby="audit">
     <h2 id="audit">Audit</h2>

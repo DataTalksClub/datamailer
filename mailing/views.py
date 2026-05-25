@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from mailing.forms import (
     AudienceForm,
     CampaignForm,
+    ClientApiKeyForm,
     ClientForm,
     ContactStateForm,
     ContactSubscriptionForm,
@@ -18,7 +19,7 @@ from mailing.forms import (
     ContactTagRemoveForm,
     TagForm,
 )
-from mailing.models import Campaign, CampaignStatus, Client, EmailEventType, Tag
+from mailing.models import Campaign, CampaignStatus, Client, ClientApiKey, EmailEventType, Tag
 from mailing.services.api import (
     ApiValidationError,
     add_contact_tag_for_client,
@@ -44,10 +45,11 @@ from mailing.services.contact_import_export import (
 )
 from mailing.services.operator_management import (
     add_contact_tag,
+    client_api_keys_for_detail,
+    create_api_key,
     create_or_update_audience,
     create_or_update_client,
     create_or_update_tag,
-    generate_or_rotate_api_key,
     latest_audits_for,
     remove_contact_tag,
     revoke_api_key,
@@ -503,7 +505,7 @@ def tag_edit(request, tag_id):
 def client_list(request):
     clients = paginate(
         request,
-        Client.objects.select_related("organization").order_by("organization__slug", "slug"),
+        Client.objects.select_related("organization").prefetch_related("api_keys").order_by("organization__slug", "slug"),
         per_page=25,
     )
     return render(
@@ -527,11 +529,18 @@ def client_create(request):
 @staff_member_required
 def client_detail(request, client_id):
     client = get_object_or_404(Client.objects.select_related("organization"), pk=client_id)
-    raw_api_key = request.session.pop("operator_raw_api_key", "")
+    raw_api_key_context = request.session.pop("operator_raw_api_key", None)
+    key_form = ClientApiKeyForm(client=client)
     return render(
         request,
         "mailing/operator/client_detail.html",
-        {"client": client, "raw_api_key": raw_api_key, "audit_rows": latest_audits_for(client)},
+        {
+            "client": client,
+            "api_keys": client_api_keys_for_detail(client),
+            "key_form": key_form,
+            "raw_api_key_context": raw_api_key_context,
+            "audit_rows": latest_audits_for(client),
+        },
     )
 
 
@@ -549,21 +558,41 @@ def client_edit(request, client_id):
 
 @staff_member_required
 @require_POST
-def client_api_key_generate(request, client_id):
+def client_api_key_create(request, client_id):
     client = get_object_or_404(Client, pk=client_id)
-    request.session["operator_raw_api_key"] = generate_or_rotate_api_key(actor=request.user, client=client)
+    form = ClientApiKeyForm(request.POST, client=client)
+    if not form.is_valid():
+        return render(
+            request,
+            "mailing/operator/client_detail.html",
+            {
+                "client": client,
+                "api_keys": client_api_keys_for_detail(client),
+                "key_form": form,
+                "raw_api_key_context": None,
+                "audit_rows": latest_audits_for(client),
+            },
+            status=400,
+        )
+    api_key, raw_key = create_api_key(actor=request.user, client=client, **form.cleaned_data)
+    request.session["operator_raw_api_key"] = {
+        "raw_key": raw_key,
+        "name": api_key.name,
+        "prefix": api_key.display_prefix,
+    }
     messages.success(request, "API key generated. Copy it now; it will not be shown again.")
     return redirect("mailing:client_detail", client_id=client.id)
 
 
 @staff_member_required
 @require_POST
-def client_api_key_revoke(request, client_id):
+def client_api_key_revoke(request, client_id, key_id):
     client = get_object_or_404(Client, pk=client_id)
-    if revoke_api_key(actor=request.user, client=client):
+    api_key = get_object_or_404(ClientApiKey.objects.select_related("client"), pk=key_id, client=client)
+    if revoke_api_key(actor=request.user, api_key=api_key):
         messages.success(request, "API key revoked.")
     else:
-        messages.info(request, "Client did not have an active API key.")
+        messages.info(request, "API key was already revoked.")
     return redirect("mailing:client_detail", client_id=client.id)
 
 

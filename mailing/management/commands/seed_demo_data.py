@@ -12,6 +12,7 @@ from mailing.models import (
     CampaignRecipientStatus,
     CampaignStatus,
     Client,
+    ClientApiKey,
     Contact,
     ContactTag,
     EmailEvent,
@@ -32,9 +33,21 @@ ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "admin"
 
 DEMO_API_KEYS = {
-    "dtc-newsletter": "demo-dtc-newsletter-api-key",
-    "dtc-courses": "demo-dtc-courses-api-key",
-    "asl-platform": "demo-asl-platform-api-key",
+    "dtc-newsletter": {
+        "name": "Newsletter import/export",
+        "raw_key": "dm_dtcnews_demo_newsletter_import_export_key",
+        "notes": "Stable local key for newsletter contact sync examples.",
+    },
+    "dtc-courses": {
+        "name": "Course platform transactional",
+        "raw_key": "dm_dtccourses_demo_transactional_email_key",
+        "notes": "Stable local key for course registration and password email examples.",
+    },
+    "asl-platform": {
+        "name": "ASL platform transactional",
+        "raw_key": "dm_aslplatform_demo_transactional_email_key",
+        "notes": "Stable local key for AI Shipping Labs transactional examples.",
+    },
 }
 
 
@@ -55,8 +68,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Seeded local demo data."))
         self.stdout.write(f"Admin login: {ADMIN_USERNAME} / {ADMIN_PASSWORD}")
         self.stdout.write("Demo API keys:")
-        for client_slug, raw_api_key in DEMO_API_KEYS.items():
-            self.stdout.write(f"- {client_slug}: {raw_api_key}")
+        for client_slug, key_spec in DEMO_API_KEYS.items():
+            self.stdout.write(f"- {client_slug} / {key_spec['name']}: {key_spec['raw_key']}")
 
 
 def seed_demo_data():
@@ -65,6 +78,7 @@ def seed_demo_data():
     organizations = upsert_organizations()
     audiences = upsert_audiences(organizations)
     clients = upsert_clients(organizations)
+    upsert_client_api_keys(clients)
     tags = upsert_tags(audiences)
     contacts = upsert_contacts(now)
     upsert_subscriptions(contacts, audiences, clients, now)
@@ -153,12 +167,30 @@ def upsert_clients(organizations):
             {"organization": organization, "slug": slug},
             {
                 "name": name,
-                "api_key_hash": hash_api_key(DEMO_API_KEYS[slug]),
                 "is_active": True,
             },
         )
         for slug, (name, organization) in clients.items()
     }
+
+
+def upsert_client_api_keys(clients):
+    for slug, client in clients.items():
+        key_spec = DEMO_API_KEYS[slug]
+        public_id = key_spec["raw_key"].removeprefix("dm_").split("_", 1)[0]
+        api_key, _created = ClientApiKey.objects.update_or_create(
+            client=client,
+            name=key_spec["name"],
+            defaults={
+                "public_id": public_id,
+                "key_hash": hash_api_key(key_spec["raw_key"]),
+                "notes": key_spec["notes"],
+                "revoked_at": None,
+            },
+        )
+        if api_key.revoked_at:
+            api_key.revoked_at = None
+            api_key.save(update_fields=["revoked_at", "updated_at"])
 
 
 def upsert_tags(audiences):

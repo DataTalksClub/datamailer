@@ -9,6 +9,7 @@ from mailing.models import (
     CampaignRecipientStatus,
     CampaignStatus,
     Client,
+    ClientApiKey,
     Contact,
     EmailEvent,
     EmailEventType,
@@ -135,8 +136,10 @@ def test_seed_demo_data_creates_transactional_history_and_hashed_api_keys():
     call_command("seed_demo_data")
 
     client = Client.objects.get(slug="dtc-courses")
-    assert check_api_key("demo-dtc-courses-api-key", client.api_key_hash) is True
-    assert client.api_key_hash != "demo-dtc-courses-api-key"
+    api_key = ClientApiKey.objects.get(client=client, name="Course platform transactional")
+    assert api_key.display_prefix == "dm_dtccourses"
+    assert check_api_key("dm_dtccourses_demo_transactional_email_key", api_key.key_hash) is True
+    assert api_key.key_hash != "dm_dtccourses_demo_transactional_email_key"
 
     assert set(EmailTemplate.objects.values_list("key", flat=True)) == {
         "email-verification",

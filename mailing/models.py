@@ -44,7 +44,6 @@ class Client(TimeStampedModel):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="clients")
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=120)
-    api_key_hash = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -59,6 +58,46 @@ class Client(TimeStampedModel):
 
     def __str__(self):
         return f"{self.name} ({self.organization.slug})"
+
+    @property
+    def active_api_key_count(self):
+        return self.api_keys.filter(revoked_at__isnull=True).count()
+
+
+class ClientApiKey(TimeStampedModel):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="api_keys")
+    name = models.CharField(max_length=120)
+    key_hash = models.CharField(max_length=255)
+    public_id = models.CharField(max_length=32, unique=True)
+    notes = models.TextField(blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "client_api_keys"
+        ordering = ["client__organization__slug", "client__slug", "revoked_at", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "name"],
+                condition=models.Q(revoked_at__isnull=True),
+                name="unique_active_api_key_name_per_client",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["public_id"], name="client_api_keys_public_id_idx"),
+            models.Index(fields=["client", "revoked_at"], name="client_api_keys_client_state_idx"),
+        ]
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None
+
+    @property
+    def display_prefix(self):
+        return f"dm_{self.public_id}"
+
+    def __str__(self):
+        return f"{self.client.slug} / {self.name}"
 
 
 class EmailValidationStatus(models.TextChoices):

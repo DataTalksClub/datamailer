@@ -7,6 +7,7 @@ from mailing.models import (
     Audience,
     Campaign,
     Client,
+    ClientApiKey,
     Contact,
     ContactTag,
     EmailValidationStatus,
@@ -16,7 +17,7 @@ from mailing.models import (
     SubscriptionStatus,
     Tag,
 )
-from mailing.services.auth import authenticate_bearer_token, check_api_key
+from mailing.services.auth import authenticate_bearer_token, check_api_key, create_client_api_key
 from mailing.services.campaigns import estimate_campaign_recipients, snapshot_campaign_recipients
 
 pytestmark = pytest.mark.django_db
@@ -82,40 +83,90 @@ def test_staff_can_load_client_list(client, operator, client_record):
     assert b"dtc" in response.content
 
 
-def test_client_api_key_generate_rotate_revoke_is_one_time_and_auth_safe(client, operator, client_record):
+def test_client_list_renders_active_api_key_count(client, operator, audience, client_record):
+    active_one, _ = create_client_api_key(client=client_record, name="Website")
+    create_client_api_key(client=client_record, name="Course platform")
+    active_one.revoked_at = timezone.now()
+    active_one.save(update_fields=["revoked_at", "updated_at"])
+    assert client_record.active_api_key_count == 1
+    assert not hasattr(audience, "active_api_key_count")
     client.force_login(operator)
 
-    generated = client.post(reverse("mailing:client_api_key_generate", args=[client_record.id]), follow=True)
-    client_record.refresh_from_db()
-    raw_key = generated.context["raw_api_key"]
+    response = client.get(reverse("mailing:client_list"))
+    page = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Active API keys" in page
+    assert "<td>1</td>" in page
+
+
+def test_client_detail_renders_active_api_key_count(client, operator, client_record):
+    create_client_api_key(client=client_record, name="Website")
+    revoked_key, _ = create_client_api_key(client=client_record, name="Old script")
+    revoked_key.revoked_at = timezone.now()
+    revoked_key.save(update_fields=["revoked_at", "updated_at"])
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:client_detail", args=[client_record.id]))
+    page = response.content.decode()
+
+    assert response.status_code == 200
+    assert '<span class="meta-label">Active API keys</span>1' in page
+    assert '<span class="badge success">Active</span>' in page
+    assert '<span class="badge danger">Revoked</span>' in page
+
+
+def test_client_api_keys_create_list_revoke_one_key_and_auth_safe(client, operator, client_record):
+    client.force_login(operator)
+
+    generated = client.post(
+        reverse("mailing:client_api_key_create", args=[client_record.id]),
+        {"name": "Website registration", "notes": "Used by the signup form."},
+        follow=True,
+    )
+    raw_key = generated.context["raw_api_key_context"]["raw_key"]
+    api_key = ClientApiKey.objects.get(client=client_record, name="Website registration")
     assert raw_key.startswith("dm_")
     assert raw_key in generated.content.decode()
-    assert client_record.api_key_hash
-    assert raw_key != client_record.api_key_hash
-    assert check_api_key(raw_key, client_record.api_key_hash) is True
+    assert api_key.display_prefix in generated.content.decode()
+    assert api_key.key_hash
+    assert raw_key != api_key.key_hash
+    assert check_api_key(raw_key, api_key.key_hash) is True
     assert authenticate_bearer_token(f"Bearer {raw_key}").client == client_record
     assert raw_key not in str(OperatorAudit.objects.latest("id").metadata)
 
     later_get = client.get(reverse("mailing:client_detail", args=[client_record.id]))
     assert raw_key not in later_get.content.decode()
+    assert b"Website registration" in later_get.content
+    assert b"Used by the signup form." in later_get.content
 
-    rotated = client.post(reverse("mailing:client_api_key_generate", args=[client_record.id]), follow=True)
-    new_key = rotated.context["raw_api_key"]
-    client_record.refresh_from_db()
-    assert new_key != raw_key
+    second = client.post(
+        reverse("mailing:client_api_key_create", args=[client_record.id]),
+        {"name": "Course platform"},
+        follow=True,
+    )
+    second_raw_key = second.context["raw_api_key_context"]["raw_key"]
+    second_key = ClientApiKey.objects.get(client=client_record, name="Course platform")
+    assert second_raw_key != raw_key
+    assert authenticate_bearer_token(f"Bearer {second_raw_key}").client == client_record
+
+    client.post(reverse("mailing:client_api_key_revoke", args=[client_record.id, api_key.id]))
+    api_key.refresh_from_db()
+    second_key.refresh_from_db()
+    assert api_key.revoked_at is not None
+    assert second_key.revoked_at is None
     assert authenticate_bearer_token(f"Bearer {raw_key}").error == "invalid_api_key"
-    assert authenticate_bearer_token(f"Bearer {new_key}").client == client_record
-
-    client.post(reverse("mailing:client_api_key_revoke", args=[client_record.id]))
-    client_record.refresh_from_db()
-    assert client_record.api_key_hash == ""
-    assert authenticate_bearer_token(f"Bearer {new_key}").error == "invalid_api_key"
+    assert authenticate_bearer_token(f"Bearer {second_raw_key}").client == client_record
 
 
 def test_inactive_client_rejects_otherwise_valid_key(client, operator, client_record):
     client.force_login(operator)
-    response = client.post(reverse("mailing:client_api_key_generate", args=[client_record.id]), follow=True)
-    raw_key = response.context["raw_api_key"]
+    response = client.post(
+        reverse("mailing:client_api_key_create", args=[client_record.id]),
+        {"name": "Inactive test"},
+        follow=True,
+    )
+    raw_key = response.context["raw_api_key_context"]["raw_key"]
     client_record.is_active = False
     client_record.save(update_fields=["is_active", "updated_at"])
 

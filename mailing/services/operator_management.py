@@ -1,11 +1,10 @@
-import secrets
-
 from django.db import transaction
 from django.utils import timezone
 
 from mailing.models import (
     Audience,
     Client,
+    ClientApiKey,
     ContactTag,
     EmailValidationStatus,
     OperatorAudit,
@@ -13,7 +12,7 @@ from mailing.models import (
     SubscriptionStatus,
     Tag,
 )
-from mailing.services.auth import hash_api_key
+from mailing.services.auth import create_client_api_key
 from mailing.services.contacts import normalize_tag_slug
 
 SECRET_METADATA_KEYS = {"api_key", "raw_api_key", "api_key_hash", "token", "secret", "password"}
@@ -104,23 +103,39 @@ def create_or_update_client(*, actor, client=None, organization, name, slug, is_
 
 
 @transaction.atomic
-def generate_or_rotate_api_key(*, actor, client):
-    raw_key = f"dm_{secrets.token_urlsafe(32)}"
-    action = "client.api_key.rotate" if client.api_key_hash else "client.api_key.generate"
-    client.api_key_hash = hash_api_key(raw_key)
-    client.save(update_fields=["api_key_hash", "updated_at"])
-    audit(actor, action, client, {"client": client.slug})
-    return raw_key
+def create_api_key(*, actor, client, name, notes=""):
+    api_key, raw_key = create_client_api_key(client=client, name=name, notes=notes)
+    audit(
+        actor,
+        "client.api_key.create",
+        client,
+        {"client": client.slug, "key_id": api_key.id, "key_prefix": api_key.display_prefix, "key_name": api_key.name},
+    )
+    return api_key, raw_key
 
 
 @transaction.atomic
-def revoke_api_key(*, actor, client):
-    if not client.api_key_hash:
+def revoke_api_key(*, actor, api_key):
+    if api_key.revoked_at:
         return False
-    client.api_key_hash = ""
-    client.save(update_fields=["api_key_hash", "updated_at"])
-    audit(actor, "client.api_key.revoke", client, {"client": client.slug})
+    api_key.revoked_at = timezone.now()
+    api_key.save(update_fields=["revoked_at", "updated_at"])
+    audit(
+        actor,
+        "client.api_key.revoke",
+        api_key.client,
+        {
+            "client": api_key.client.slug,
+            "key_id": api_key.id,
+            "key_prefix": api_key.display_prefix,
+            "key_name": api_key.name,
+        },
+    )
     return True
+
+
+def client_api_keys_for_detail(client):
+    return ClientApiKey.objects.filter(client=client).order_by("revoked_at", "name", "created_at")
 
 
 @transaction.atomic

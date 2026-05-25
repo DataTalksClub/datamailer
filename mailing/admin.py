@@ -5,6 +5,7 @@ from mailing.models import (
     Campaign,
     CampaignRecipient,
     Client,
+    ClientApiKey,
     Contact,
     ContactTag,
     EmailEvent,
@@ -42,6 +43,14 @@ class ClientAdmin(CreatedAtReadOnlyMixin, admin.ModelAdmin):
     list_filter = ("organization", "is_active")
     search_fields = ("name", "slug", "organization__name", "organization__slug")
     prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(ClientApiKey)
+class ClientApiKeyAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at", "updated_at", "last_used_at", "revoked_at")
+    list_display = ("name", "public_id", "client", "revoked_at", "last_used_at", "created_at")
+    list_filter = ("revoked_at", "client__organization")
+    search_fields = ("name", "public_id", "client__name", "client__slug")
 
 
 class SubscriptionInline(admin.TabularInline):

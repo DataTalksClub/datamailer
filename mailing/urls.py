@@ -24,12 +24,12 @@ urlpatterns = [
     path("clients/<int:client_id>/", views.client_detail, name="client_detail"),
     path("clients/<int:client_id>/edit/", views.client_edit, name="client_edit"),
     path(
-        "clients/<int:client_id>/api-key/generate/",
-        views.client_api_key_generate,
-        name="client_api_key_generate",
+        "clients/<int:client_id>/api-keys/create/",
+        views.client_api_key_create,
+        name="client_api_key_create",
     ),
     path(
-        "clients/<int:client_id>/api-key/revoke/",
+        "clients/<int:client_id>/api-keys/<int:key_id>/revoke/",
         views.client_api_key_revoke,
         name="client_api_key_revoke",
     ),

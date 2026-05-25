@@ -2,7 +2,7 @@
 
 Client apps use the API to sync contacts, check verification/subscription state, send transactional emails, and create/send campaigns.
 
-All client API endpoints require authentication. MVP can use per-client API keys stored as hashes. Later this can move to OAuth/JWT service credentials if needed.
+All client API endpoints require authentication. Clients can have multiple named API keys for separate integrations. Datamailer stores only key hashes and displays each key's safe `dm_<prefix>` identifier for support and audit trails.
 
 ## Authentication
 
@@ -12,7 +12,13 @@ Request header:
 Authorization: Bearer <client-api-key>
 ```
 
-The API key maps to a `client`. The client determines which audiences and operations are allowed.
+The API key maps to one `client`. Any active, non-revoked key for an active client is accepted. Revoked keys fail immediately, and successful authentication updates the key's `last_used_at`.
+
+Local demo data creates stable named keys for examples:
+
+- `dtc-courses` / `Course platform transactional`: `dm_dtccourses_demo_transactional_email_key`
+- `dtc-newsletter` / `Newsletter import/export`: `dm_dtcnews_demo_newsletter_import_export_key`
+- `asl-platform` / `ASL platform transactional`: `dm_aslplatform_demo_transactional_email_key`
 
 ## Contact APIs
 

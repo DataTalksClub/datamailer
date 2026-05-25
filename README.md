@@ -48,7 +48,7 @@ Staff users can open the local API reference at `/api-docs/`; the OpenAPI JSON i
 Transactional template keys and required context are visible to staff at `/templates/`.
 
 Client applications authenticate to `/api` with Bearer authentication. In the product UI, open
-`/clients/`, create or select a client, then generate or rotate that client's API key. The raw key is
+`/clients/`, create or select a client, then create a named API key for each integration. The raw key is
 shown once after generation and should be stored by the client application. API access is scoped to the
 authenticated client's organization and the request's `audience`/`client` values.
 
