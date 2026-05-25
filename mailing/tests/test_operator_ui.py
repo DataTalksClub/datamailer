@@ -2,6 +2,7 @@ from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.staticfiles import finders
 from django.urls import reverse
 from django.utils import timezone
 
@@ -120,6 +121,18 @@ def create_transactional_message(contact, client, *, status=TransactionalMessage
         subject="Subject",
         **kwargs,
     )
+
+
+def test_base_template_loads_datamailer_static_css(client, operator):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:dashboard"))
+
+    assert response.status_code == 200
+    assert b'href="/static/mailing/css/app.css"' in response.content
+    assert b"<style>" not in response.content
+    assert b'aria-current="page">Datamailer' in response.content
+    assert finders.find("mailing/css/app.css") is not None
 
 
 def test_rate_hides_unavailable_denominators():

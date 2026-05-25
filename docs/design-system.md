@@ -57,6 +57,16 @@ Preferred file direction:
 - no large inline CSS in templates
 - no generated CSS checked in unless a future build process is approved
 
+Current shared primitive hooks:
+
+- shell/navigation: `.app-header`, `.app-nav`, `.app-main`, `aria-current="page"`
+- layout: `.page-header`, `.section-header`, `.section`, `.detail-section`, `.breadcrumbs`, `.meta-grid`, `.stats-grid`, `.detail-grid`
+- actions: `.button`, `.button.secondary`, `.button.danger`, `.actions`, `.action-row`, `.toolbar`
+- forms/filters: `.form-grid`, `.form-field`, `.field-errors`, `.form-errors`, `.helptext`, `.filter-grid`, `.filter-bar`, `.checkbox-list`
+- operational data: `.table-wrap`, `.nowrap`, `.truncate`, `.pagination`, `.empty-state`
+- state and feedback: `.badge`, `.badge.success`, `.badge.warning`, `.badge.danger`, `.badge.neutral`, `.messages`, `.message`, `.alert`
+- activity/debug: `.timeline`, `.timeline-item`, `.audit-row`, `pre`, `code`
+
 ## Layout
 
 - Use a stable app shell with clear navigation.
