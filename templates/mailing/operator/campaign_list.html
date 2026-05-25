@@ -16,48 +16,71 @@
   </div>
 
   {% if campaigns.object_list %}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Subject</th>
-            <th scope="col">Status</th>
-            <th scope="col">Client</th>
-            <th scope="col">Audience</th>
-            <th scope="col">Scheduled</th>
-            <th scope="col">Sent</th>
-            <th scope="col">Recipients</th>
-            <th scope="col">Opens</th>
-            <th scope="col">Clicks</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for campaign in campaigns %}
+    <section class="section" aria-labelledby="campaigns-table">
+      <div class="section-header">
+        <div>
+          <h2 id="campaigns-table">Campaigns</h2>
+          <p class="muted">Scan current state, audience, send timing, and delivery signals.</p>
+        </div>
+      </div>
+      <div class="table-wrap campaign-table">
+        <table>
+          <thead>
             <tr>
-              <td class="truncate"><a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
-              <td><span class="badge">{{ campaign.get_status_display }}</span></td>
-              <td>{{ campaign.client.name }}</td>
-              <td><a href="{% url 'mailing:audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a></td>
-              <td class="nowrap">{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</td>
-              <td class="nowrap">{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
-              <td class="nowrap">{{ campaign.recipient_count }}</td>
-              <td class="nowrap">{{ campaign.unique_open_count }} / {{ campaign.open_count }}</td>
-              <td class="nowrap">{{ campaign.unique_click_count }} / {{ campaign.click_count }}</td>
-              <td class="nowrap">
-                {% if campaign.status == "draft" %}
-                  <a href="{% url 'mailing:campaign_edit' campaign.id %}">Edit</a>
-                {% else %}
-                  Locked
-                {% endif %}
-              </td>
+              <th scope="col">Campaign</th>
+              <th scope="col">Status</th>
+              <th scope="col">Audience</th>
+              <th scope="col">Send time</th>
+              <th scope="col">Recipients</th>
+              <th scope="col">Delivery</th>
+              <th scope="col">Engagement</th>
+              <th scope="col">Action</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {% for row in campaign_rows %}
+              {% with campaign=row.campaign %}
+              <tr>
+                <td class="truncate">
+                  <a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a>
+                  <div class="helptext">{{ campaign.client.name }}</div>
+                </td>
+                <td><span class="badge {{ row.badge.tone }}">{{ row.badge.label }}</span></td>
+                <td class="truncate">
+                  <a href="{% url 'mailing:audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a>
+                </td>
+                <td class="nowrap">
+                  {{ row.timing_value|date:"Y-m-d H:i"|default:"-" }}
+                  <div class="helptext">{{ row.timing_label }}</div>
+                </td>
+                <td class="nowrap">{{ campaign.recipient_count }}</td>
+                <td class="nowrap">
+                  {{ campaign.sent_count }} sent / {{ campaign.delivered_count }} delivered
+                  <div class="helptext">{{ campaign.bounce_count }} bounces / {{ campaign.complaint_count }} complaints</div>
+                </td>
+                <td class="nowrap">
+                  {{ campaign.unique_open_count }} opens / {{ campaign.unique_click_count }} clicks
+                </td>
+                <td class="nowrap">
+                  {% if campaign.status == "draft" %}
+                    <a href="{% url 'mailing:campaign_edit' campaign.id %}">Edit</a>
+                  {% else %}
+                    Locked
+                  {% endif %}
+                </td>
+              </tr>
+              {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% include "mailing/operator/_pagination.html" with page_obj=campaigns querystring=pagination_querystring %}
+    </section>
   {% else %}
-    <div class="empty-state">No campaigns found.</div>
+    <div class="empty-state">
+      <strong>No campaigns yet</strong>
+      <p>Create a campaign draft when an audience is ready for a broadcast send.</p>
+      <a class="button secondary" href="{% url 'mailing:campaign_create' %}">Create campaign</a>
+    </div>
   {% endif %}
 {% endblock %}

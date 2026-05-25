@@ -155,6 +155,14 @@ class Badge:
 
 
 @dataclass(frozen=True)
+class CampaignListRow:
+    campaign: Campaign
+    badge: Badge
+    timing_label: str
+    timing_value: object | None
+
+
+@dataclass(frozen=True)
 class ContactMetric:
     label: str
     value: object | None
@@ -345,6 +353,31 @@ def campaign_status_badge(status: str) -> Badge:
     return Badge(label, "neutral")
 
 
+def campaign_timing(campaign: Campaign) -> tuple[str, object | None]:
+    if campaign.sent_at:
+        return "Sent", campaign.sent_at
+    if campaign.scheduled_at:
+        return "Scheduled", campaign.scheduled_at
+    if campaign.status in {CampaignStatus.QUEUED, CampaignStatus.SNAPSHOTTING, CampaignStatus.SENDING}:
+        return "Queued", campaign.updated_at
+    return "Updated", campaign.updated_at
+
+
+def campaign_list_rows(campaigns) -> list[CampaignListRow]:
+    rows = []
+    for campaign in campaigns:
+        timing_label, timing_value = campaign_timing(campaign)
+        rows.append(
+            CampaignListRow(
+                campaign=campaign,
+                badge=campaign_status_badge(campaign.status),
+                timing_label=timing_label,
+                timing_value=timing_value,
+            )
+        )
+    return rows
+
+
 def campaign_stats(campaign: Campaign) -> list[Stat]:
     failed_count = CampaignRecipient.objects.filter(
         campaign=campaign,
@@ -371,6 +404,14 @@ def campaign_stats(campaign: Campaign) -> list[Stat]:
 
 def campaign_queryset() -> QuerySet[Campaign]:
     return Campaign.objects.select_related("client", "audience", "audience__organization").order_by("-created_at", "-id")
+
+
+def campaign_recent_events(campaign: Campaign) -> QuerySet[EmailEvent]:
+    return (
+        EmailEvent.objects.filter(campaign=campaign)
+        .select_related("contact", "client", "audience", "campaign_recipient")
+        .order_by("-created_at", "-id")
+    )
 
 
 def campaign_recipient_queryset(campaign: Campaign, filter_key: str = "") -> QuerySet[CampaignRecipient]:

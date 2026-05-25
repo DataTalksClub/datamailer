@@ -734,13 +734,29 @@ def test_campaign_list_renders_recent_campaigns(client, operator, campaign):
     client.force_login(operator)
 
     response = client.get(reverse("mailing:campaign_list"))
+    html = response.content.decode()
 
     assert response.status_code == 200
-    assert b"Weekly update" in response.content
-    assert b"DTC Courses" in response.content
-    assert b"DataTalksClub" in response.content
-    assert b"1 / 3" in response.content
+    assert "Weekly update" in html
+    assert "DTC Courses" in html
+    assert "DataTalksClub" in html
+    assert "Send time" in html
+    assert "3 sent / 2 delivered" in html
+    assert "1 opens / 1 clicks" in html
+    assert "1 bounces / 1 complaints" in html
+    assert '<span class="badge success">Sent</span>' in html
+    assert "Create campaign" in html
+
+
+def test_campaign_list_empty_state_is_actionable(client, operator):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:campaign_list"))
+
+    assert response.status_code == 200
+    assert b"No campaigns yet" in response.content
     assert b"Create campaign" in response.content
+    assert f'href="{reverse("mailing:campaign_create")}"'.encode() in response.content
 
 
 def test_audience_list_and_detail_render_summaries_members_history_and_events(
@@ -844,17 +860,39 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
         last_error="",
     )
     create_recipient(campaign, "other@example.com")
+    EmailEvent.objects.create(
+        campaign=campaign,
+        campaign_recipient=recipient,
+        contact=recipient.contact,
+        client=campaign.client,
+        audience=campaign.audience,
+        event_type=EmailEventType.OPEN,
+        provider_event_id="evt-123",
+        metadata={"ses_message_id": "ses-123"},
+    )
 
     response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]), {"filter": "opened"})
+    html = response.content.decode()
 
     assert response.status_code == 200
-    assert b"Unique opens" in response.content
-    assert b"33.3%" in response.content
-    assert recipient.email.encode() in response.content
-    assert b"other@example.com" not in response.content
-    assert b"ses-123" in response.content
-    assert b'href="/contacts/person@example.com/"' in response.content
-    assert f'id="recipient-{recipient.id}"'.encode() in response.content
+    assert "Summary" in html
+    assert "Stats" in html
+    assert "Recipients" in html
+    assert "Recent History" in html
+    assert "Provider data" in html
+    assert "campaign-recipient-table" in html
+    assert "email-cell" in html
+    assert "provider-cell" in html
+    assert "data-truncate" in html
+    assert '<span class="badge success">Sent</span>' in html
+    assert "Unique opens" in html
+    assert "33.3%" in html
+    assert recipient.email in html
+    assert "other@example.com" not in html
+    assert "ses-123" in html
+    assert "Provider event: evt-123" in html
+    assert 'href="/contacts/person@example.com/"' in html
+    assert f'id="recipient-{recipient.id}"' in html
 
 
 def test_operator_can_create_campaign_draft_with_tag_filters(client, operator, audience, client_record):
@@ -1007,14 +1045,15 @@ def test_campaign_detail_shows_draft_estimate_and_state_dependent_controls(clien
     draft_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
 
     assert draft_response.status_code == 200
-    assert b"Recipient Estimate" in draft_response.content
+    assert b"Queue Preview" in draft_response.content
     assert b"Snapshot and queue" in draft_response.content
     assert b"Edit draft" in draft_response.content
+    assert b"No campaign email events found yet" in draft_response.content
 
     campaign.status = "queued"
     campaign.save()
     queued_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
-    assert b"Recipient Estimate" not in queued_response.content
+    assert b"Queue Preview" not in queued_response.content
     assert b"Snapshot and queue" not in queued_response.content
     assert b"Edit draft" not in queued_response.content
 

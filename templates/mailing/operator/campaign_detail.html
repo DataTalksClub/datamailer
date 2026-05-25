@@ -3,12 +3,29 @@
 {% block title %}{{ campaign.subject }} | Datamailer{% endblock %}
 
 {% block content %}
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{% url 'mailing:campaign_list' %}">Campaigns</a>
+    <span>/</span>
+    <span>{{ campaign.subject }}</span>
+  </nav>
+
   <div class="page-header">
     <div>
       <h1>{{ campaign.subject }}</h1>
       <p>{{ campaign.client.name }} / {{ campaign.audience.name }}</p>
+      <div class="badge-row">
+        <span class="badge {{ campaign_badge.tone }}">{{ campaign_badge.label }}</span>
+        {% if campaign.sent_at %}
+          <span class="badge success">Sent {{ campaign.sent_at|date:"Y-m-d H:i" }}</span>
+        {% elif campaign.scheduled_at %}
+          <span class="badge warning">Scheduled {{ campaign.scheduled_at|date:"Y-m-d H:i" }}</span>
+        {% else %}
+          <span class="badge neutral">No send time</span>
+        {% endif %}
+      </div>
     </div>
     <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:campaign_list' %}">All campaigns</a>
       {% if can_edit %}
         <a class="button secondary" href="{% url 'mailing:campaign_edit' campaign.id %}">Edit draft</a>
       {% endif %}
@@ -18,26 +35,52 @@
           <button type="submit">Snapshot and queue</button>
         </form>
       {% endif %}
-      <a class="button secondary" href="{% url 'mailing:campaign_list' %}">All campaigns</a>
     </div>
   </div>
 
-  <section aria-labelledby="campaign-summary">
-    <h2 id="campaign-summary">Summary</h2>
+  <section class="section" aria-labelledby="campaign-summary">
+    <div class="section-header">
+      <div>
+        <h2 id="campaign-summary">Summary</h2>
+        <p class="muted">Identity, queue state, audience, and send timing.</p>
+      </div>
+    </div>
     <div class="meta-grid">
-      <div class="meta-item"><span class="meta-label">Status</span><span class="badge">{{ campaign.get_status_display }}</span></div>
+      <div class="meta-item"><span class="meta-label">Status</span><span class="badge {{ campaign_badge.tone }}">{{ campaign_badge.label }}</span></div>
       <div class="meta-item"><span class="meta-label">Client</span>{{ campaign.client.name }}</div>
-      <div class="meta-item"><span class="meta-label">Audience</span>{{ campaign.audience.name }}</div>
+      <div class="meta-item"><span class="meta-label">Audience</span><a href="{% url 'mailing:audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a></div>
       <div class="meta-item"><span class="meta-label">Scheduled</span>{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Sent</span>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Include tags</span>{{ campaign.include_tags|join:", "|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Exclude tags</span>{{ campaign.exclude_tags|join:", "|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Recipients snapshotted</span>{{ campaign.recipient_count }}</div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="campaign-stats">
+    <div class="section-header">
+      <div>
+        <h2 id="campaign-stats">Stats</h2>
+        <p class="muted">Delivery, engagement, unsubscribe, and provider issue counts.</p>
+      </div>
+    </div>
+    <div class="stats-grid">
+      {% for stat in stats %}
+        <div class="stat">
+          <span class="stat-label">{{ stat.label }}</span>
+          <span class="stat-value">{{ stat.value }}</span>
+          {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
+        </div>
+      {% endfor %}
     </div>
   </section>
 
   {% if estimate %}
-    <section aria-labelledby="recipient-estimate">
-      <h2 id="recipient-estimate">Recipient Estimate</h2>
+    <section class="section" aria-labelledby="recipient-estimate">
+      <div class="section-header">
+        <div>
+          <h2 id="recipient-estimate">Queue Preview</h2>
+          <p class="muted">Estimated recipients before snapshotting this draft.</p>
+        </div>
+      </div>
       <div class="stats-grid">
         <div class="stat">
           <span class="stat-label">Candidates</span>
@@ -57,7 +100,13 @@
         </div>
       </div>
 
+      <div class="meta-grid">
+        <div class="meta-item"><span class="meta-label">Include tags</span>{{ campaign.include_tags|join:", "|default:"-" }}</div>
+        <div class="meta-item"><span class="meta-label">Exclude tags</span>{{ campaign.exclude_tags|join:", "|default:"-" }}</div>
+      </div>
+
       {% if estimate.skip_reason_counts %}
+        <h3>Skip reasons</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -104,21 +153,13 @@
     </section>
   {% endif %}
 
-  <section aria-labelledby="campaign-stats">
-    <h2 id="campaign-stats">Stats</h2>
-    <div class="stats-grid">
-      {% for stat in stats %}
-        <div class="stat">
-          <span class="stat-label">{{ stat.label }}</span>
-          <span class="stat-value">{{ stat.value }}</span>
-          {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
-        </div>
-      {% endfor %}
+  <section class="section" aria-labelledby="campaign-recipients">
+    <div class="section-header">
+      <div>
+        <h2 id="campaign-recipients">Recipients</h2>
+        <p class="muted">Snapshot recipients, delivery state, engagement, provider IDs, and errors.</p>
+      </div>
     </div>
-  </section>
-
-  <section aria-labelledby="campaign-recipients">
-    <h2 id="campaign-recipients">Recipients</h2>
     <form class="toolbar" method="get">
       <div>
         <label for="filter">Filter</label>
@@ -136,37 +177,40 @@
     </form>
 
     {% if recipients.object_list %}
-      <div class="table-wrap">
+      <div class="table-wrap campaign-recipient-table">
         <table>
           <thead>
             <tr>
               <th scope="col">Email</th>
               <th scope="col">Status</th>
-              <th scope="col">Skip reason</th>
-              <th scope="col">Sent</th>
-              <th scope="col">Delivered</th>
-              <th scope="col">Opened</th>
-              <th scope="col">Clicked</th>
-              <th scope="col">Counts</th>
-              <th scope="col">SES message</th>
-              <th scope="col">Last error</th>
+              <th scope="col">Delivery</th>
+              <th scope="col">Engagement</th>
+              <th scope="col">Provider data</th>
             </tr>
           </thead>
           <tbody>
             {% for recipient in recipients %}
               <tr id="recipient-{{ recipient.id }}">
-                <td class="truncate">
-                  <a href="{% url 'mailing:contact_detail' recipient.contact.normalized_email %}">{{ recipient.email }}</a>
+                <td class="email-cell">
+                  <a class="data-truncate" href="{% url 'mailing:contact_detail' recipient.contact.normalized_email %}" title="{{ recipient.email }}">{{ recipient.email }}</a>
                 </td>
                 <td><span class="badge">{{ recipient.get_status_display }}</span></td>
-                <td>{{ recipient.get_skip_reason_display|default:"-" }}</td>
-                <td class="nowrap">{{ recipient.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="nowrap">{{ recipient.delivered_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="nowrap">{{ recipient.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="nowrap">{{ recipient.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="nowrap">{{ recipient.open_count }} opens / {{ recipient.click_count }} clicks</td>
-                <td class="truncate">{{ recipient.ses_message_id|default:"-" }}</td>
-                <td class="truncate">{{ recipient.last_error|default:"-" }}</td>
+                <td>
+                  <div class="nowrap">Sent: {{ recipient.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                  <div class="nowrap">Delivered: {{ recipient.delivered_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                  {% if recipient.skip_reason %}
+                    <div class="helptext">Skipped: {{ recipient.get_skip_reason_display }}</div>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="nowrap">Opened: {{ recipient.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                  <div class="nowrap">Clicked: {{ recipient.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                  <div class="helptext">{{ recipient.open_count }} opens / {{ recipient.click_count }} clicks</div>
+                </td>
+                <td class="provider-cell">
+                  <span class="data-truncate" title="{{ recipient.ses_message_id|default:'-' }}">SES: {{ recipient.ses_message_id|default:"-" }}</span>
+                  <span class="data-truncate helptext" title="{{ recipient.last_error|default:'-' }}">Error: {{ recipient.last_error|default:"-" }}</span>
+                </td>
               </tr>
             {% endfor %}
           </tbody>
@@ -174,7 +218,48 @@
       </div>
       {% include "mailing/operator/_pagination.html" with page_obj=recipients querystring=pagination_querystring %}
     {% else %}
-      <div class="empty-state">No recipients match this filter.</div>
+      <div class="empty-state">
+        {% if active_filter %}
+          No recipients match this filter.
+        {% else %}
+          No recipient snapshot rows exist for this campaign yet.
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="detail-section secondary-section" aria-labelledby="campaign-history">
+    <div class="section-header">
+      <div>
+        <h2 id="campaign-history">Recent History</h2>
+        <p class="muted">Latest email events tied to this campaign.</p>
+      </div>
+    </div>
+    {% if event_rows %}
+      <div class="timeline">
+        {% for row in event_rows %}
+          {% with event=row.event %}
+            <article class="timeline-item">
+              <strong>{{ event.get_event_type_display }}</strong>
+              <span class="muted">{{ event.created_at|date:"Y-m-d H:i:s" }}</span>
+              {% if event.contact %}
+                <div class="truncate"><a href="{% url 'mailing:contact_detail' event.contact.normalized_email %}">{{ event.contact.email }}</a></div>
+              {% endif %}
+              {% if event.url %}
+                <div class="truncate"><a href="{{ event.url }}">{{ event.url }}</a></div>
+              {% endif %}
+              {% if event.provider_event_id %}
+                <div class="muted truncate">Provider event: {{ event.provider_event_id }}</div>
+              {% endif %}
+              {% if row.metadata_summary %}
+                <div class="muted truncate">{{ row.metadata_summary }}</div>
+              {% endif %}
+            </article>
+          {% endwith %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No campaign email events found yet.</div>
     {% endif %}
   </section>
 {% endblock %}

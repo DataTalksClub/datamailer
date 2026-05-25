@@ -70,9 +70,12 @@ from mailing.services.operator_ui import (
     audience_queryset,
     audience_recent_events,
     audience_summary,
+    campaign_list_rows,
     campaign_queryset,
+    campaign_recent_events,
     campaign_recipient_queryset,
     campaign_stats,
+    campaign_status_badge,
     choices_from_text_choices,
     contact_campaign_history,
     contact_detail_context,
@@ -179,7 +182,11 @@ def campaign_list(request):
     return render(
         request,
         "mailing/operator/campaign_list.html",
-        {"campaigns": campaigns, "pagination_querystring": pagination_querystring(request)},
+        {
+            "campaigns": campaigns,
+            "campaign_rows": campaign_list_rows(campaigns.object_list),
+            "pagination_querystring": pagination_querystring(request),
+        },
     )
 
 
@@ -225,16 +232,23 @@ def campaign_detail(request, campaign_id):
     active_filter = request.GET.get("filter", "")
     recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
     estimate = estimate_campaign_recipients(campaign) if campaign.status == CampaignStatus.DRAFT else None
+    events = campaign_recent_events(campaign)[:10]
+    event_rows = [
+        {"event": event, "metadata_summary": metadata_summary(event.metadata)}
+        for event in events
+    ]
     return render(
         request,
         "mailing/operator/campaign_detail.html",
         {
             "campaign": campaign,
+            "campaign_badge": campaign_status_badge(campaign.status),
             "can_edit": campaign.status == CampaignStatus.DRAFT,
             "can_queue": campaign.status == CampaignStatus.DRAFT,
             "estimate": estimate,
             "stats": campaign_stats(campaign),
             "recipients": recipients,
+            "event_rows": event_rows,
             "recipient_filter_labels": RECIPIENT_FILTER_LABELS,
             "active_filter": active_filter if active_filter in RECIPIENT_FILTER_LABELS else "",
             "pagination_querystring": pagination_querystring(request),

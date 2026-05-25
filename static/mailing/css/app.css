@@ -402,6 +402,11 @@ a.compact-row:hover {
   gap: 10px;
 }
 
+.actions form,
+.action-row form {
+  margin: 0;
+}
+
 .messages {
   display: grid;
   gap: var(--dm-space-2);
@@ -573,6 +578,26 @@ tr:last-child td {
 .truncate {
   max-width: 280px;
   overflow-wrap: anywhere;
+}
+
+.data-truncate {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.campaign-recipient-table table {
+  min-width: 980px;
+}
+
+.campaign-recipient-table .email-cell {
+  min-width: 240px;
+}
+
+.campaign-recipient-table .provider-cell {
+  min-width: 220px;
 }
 
 .pagination {
@@ -805,6 +830,11 @@ code {
   .actions,
   .action-row {
     justify-content: stretch;
+  }
+
+  .actions > *,
+  .action-row > * {
+    width: 100%;
   }
 
   .form-grid {
