@@ -1,35 +1,111 @@
-{% extends "base.html" %}
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Email preferences | Datamailer</title>
+    <link rel="stylesheet" href="{% static 'mailing/css/app.css' %}">
+  </head>
+  <body class="unsubscribe-page">
+    <main class="unsubscribe-main">
+      <section class="unsubscribe-panel" aria-labelledby="unsubscribe-title">
+        <p class="unsubscribe-kicker">Datamailer email preferences</p>
 
-{% block title %}Unsubscribe | Datamailer{% endblock %}
+        {% if invalid %}
+          <div class="unsubscribe-state">
+            <span class="badge neutral">Link unavailable</span>
+            <h1 id="unsubscribe-title">This unsubscribe link is no longer available</h1>
+            <p>
+              The link may have expired or already been replaced by a newer email.
+              No email preferences were changed.
+            </p>
+          </div>
+        {% elif confirmed %}
+          <div class="unsubscribe-state">
+            <span class="badge success">Unsubscribed</span>
+            <h1 id="unsubscribe-title">Your marketing preference was updated</h1>
+            <p>
+              {{ recipient.email }} has been unsubscribed from the selected marketing emails.
+            </p>
+            <p class="unsubscribe-note">
+              You may still receive transactional or required account emails where applicable.
+            </p>
+          </div>
+          <dl class="unsubscribe-context" aria-label="Preference context">
+            <div>
+              <dt>Email address</dt>
+              <dd>{{ recipient.email }}</dd>
+            </div>
+            <div>
+              <dt>Sender</dt>
+              <dd>{{ recipient.campaign.client.name }}</dd>
+            </div>
+            <div>
+              <dt>Audience</dt>
+              <dd>{{ recipient.campaign.audience.name }}</dd>
+            </div>
+          </dl>
+        {% else %}
+          <div class="unsubscribe-state">
+            <span class="badge warning">Action required</span>
+            <h1 id="unsubscribe-title">Choose which marketing emails to stop</h1>
+            <p>
+              Review the sender and audience below, then choose the unsubscribe scope
+              that matches what you want to change.
+            </p>
+          </div>
 
-{% block content %}
-  <h1>Email preferences</h1>
-  {% if invalid %}
-    <p>This unsubscribe link is no longer available.</p>
-  {% elif confirmed %}
-    <p>You have been unsubscribed from the selected marketing emails for {{ recipient.email }}.</p>
-  {% else %}
-    <p>Choose how you want to unsubscribe {{ recipient.email }} from marketing emails.</p>
-    {% if invalid_scope %}
-      <p>Select a valid unsubscribe option.</p>
-    {% endif %}
-    <form method="post">
-      <fieldset>
-        <legend>Unsubscribe scope</legend>
-        <label>
-          <input type="radio" name="scope" value="client" checked>
-          {{ recipient.campaign.client.name }}
-        </label>
-        <label>
-          <input type="radio" name="scope" value="audience">
-          {{ recipient.campaign.audience.name }}
-        </label>
-        <label>
-          <input type="radio" name="scope" value="global">
-          All Datamailer marketing emails
-        </label>
-      </fieldset>
-      <button type="submit">Unsubscribe</button>
-    </form>
-  {% endif %}
-{% endblock %}
+          <dl class="unsubscribe-context" aria-label="Email context">
+            <div>
+              <dt>Email address</dt>
+              <dd>{{ recipient.email }}</dd>
+            </div>
+            <div>
+              <dt>Sender</dt>
+              <dd>{{ recipient.campaign.client.name }}</dd>
+            </div>
+            <div>
+              <dt>Audience</dt>
+              <dd>{{ recipient.campaign.audience.name }}</dd>
+            </div>
+          </dl>
+
+          {% if invalid_scope %}
+            <p class="alert danger" role="alert">
+              Select one of the unsubscribe options below. No preference was changed.
+            </p>
+          {% endif %}
+
+          <form method="post" class="unsubscribe-form">
+            <fieldset class="unsubscribe-options">
+              <legend>Unsubscribe scope</legend>
+              <label class="unsubscribe-option">
+                <input type="radio" name="scope" value="client" checked>
+                <span>
+                  <strong>Stop marketing emails from {{ recipient.campaign.client.name }}</strong>
+                  <span>Use this for marketing from this sender, across its campaigns.</span>
+                </span>
+              </label>
+              <label class="unsubscribe-option">
+                <input type="radio" name="scope" value="audience">
+                <span>
+                  <strong>Stop marketing emails for {{ recipient.campaign.audience.name }}</strong>
+                  <span>Use this for this audience or list only.</span>
+                </span>
+              </label>
+              <label class="unsubscribe-option">
+                <input type="radio" name="scope" value="global">
+                <span>
+                  <strong>Stop all Datamailer-managed marketing emails</strong>
+                  <span>Use this for every marketing email managed through Datamailer.</span>
+                </span>
+              </label>
+            </fieldset>
+            <button type="submit">Update marketing preferences</button>
+          </form>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

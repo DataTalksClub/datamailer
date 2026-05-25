@@ -231,11 +231,22 @@ def test_unsubscribe_get_renders_public_page_without_login(client, recipient):
     token = ensure_campaign_recipient_tokens(recipient).unsubscribe_token
 
     response = client.get(reverse("mailing:public_unsubscribe", args=[token]))
+    html = response.content.decode()
 
     assert response.status_code == 200
-    assert b"Email preferences" in response.content
-    assert b"Person@example.com" in response.content
-    assert b"DTC Courses" in response.content
+    assert "Choose which marketing emails to stop" in html
+    assert "Person@example.com" in html
+    assert "DTC Courses" in html
+    assert "DataTalksClub" in html
+    assert "Stop marketing emails from DTC Courses" in html
+    assert "Stop marketing emails for DataTalksClub" in html
+    assert "Stop all Datamailer-managed marketing emails" in html
+    assert "Update marketing preferences" in html
+    assert 'name="scope" value="client"' in html
+    assert 'name="scope" value="audience"' in html
+    assert 'name="scope" value="global"' in html
+    assert "Campaigns" not in html
+    assert "/admin/" not in html
 
 
 @pytest.mark.parametrize("scope", ["client", "audience", "global"])
@@ -251,7 +262,12 @@ def test_unsubscribe_post_applies_scope_idempotently_and_records_events(client, 
     recipient.campaign.refresh_from_db()
     assert first.status_code == 200
     assert second.status_code == 200
-    assert b"You have been unsubscribed" in first.content
+    html = first.content.decode()
+    assert "Your marketing preference was updated" in html
+    assert "Person@example.com has been unsubscribed from the selected marketing emails." in html
+    assert "transactional or required account emails" in html
+    assert "Campaigns" not in html
+    assert "/admin/" not in html
     assert recipient.status == CampaignRecipientStatus.UNSUBSCRIBED
     assert recipient.campaign.unsubscribe_count == 1
     assert EmailEvent.objects.filter(event_type=EmailEventType.UNSUBSCRIBE, campaign_recipient=recipient).count() == 2
@@ -273,9 +289,35 @@ def test_unsubscribe_invalid_token_and_invalid_scope_do_not_mutate(client, recip
 
     invalid_token_response = client.post(reverse("mailing:public_unsubscribe", args=["missing-token"]), {"scope": "global"})
     invalid_scope_response = client.post(reverse("mailing:public_unsubscribe", args=[token]), {"scope": "bad"})
+    invalid_token_html = invalid_token_response.content.decode()
+    invalid_scope_html = invalid_scope_response.content.decode()
 
     recipient.refresh_from_db()
     assert invalid_token_response.status_code == 404
+    assert "This unsubscribe link is no longer available" in invalid_token_html
+    assert "Person@example.com" not in invalid_token_html
+    assert "Campaigns" not in invalid_token_html
+    assert "/admin/" not in invalid_token_html
     assert invalid_scope_response.status_code == 400
+    assert "Select one of the unsubscribe options below" in invalid_scope_html
+    assert "Stop marketing emails from DTC Courses" in invalid_scope_html
+    assert "Stop marketing emails for DataTalksClub" in invalid_scope_html
+    assert "Stop all Datamailer-managed marketing emails" in invalid_scope_html
     assert recipient.status == CampaignRecipientStatus.SENT
+    assert EmailEvent.objects.count() == 0
+
+
+def test_unsubscribe_invalid_scope_keeps_subscriptions_unchanged(client, recipient, contact):
+    token = ensure_campaign_recipient_tokens(recipient).unsubscribe_token
+
+    response = client.post(reverse("mailing:public_unsubscribe", args=[token]), {"scope": "bad"})
+
+    recipient.refresh_from_db()
+    contact.refresh_from_db()
+    subscription = Subscription.objects.get(contact=contact, audience=recipient.campaign.audience, client=recipient.campaign.client)
+    assert response.status_code == 400
+    assert recipient.status == CampaignRecipientStatus.SENT
+    assert contact.global_unsubscribed_at is None
+    assert subscription.status == SubscriptionStatus.SUBSCRIBED
+    assert subscription.unsubscribe_reason == ""
     assert EmailEvent.objects.count() == 0

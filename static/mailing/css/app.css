@@ -1067,3 +1067,144 @@ code {
     width: 100%;
   }
 }
+
+.unsubscribe-page {
+  min-height: 100vh;
+  background: var(--dm-color-surface);
+}
+
+.unsubscribe-main {
+  display: grid;
+  align-items: center;
+  width: min(100%, 760px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: var(--dm-space-8) var(--dm-space-5);
+}
+
+.unsubscribe-panel {
+  border: 1px solid var(--dm-color-border);
+  border-radius: var(--dm-radius-md);
+  padding: var(--dm-space-8);
+  background: var(--dm-color-background);
+}
+
+.unsubscribe-kicker {
+  margin: 0 0 var(--dm-space-4);
+  color: var(--dm-color-muted);
+  font-size: var(--dm-font-size-sm);
+  font-weight: 700;
+}
+
+.unsubscribe-state {
+  display: grid;
+  gap: var(--dm-space-3);
+}
+
+.unsubscribe-state .badge {
+  justify-self: start;
+}
+
+.unsubscribe-state h1,
+.unsubscribe-state p {
+  margin: 0;
+}
+
+.unsubscribe-note {
+  color: var(--dm-color-text);
+}
+
+.unsubscribe-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--dm-space-3);
+  margin: var(--dm-space-6) 0;
+}
+
+.unsubscribe-context div {
+  min-width: 0;
+  border: 1px solid var(--dm-color-border);
+  border-radius: var(--dm-radius-sm);
+  padding: var(--dm-space-3);
+  background: var(--dm-color-surface);
+}
+
+.unsubscribe-context dt {
+  color: var(--dm-color-muted);
+  font-size: var(--dm-font-size-sm);
+  font-weight: 700;
+}
+
+.unsubscribe-context dd {
+  margin: var(--dm-space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.unsubscribe-form {
+  display: grid;
+  gap: var(--dm-space-4);
+}
+
+.unsubscribe-options {
+  display: grid;
+  gap: var(--dm-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.unsubscribe-options legend {
+  margin-bottom: var(--dm-space-3);
+  color: var(--dm-color-text);
+  font-weight: 700;
+}
+
+.unsubscribe-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--dm-space-3);
+  align-items: start;
+  border: 1px solid var(--dm-color-border);
+  border-radius: var(--dm-radius-md);
+  padding: var(--dm-space-4);
+  color: var(--dm-color-text);
+  background: var(--dm-color-background);
+  cursor: pointer;
+}
+
+.unsubscribe-option:focus-within {
+  border-color: var(--dm-color-primary);
+  box-shadow: 0 0 0 3px var(--dm-color-focus);
+}
+
+.unsubscribe-option input {
+  width: auto;
+  min-height: 0;
+  margin-top: 3px;
+}
+
+.unsubscribe-option strong,
+.unsubscribe-option span span {
+  display: block;
+}
+
+.unsubscribe-option span span {
+  margin-top: var(--dm-space-1);
+  color: var(--dm-color-muted);
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .unsubscribe-main {
+    align-items: start;
+    padding: var(--dm-space-5) 14px;
+  }
+
+  .unsubscribe-panel {
+    padding: var(--dm-space-5);
+  }
+
+  .unsubscribe-context {
+    grid-template-columns: 1fr;
+  }
+}
