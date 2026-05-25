@@ -895,6 +895,50 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     assert f'id="recipient-{recipient.id}"' in html
 
 
+def test_campaign_create_form_uses_sectioned_operational_layout(client, operator, audience, client_record):
+    client.force_login(operator)
+    Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+
+    response = client.get(reverse("mailing:campaign_create"))
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "Audience and sender" in html
+    assert "Recipient filters" in html
+    assert "Campaign metadata" in html
+    assert "Final pasted content" in html
+    assert "Sending controls" in html
+    assert "Include tags narrow the audience" in html
+    assert "Tags must belong to the selected audience" in html
+    assert "A tag cannot be both included and excluded" in html
+    assert "Paste the final HTML email body prepared outside Datamailer" in html
+    assert 'name="html_body"' in html
+    assert 'rows="18"' in html
+    assert 'name="text_body"' in html
+    assert 'rows="12"' in html
+    assert 'class="action-row"' in html
+    assert f'href="{reverse("mailing:campaign_list")}"' in html
+
+
+def test_campaign_edit_form_cancel_returns_to_campaign_detail(client, operator, audience, client_record):
+    client.force_login(operator)
+    campaign = Campaign.objects.create(
+        audience=audience,
+        client=client_record,
+        subject="Draft",
+        html_body="<p>Ready</p>",
+        text_body="Ready",
+    )
+
+    response = client.get(reverse("mailing:campaign_edit", args=[campaign.id]))
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "Edit campaign" in html
+    assert "Save draft" in html
+    assert f'href="{reverse("mailing:campaign_detail", args=[campaign.id])}"' in html
+
+
 def test_operator_can_create_campaign_draft_with_tag_filters(client, operator, audience, client_record):
     client.force_login(operator)
     include_tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
@@ -924,6 +968,28 @@ def test_operator_can_create_campaign_draft_with_tag_filters(client, operator, a
     assert campaign.text_body == "Final text"
     assert campaign.include_tags == ["newsletter"]
     assert campaign.exclude_tags == ["inactive"]
+
+
+def test_campaign_create_validation_rejects_same_tag_in_include_and_exclude(client, operator, audience, client_record):
+    client.force_login(operator)
+    tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+
+    response = client.post(
+        reverse("mailing:campaign_create"),
+        {
+            "audience": audience.id,
+            "client": client_record.id,
+            "subject": "Invalid filters",
+            "html_body": "<p>Final HTML</p>",
+            "text_body": "Final text",
+            "include_tags": [tag.id],
+            "exclude_tags": [tag.id],
+        },
+    )
+
+    assert response.status_code == 200
+    assert Campaign.objects.count() == 0
+    assert b"A tag cannot be both included and excluded" in response.content
 
 
 def test_campaign_create_validation_rejects_missing_final_bodies_and_cross_org_client(client, operator, audience):

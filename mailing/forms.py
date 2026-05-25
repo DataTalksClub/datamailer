@@ -20,11 +20,13 @@ class CampaignForm(forms.ModelForm):
         queryset=Tag.objects.select_related("audience").order_by("audience__slug", "slug"),
         required=False,
         widget=forms.SelectMultiple,
+        help_text="Send only to contacts that have every selected include tag. Tags must belong to the selected audience.",
     )
     exclude_tags = forms.ModelMultipleChoiceField(
         queryset=Tag.objects.select_related("audience").order_by("audience__slug", "slug"),
         required=False,
         widget=forms.SelectMultiple,
+        help_text="Skip contacts with any selected exclude tag. A tag cannot be both included and excluded.",
     )
     scheduled_at = forms.DateTimeField(
         required=False,
@@ -44,15 +46,20 @@ class CampaignForm(forms.ModelForm):
             "scheduled_at",
         ]
         widgets = {
-            "html_body": forms.Textarea(attrs={"rows": 14}),
-            "text_body": forms.Textarea(attrs={"rows": 10}),
+            "html_body": forms.Textarea(attrs={"rows": 18}),
+            "text_body": forms.Textarea(attrs={"rows": 12}),
             "preview_text": forms.Textarea(attrs={"rows": 2}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["html_body"].label = "HTML body"
+        self.fields["html_body"].help_text = "Paste the final HTML email body prepared outside Datamailer."
         self.fields["text_body"].label = "Text body"
+        self.fields["text_body"].help_text = "Paste the final plain-text fallback. Keep it aligned with the HTML body."
+        self.fields["subject"].help_text = "Use the final subject line that recipients will see."
+        self.fields["preview_text"].help_text = "Optional inbox preview text shown after the subject by many email clients."
+        self.fields["scheduled_at"].help_text = "Optional. Leave blank to keep the draft unscheduled."
         self.fields["audience"].queryset = Audience.objects.select_related("organization").order_by(
             "organization__slug", "slug"
         )

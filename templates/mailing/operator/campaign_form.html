@@ -5,8 +5,9 @@
 {% block content %}
   <div class="page-header">
     <div>
+      <div class="breadcrumbs"><a href="{% url 'mailing:campaign_list' %}">Campaigns</a></div>
       <h1>{% if mode == "create" %}Create campaign{% else %}Edit campaign{% endif %}</h1>
-      <p>Paste final campaign content prepared outside Datamailer.</p>
+      <p>Prepare a campaign draft, choose the recipient filters, and paste final email content.</p>
     </div>
     <a class="button secondary" href="{% if campaign %}{% url 'mailing:campaign_detail' campaign.id %}{% else %}{% url 'mailing:campaign_list' %}{% endif %}">Cancel</a>
   </div>
@@ -17,20 +18,118 @@
       <div class="form-errors">{{ form.non_field_errors }}</div>
     {% endif %}
 
-    <div class="form-grid">
-      {% for field in form %}
-        <div class="form-field {% if field.name == 'subject' or field.name == 'preview_text' or field.name == 'html_body' or field.name == 'text_body' %}full{% endif %}">
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% if field.help_text %}<div class="muted">{{ field.help_text }}</div>{% endif %}
-          {% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
+    <section class="section" aria-labelledby="campaign-audience-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="campaign-audience-heading">Audience and sender</h2>
+          <p>Choose the audience and active client that will send this campaign.</p>
         </div>
-      {% endfor %}
-    </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.audience.label_tag }}
+          {{ form.audience }}
+          {% if form.audience.help_text %}<div class="helptext">{{ form.audience.help_text }}</div>{% endif %}
+          {% if form.audience.errors %}<div class="field-errors">{{ form.audience.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.client.label_tag }}
+          {{ form.client }}
+          {% if form.client.help_text %}<div class="helptext">{{ form.client.help_text }}</div>{% endif %}
+          {% if form.client.errors %}<div class="field-errors">{{ form.client.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
 
-    <div class="toolbar">
-      <button type="submit">{% if mode == "create" %}Create draft{% else %}Save draft{% endif %}</button>
+    <section class="section" aria-labelledby="campaign-filters-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="campaign-filters-heading">Recipient filters</h2>
+          <p>Include tags narrow the audience; exclude tags remove contacts from the send.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.include_tags.label_tag }}
+          {{ form.include_tags }}
+          {% if form.include_tags.help_text %}<div class="helptext">{{ form.include_tags.help_text }}</div>{% endif %}
+          {% if form.include_tags.errors %}<div class="field-errors">{{ form.include_tags.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.exclude_tags.label_tag }}
+          {{ form.exclude_tags }}
+          {% if form.exclude_tags.help_text %}<div class="helptext">{{ form.exclude_tags.help_text }}</div>{% endif %}
+          {% if form.exclude_tags.errors %}<div class="field-errors">{{ form.exclude_tags.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="campaign-metadata-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="campaign-metadata-heading">Campaign metadata</h2>
+          <p>Set the recipient-facing subject and inbox preview text.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full">
+          {{ form.subject.label_tag }}
+          {{ form.subject }}
+          {% if form.subject.help_text %}<div class="helptext">{{ form.subject.help_text }}</div>{% endif %}
+          {% if form.subject.errors %}<div class="field-errors">{{ form.subject.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field full">
+          {{ form.preview_text.label_tag }}
+          {{ form.preview_text }}
+          {% if form.preview_text.help_text %}<div class="helptext">{{ form.preview_text.help_text }}</div>{% endif %}
+          {% if form.preview_text.errors %}<div class="field-errors">{{ form.preview_text.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="campaign-content-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="campaign-content-heading">Final pasted content</h2>
+          <p>Datamailer stores final content for sending; compose and review it outside this form.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full">
+          {{ form.html_body.label_tag }}
+          {{ form.html_body }}
+          {% if form.html_body.help_text %}<div class="helptext">{{ form.html_body.help_text }}</div>{% endif %}
+          {% if form.html_body.errors %}<div class="field-errors">{{ form.html_body.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field full">
+          {{ form.text_body.label_tag }}
+          {{ form.text_body }}
+          {% if form.text_body.help_text %}<div class="helptext">{{ form.text_body.help_text }}</div>{% endif %}
+          {% if form.text_body.errors %}<div class="field-errors">{{ form.text_body.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="campaign-sending-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="campaign-sending-heading">Sending controls</h2>
+          <p>Schedule the draft when timing matters, or leave it unscheduled until queueing.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.scheduled_at.label_tag }}
+          {{ form.scheduled_at }}
+          {% if form.scheduled_at.help_text %}<div class="helptext">{{ form.scheduled_at.help_text }}</div>{% endif %}
+          {% if form.scheduled_at.errors %}<div class="field-errors">{{ form.scheduled_at.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="action-row">
       <a class="button secondary" href="{% if campaign %}{% url 'mailing:campaign_detail' campaign.id %}{% else %}{% url 'mailing:campaign_list' %}{% endif %}">Cancel</a>
+      <button type="submit">{% if mode == "create" %}Create draft{% else %}Save draft{% endif %}</button>
     </div>
   </form>
 {% endblock %}
