@@ -19,7 +19,7 @@ The API key maps to a `client`. The client determines which audiences and operat
 ### Upsert Contact
 
 ```text
-POST /api/v1/contacts
+POST /api/contacts
 ```
 
 Request:
@@ -45,7 +45,7 @@ Behavior:
 ### Contact Status / Verification Lookup
 
 ```text
-GET /api/v1/contacts/status?email=person@example.com&audience=datatalks-club&client=dtc-courses
+GET /api/contacts/status?email=person@example.com&audience=datatalks-club&client=dtc-courses
 ```
 
 Response:
@@ -83,7 +83,7 @@ Rules:
 ### Subscribe
 
 ```text
-POST /api/v1/subscriptions/subscribe
+POST /api/subscriptions/subscribe
 ```
 
 Request:
@@ -105,7 +105,7 @@ Behavior:
 ### Unsubscribe
 
 ```text
-POST /api/v1/subscriptions/unsubscribe
+POST /api/subscriptions/unsubscribe
 ```
 
 Request:
@@ -131,7 +131,7 @@ Scopes:
 ### Create Campaign
 
 ```text
-POST /api/v1/campaigns
+POST /api/campaigns
 ```
 
 Request:
@@ -152,7 +152,7 @@ Request:
 ### Queue Campaign
 
 ```text
-POST /api/v1/campaigns/{campaign_id}/queue
+POST /api/campaigns/{campaign_id}/queue
 ```
 
 Behavior:
@@ -164,7 +164,7 @@ Behavior:
 ### Campaign Stats
 
 ```text
-GET /api/v1/campaigns/{campaign_id}/stats
+GET /api/campaigns/{campaign_id}/stats
 ```
 
 Response:
@@ -194,7 +194,7 @@ Response:
 ### Send Transactional Email
 
 ```text
-POST /api/v1/transactional/send
+POST /api/transactional/send
 ```
 
 Request:
@@ -229,7 +229,7 @@ Template keys are client-scoped and visible to staff in `/templates/`. Staff use
 Registration/welcome example:
 
 ```bash
-curl -sS -X POST "$DATAMAILER_URL/api/v1/transactional/send" \
+curl -sS -X POST "$DATAMAILER_URL/api/transactional/send" \
   -H "Authorization: Bearer <client-api-key>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -244,7 +244,7 @@ curl -sS -X POST "$DATAMAILER_URL/api/v1/transactional/send" \
 Password reset example:
 
 ```bash
-curl -sS -X POST "$DATAMAILER_URL/api/v1/transactional/send" \
+curl -sS -X POST "$DATAMAILER_URL/api/transactional/send" \
   -H "Authorization: Bearer <client-api-key>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -258,9 +258,9 @@ curl -sS -X POST "$DATAMAILER_URL/api/v1/transactional/send" \
 
 Email verification lifecycle:
 
-1. The client app creates its own verification URL and sends it through `/api/v1/transactional/send`.
+1. The client app creates its own verification URL and sends it through `/api/transactional/send`.
 2. The user completes verification in the client app, not in Datamailer.
-3. The client app marks the Datamailer contact verified with `PATCH /api/v1/contacts/{contact_id}/verification` and the audience/client scope.
+3. The client app marks the Datamailer contact verified with `PATCH /api/contacts/{contact_id}/verification` and the audience/client scope.
 4. Datamailer marketing eligibility uses the verified, subscription, validation, and suppression state.
 
 ```python
@@ -269,7 +269,7 @@ import requests
 headers = {"Authorization": "Bearer <client-api-key>"}
 
 requests.post(
-    f"{datamailer_url}/api/v1/transactional/send",
+    f"{datamailer_url}/api/transactional/send",
     headers=headers,
     json={
         "email": "person@example.com",
@@ -285,7 +285,7 @@ requests.post(
 )
 
 requests.patch(
-    f"{datamailer_url}/api/v1/contacts/{contact_id}/verification",
+    f"{datamailer_url}/api/contacts/{contact_id}/verification",
     headers=headers,
     json={"audience": "datatalksclub", "client": "dtc-courses", "verified": True},
     timeout=10,

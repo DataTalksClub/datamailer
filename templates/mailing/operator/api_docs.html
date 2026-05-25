@@ -61,7 +61,7 @@
   <section aria-labelledby="examples">
     <h2 id="examples">Examples</h2>
     <h3>DataTalksClub contact lifecycle</h3>
-    <pre><code>curl -sS -X POST "$DATAMAILER_URL/api/v1/contacts" \
+    <pre><code>curl -sS -X POST "$DATAMAILER_URL/api/contacts" \
   -H "Authorization: Bearer $DATAMAILER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -73,15 +73,15 @@
     "verified": false
   }'
 
-curl -sS "$DATAMAILER_URL/api/v1/contacts/status?email=learner@example.com&amp;audience=datatalksclub&amp;client=dtc-courses" \
+curl -sS "$DATAMAILER_URL/api/contacts/status?email=learner@example.com&amp;audience=datatalksclub&amp;client=dtc-courses" \
   -H "Authorization: Bearer $DATAMAILER_API_KEY"
 
-curl -sS -X PATCH "$DATAMAILER_URL/api/v1/contacts/{contact_id}/verification" \
+curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/{contact_id}/verification" \
   -H "Authorization: Bearer $DATAMAILER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"audience":"datatalksclub","client":"dtc-courses","verified":true}'
 
-curl -sS "$DATAMAILER_URL/api/v1/contacts?audience=datatalksclub&amp;client=dtc-courses&amp;tags=ml-zoomcamp&amp;limit=100" \
+curl -sS "$DATAMAILER_URL/api/contacts?audience=datatalksclub&amp;client=dtc-courses&amp;tags=ml-zoomcamp&amp;limit=100" \
   -H "Authorization: Bearer $DATAMAILER_API_KEY"</code></pre>
 
     <h3>Transactional registration, reset, and verification</h3>
@@ -91,7 +91,7 @@ base_url = "http://localhost:8000"
 headers = {"Authorization": f"Bearer {datamailer_api_key}"}
 
 requests.post(
-    f"{base_url}/api/v1/transactional/send",
+    f"{base_url}/api/transactional/send",
     headers=headers,
     json={
         "email": "user@example.com",
@@ -104,7 +104,7 @@ requests.post(
 )
 
 requests.post(
-    f"{base_url}/api/v1/transactional/send",
+    f"{base_url}/api/transactional/send",
     headers=headers,
     json={
         "email": "user@example.com",
@@ -117,7 +117,7 @@ requests.post(
 )
 
 requests.post(
-    f"{base_url}/api/v1/transactional/send",
+    f"{base_url}/api/transactional/send",
     headers=headers,
     json={
         "email": "user@example.com",
@@ -131,7 +131,7 @@ requests.post(
 
 # After the user verifies in the client app, mark the Datamailer contact verified.
 requests.patch(
-    f"{base_url}/api/v1/contacts/{contact_id}/verification",
+    f"{base_url}/api/contacts/{contact_id}/verification",
     headers=headers,
     json={
         "audience": "datatalksclub",
@@ -142,7 +142,7 @@ requests.patch(
 )
 
 requests.post(
-    f"{base_url}/api/v1/contacts/imports",
+    f"{base_url}/api/contacts/imports",
     headers=headers,
     json={
         "audience": "ai-shipping-labs",
@@ -161,7 +161,7 @@ requests.post(
 )
 
 requests.get(
-    f"{base_url}/api/v1/contacts.csv",
+    f"{base_url}/api/contacts.csv",
     headers=headers,
     params={"audience": "ai-shipping-labs", "client": "ai-shipping-labs"},
     timeout=10,
@@ -172,6 +172,6 @@ requests.get(
     <h2 id="notes">Notes</h2>
     <p>Transactional templates are visible to staff in Templates. Client apps generate verification and reset URLs, pass them as context, and complete verification in their own app before marking the Datamailer contact verified.</p>
     <p>Hard-bounced or complained contacts are blocked for transactional sends. Missing required template context returns a JSON validation error before Datamailer creates a contact, message, event, or queue payload.</p>
-    <p>Public tracking, unsubscribe, and SES webhook routes are documented for integration context; client application endpoints under <code>/api/v1</code> use Bearer authentication.</p>
+    <p>Public tracking, unsubscribe, and SES webhook routes are documented for integration context; client application endpoints under <code>/api</code> use Bearer authentication.</p>
   </section>
 {% endblock %}

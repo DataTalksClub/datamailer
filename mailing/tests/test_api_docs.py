@@ -67,7 +67,8 @@ def test_openapi_json_is_staff_only_and_valid(client, staff_user, regular_user):
     spec = response.json()
     assert spec["openapi"] == "3.1.0"
     assert spec["components"]["securitySchemes"]["BearerAuth"]["scheme"] == "bearer"
-    assert "/api/v1/contacts" in spec["paths"]
+    assert "/api/contacts" in spec["paths"]
+    assert all("/api/v1" not in path for path in spec["paths"])
 
 
 def test_openapi_documented_paths_match_registered_routes():
@@ -106,7 +107,8 @@ def test_openapi_uses_bearer_auth_only_and_omits_forbidden_strings():
 
 def test_openapi_paths_do_not_include_unimplemented_public_campaign_api():
     spec = build_openapi_spec()
-    assert all(not path.startswith("/api/v1/campaign") for path in spec["paths"])
+    assert all(not path.startswith("/api/campaign") for path in spec["paths"])
+    assert all("/api/v1" not in path for path in spec["paths"])
 
 
 def test_api_docs_page_does_not_render_secret_examples(client, staff_user):
@@ -118,7 +120,8 @@ def test_api_docs_page_does_not_render_secret_examples(client, staff_user):
     assert "registration-welcome" in page
     assert "password-reset" in page
     assert "email-verification" in page
-    assert "/api/v1/contacts/{contact_id}/verification" in page
+    assert "/api/contacts/{contact_id}/verification" in page
+    assert "/api/v1" not in page
     assert "https://client.example/verify/placeholder" in page
     assert "https://client.example/reset/placeholder" in page
     assert "Authorization: Token" not in page

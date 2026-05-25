@@ -5,20 +5,20 @@ from django.urls import reverse
 from mailing.models import EmailValidationStatus, SubscriptionStatus
 
 API_DOC_PATHS = {
-    "mailing:api_contacts": "/api/v1/contacts",
-    "mailing:api_contacts_csv": "/api/v1/contacts.csv",
-    "mailing:api_contact_imports": "/api/v1/contacts/imports",
-    "mailing:api_contact_imports_csv": "/api/v1/contacts/imports/csv",
-    "mailing:api_contact_status": "/api/v1/contacts/status",
-    "mailing:api_contact_tags": "/api/v1/contacts/{contact_id}/tags",
-    "mailing:api_contact_tag": "/api/v1/contacts/{contact_id}/tags/{tag_slug}",
-    "mailing:api_contact_verification": "/api/v1/contacts/{contact_id}/verification",
-    "mailing:api_contact_validation": "/api/v1/contacts/{contact_id}/validation",
-    "mailing:api_contact_suppression": "/api/v1/contacts/{contact_id}/suppression",
-    "mailing:api_contact_history": "/api/v1/contacts/{contact_id}/history",
-    "mailing:api_subscribe": "/api/v1/subscriptions/subscribe",
-    "mailing:api_unsubscribe": "/api/v1/subscriptions/unsubscribe",
-    "mailing:api_transactional_send": "/api/v1/transactional/send",
+    "mailing:api_contacts": "/api/contacts",
+    "mailing:api_contacts_csv": "/api/contacts.csv",
+    "mailing:api_contact_imports": "/api/contacts/imports",
+    "mailing:api_contact_imports_csv": "/api/contacts/imports/csv",
+    "mailing:api_contact_status": "/api/contacts/status",
+    "mailing:api_contact_tags": "/api/contacts/{contact_id}/tags",
+    "mailing:api_contact_tag": "/api/contacts/{contact_id}/tags/{tag_slug}",
+    "mailing:api_contact_verification": "/api/contacts/{contact_id}/verification",
+    "mailing:api_contact_validation": "/api/contacts/{contact_id}/validation",
+    "mailing:api_contact_suppression": "/api/contacts/{contact_id}/suppression",
+    "mailing:api_contact_history": "/api/contacts/{contact_id}/history",
+    "mailing:api_subscribe": "/api/subscriptions/subscribe",
+    "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
+    "mailing:api_transactional_send": "/api/transactional/send",
     "mailing:tracking_open": "/t/o/{tracking_token}.gif",
     "mailing:tracking_click": "/t/c/{tracking_token}",
     "mailing:public_unsubscribe": "/unsubscribe/{unsubscribe_token}",
@@ -31,37 +31,37 @@ def endpoint_groups():
         {
             "name": "Contacts",
             "endpoints": [
-                ("POST", "/api/v1/contacts", "Upsert one contact in an audience/client scope."),
-                ("GET", "/api/v1/contacts/status", "Look up contact status for one scoped email."),
-                ("GET", "/api/v1/contacts", "List/export contacts as paginated JSON."),
-                ("GET", "/api/v1/contacts.csv", "Export contacts as CSV."),
+                ("POST", "/api/contacts", "Upsert one contact in an audience/client scope."),
+                ("GET", "/api/contacts/status", "Look up contact status for one scoped email."),
+                ("GET", "/api/contacts", "List/export contacts as paginated JSON."),
+                ("GET", "/api/contacts.csv", "Export contacts as CSV."),
             ],
         },
         {
             "name": "Subscriptions and Tags",
             "endpoints": [
-                ("POST", "/api/v1/subscriptions/subscribe", "Subscribe one scoped contact."),
-                ("POST", "/api/v1/subscriptions/unsubscribe", "Unsubscribe one scoped contact."),
-                ("PUT", "/api/v1/contacts/{contact_id}/tags", "Replace one contact's scoped tags."),
-                ("POST", "/api/v1/contacts/{contact_id}/tags/{tag_slug}", "Add one scoped tag."),
-                ("DELETE", "/api/v1/contacts/{contact_id}/tags/{tag_slug}", "Remove one scoped tag."),
+                ("POST", "/api/subscriptions/subscribe", "Subscribe one scoped contact."),
+                ("POST", "/api/subscriptions/unsubscribe", "Unsubscribe one scoped contact."),
+                ("PUT", "/api/contacts/{contact_id}/tags", "Replace one contact's scoped tags."),
+                ("POST", "/api/contacts/{contact_id}/tags/{tag_slug}", "Add one scoped tag."),
+                ("DELETE", "/api/contacts/{contact_id}/tags/{tag_slug}", "Remove one scoped tag."),
             ],
         },
         {
             "name": "State and History",
             "endpoints": [
-                ("PATCH", "/api/v1/contacts/{contact_id}/verification", "Set verification state."),
-                ("PATCH", "/api/v1/contacts/{contact_id}/validation", "Set email validation state."),
-                ("PATCH", "/api/v1/contacts/{contact_id}/suppression", "Set suppression state."),
-                ("GET", "/api/v1/contacts/{contact_id}/history", "Return safe scoped send and event history."),
+                ("PATCH", "/api/contacts/{contact_id}/verification", "Set verification state."),
+                ("PATCH", "/api/contacts/{contact_id}/validation", "Set email validation state."),
+                ("PATCH", "/api/contacts/{contact_id}/suppression", "Set suppression state."),
+                ("GET", "/api/contacts/{contact_id}/history", "Return safe scoped send and event history."),
             ],
         },
         {
             "name": "Imports and Transactional",
             "endpoints": [
-                ("POST", "/api/v1/contacts/imports", "Bulk JSON import/upsert."),
-                ("POST", "/api/v1/contacts/imports/csv", "CSV upload/import."),
-                ("POST", "/api/v1/transactional/send", "Queue one transactional email."),
+                ("POST", "/api/contacts/imports", "Bulk JSON import/upsert."),
+                ("POST", "/api/contacts/imports/csv", "CSV upload/import."),
+                ("POST", "/api/transactional/send", "Queue one transactional email."),
             ],
         },
         {
@@ -186,7 +186,7 @@ OPENAPI_SPEC = {
         {"name": "Provider"},
     ],
     "paths": {
-        "/api/v1/contacts": {
+        "/api/contacts": {
             "get": {
                 "tags": ["Contacts"],
                 "summary": "List contacts",
@@ -202,7 +202,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             },
         },
-        "/api/v1/contacts.csv": {
+        "/api/contacts.csv": {
             "get": {
                 "tags": ["Contacts"],
                 "summary": "Export contacts CSV",
@@ -212,7 +212,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(csv_response()),
             }
         },
-        "/api/v1/contacts/imports": {
+        "/api/contacts/imports": {
             "post": {
                 "tags": ["Imports"],
                 "summary": "Bulk import contacts",
@@ -222,7 +222,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Import result", "#/components/schemas/ImportResult")),
             }
         },
-        "/api/v1/contacts/imports/csv": {
+        "/api/contacts/imports/csv": {
             "post": {
                 "tags": ["Imports"],
                 "summary": "Import contacts CSV",
@@ -238,7 +238,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Import result", "#/components/schemas/ImportResult")),
             }
         },
-        "/api/v1/contacts/status": {
+        "/api/contacts/status": {
             "get": {
                 "tags": ["Contacts"],
                 "summary": "Get contact status",
@@ -247,7 +247,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact status", "#/components/schemas/ContactStatus")),
             }
         },
-        "/api/v1/contacts/{contact_id}/tags": {
+        "/api/contacts/{contact_id}/tags": {
             "put": {
                 "tags": ["Tags"],
                 "summary": "Replace contact tags",
@@ -257,7 +257,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             }
         },
-        "/api/v1/contacts/{contact_id}/tags/{tag_slug}": {
+        "/api/contacts/{contact_id}/tags/{tag_slug}": {
             "post": {
                 "tags": ["Tags"],
                 "summary": "Add contact tag",
@@ -275,7 +275,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             },
         },
-        "/api/v1/contacts/{contact_id}/verification": {
+        "/api/contacts/{contact_id}/verification": {
             "patch": {
                 "tags": ["State"],
                 "summary": "Update verification",
@@ -285,7 +285,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             }
         },
-        "/api/v1/contacts/{contact_id}/validation": {
+        "/api/contacts/{contact_id}/validation": {
             "patch": {
                 "tags": ["State"],
                 "summary": "Update email validation",
@@ -295,7 +295,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             }
         },
-        "/api/v1/contacts/{contact_id}/suppression": {
+        "/api/contacts/{contact_id}/suppression": {
             "patch": {
                 "tags": ["State"],
                 "summary": "Update suppression",
@@ -305,7 +305,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             }
         },
-        "/api/v1/contacts/{contact_id}/history": {
+        "/api/contacts/{contact_id}/history": {
             "get": {
                 "tags": ["Contacts"],
                 "summary": "Get contact history",
@@ -320,7 +320,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact history", "#/components/schemas/ContactHistory")),
             }
         },
-        "/api/v1/subscriptions/subscribe": {
+        "/api/subscriptions/subscribe": {
             "post": {
                 "tags": ["Subscriptions"],
                 "summary": "Subscribe contact",
@@ -329,7 +329,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/Contact")),
             }
         },
-        "/api/v1/subscriptions/unsubscribe": {
+        "/api/subscriptions/unsubscribe": {
             "post": {
                 "tags": ["Subscriptions"],
                 "summary": "Unsubscribe contact",
@@ -338,7 +338,7 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/ContactStatus")),
             }
         },
-        "/api/v1/transactional/send": {
+        "/api/transactional/send": {
             "post": {
                 "tags": ["Transactional"],
                 "summary": "Send transactional email",

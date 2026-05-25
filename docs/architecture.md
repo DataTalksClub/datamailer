@@ -130,7 +130,7 @@ Transactional messages may bypass marketing unsubscribes when legally appropriat
 Client apps can ask whether an email is verified/subscribed:
 
 ```text
-GET /api/v1/contacts/status?email=person@example.com&audience=datatalks-club&client=dtc-courses
+GET /api/contacts/status?email=person@example.com&audience=datatalks-club&client=dtc-courses
 ```
 
 The response should include global verification, audience/client subscription state, suppression state, and whether the client is allowed to send transactional or marketing email.

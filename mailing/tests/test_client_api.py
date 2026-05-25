@@ -643,6 +643,22 @@ def test_api_errors_are_json_only_and_never_login_redirect(client, api_client_re
     assert "Location" not in response.headers
 
 
+def test_old_api_v1_routes_are_not_registered(client, api_client_record):
+    headers = auth_headers()
+
+    contacts = client.post("/api/v1/contacts", data={}, content_type="application/json", **headers)
+    status = client.get(
+        "/api/v1/contacts/status",
+        {"email": "person@example.com", "audience": "datatalks-club", "client": api_client_record.slug},
+        **headers,
+    )
+    transactional = client.post("/api/v1/transactional/send", data={}, content_type="application/json", **headers)
+
+    assert contacts.status_code == 404
+    assert status.status_code == 404
+    assert transactional.status_code == 404
+
+
 def test_cross_organization_slugs_are_rejected_without_mutation(
     client,
     other_audience,
