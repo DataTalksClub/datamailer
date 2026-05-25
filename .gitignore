@@ -12,3 +12,9 @@ build/
 staticfiles/
 .tmp/
 .worktrees/
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.tfvars.json
+backend.hcl

@@ -1,0 +1,20 @@
+aws_region  = "us-east-1"
+environment = "sandbox"
+project     = "datamailer"
+
+ses_sandbox_email_identities = [
+  "alexey@datatalks.club",
+  "alexey.s.grigoriev@gmail.com",
+  "alexey@aishippinglabs.com",
+]
+
+# Optional. If set, AWS sends a confirmation email before alarms can publish to it.
+alarm_email = ""
+
+queue_receive_wait_time_seconds = 20
+
+# SES inbound mail test address. This stores raw MIME messages in S3 so the
+# S3 bucket acts as an inspectable test inbox.
+inbound_mail_domain        = "dtcdev.click"
+manage_inbound_dns_records = true
+inbound_mail_recipients    = ["datamailer"]
