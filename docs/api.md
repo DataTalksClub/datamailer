@@ -1,24 +1,31 @@
 # API Design
 
-Client apps use the API to sync contacts, check verification/subscription state, send transactional emails, and create/send campaigns.
+Datamailer client apps use the native API to sync contacts, check subscription and verification state, import/export contacts, send transactional emails, and retrieve scoped contact history.
 
-All client API endpoints require authentication. Clients can have multiple named API keys for separate integrations. Datamailer stores only key hashes and displays each key's safe `dm_<prefix>` identifier for support and audit trails.
+The in-app staff API docs at `/api-docs/` are the primary runnable reference. They include copy-pasteable local examples, request/response bodies, common errors, and the endpoint reference generated alongside OpenAPI JSON.
 
 ## Authentication
 
-Request header:
+All client API endpoints under `/api/...` require Bearer authentication:
 
 ```text
 Authorization: Bearer <client-api-key>
 ```
 
-The API key maps to one `client`. Any active, non-revoked key for an active client is accepted. Revoked keys fail immediately, and successful authentication updates the key's `last_used_at`.
+Clients can have multiple named API keys for separate integrations. Datamailer stores only key hashes and displays each key's safe `dm_<prefix>` identifier for support and audit trails. Staff users create and revoke keys from the client detail page in the operator UI.
 
 Local demo data creates stable named keys for examples:
 
 - `dtc-courses` / `Course platform transactional`: `dm_dtccourses_demo_transactional_email_key`
 - `dtc-newsletter` / `Newsletter import/export`: `dm_dtcnews_demo_newsletter_import_export_key`
 - `asl-platform` / `ASL platform transactional`: `dm_aslplatform_demo_transactional_email_key`
+
+Use a local default base URL when running examples:
+
+```bash
+export DATAMAILER_URL="${DATAMAILER_URL:-http://127.0.0.1:8002}"
+export DATAMAILER_API_KEY="dm_dtccourses_demo_transactional_email_key"
+```
 
 ## Contact APIs
 
@@ -28,328 +35,122 @@ Local demo data creates stable named keys for examples:
 POST /api/contacts
 ```
 
-Request:
-
 ```json
 {
-  "email": "person@example.com",
-  "audience": "datatalks-club",
+  "email": "learner@example.com",
+  "audience": "dtc-courses",
   "client": "dtc-courses",
-  "tags": ["ml-zoomcamp", "lead"],
   "status": "subscribed",
-  "verified": false
+  "tags": ["course-ml-zoomcamp"],
+  "verified": true,
+  "email_validation": {
+    "status": "externally_validated",
+    "reason": "client signup validation"
+  }
 }
 ```
 
-Behavior:
+Creates or updates the global contact, creates or updates the audience/client subscription, and adds audience-scoped tags.
 
-- Creates or updates the global contact.
-- Creates or updates the audience/client subscription.
-- Adds tags in the target audience.
-- Does not automatically mark globally verified unless the client is trusted to assert verification.
-
-### Contact Status / Verification Lookup
+### Contact Status
 
 ```text
-GET /api/contacts/status?email=person@example.com&audience=datatalks-club&client=dtc-courses
+GET /api/contacts/status?email=learner@example.com&audience=dtc-courses&client=dtc-courses
 ```
 
-Response:
+Returns contact existence, subscription, verification, validation, suppression, and sendability state for the authenticated client scope.
 
-```json
-{
-  "email": "person@example.com",
-  "exists": true,
-  "verified": true,
-  "verified_at": "2026-05-24T12:00:00Z",
-  "global_unsubscribed": false,
-  "hard_bounced": false,
-  "complained": false,
-  "audience": {
-    "slug": "datatalks-club",
-    "subscribed": true,
-    "status": "subscribed",
-    "verified": true
-  },
-  "client": {
-    "slug": "dtc-courses",
-    "subscribed": true,
-    "status": "subscribed"
-  },
-  "can_send_marketing": true,
-  "can_send_transactional": true
-}
+### Verification, Validation, and Suppression
+
+```text
+PATCH /api/contacts/{contact_id}/verification
+PATCH /api/contacts/{contact_id}/validation
+PATCH /api/contacts/{contact_id}/suppression
 ```
 
-Rules:
+These endpoints update state for an existing contact visible to the authenticated client scope. Verification is typically called after the user verifies in the client app. Validation stores external hygiene decisions. Suppression records global unsubscribe, hard bounce, or complaint state.
 
-- `can_send_marketing` requires verified, subscribed, not globally unsubscribed, not hard-bounced, and not complained.
-- `can_send_transactional` may allow unverified contacts for verification/password flows, but must block hard bounces and complaints.
+### Tags
 
-### Subscribe
+```text
+PUT /api/contacts/{contact_id}/tags
+POST /api/contacts/{contact_id}/tags/{tag_slug}
+DELETE /api/contacts/{contact_id}/tags/{tag_slug}
+```
+
+Use `PUT` to replace the audience tag set. Use single-tag `POST` and `DELETE` for toggle-style client workflows.
+
+## Subscription APIs
 
 ```text
 POST /api/subscriptions/subscribe
-```
-
-Request:
-
-```json
-{
-  "email": "person@example.com",
-  "audience": "datatalks-club",
-  "client": "dtc-newsletter",
-  "tags": ["newsletter"]
-}
-```
-
-Behavior:
-
-- Creates a pending or subscribed subscription depending on verification policy.
-- Sends a verification email if required.
-
-### Unsubscribe
-
-```text
 POST /api/subscriptions/unsubscribe
 ```
 
-Request:
+Subscribe creates the contact if needed and marks the client-scoped subscription subscribed.
 
-```json
-{
-  "email": "person@example.com",
-  "scope": "client",
-  "audience": "datatalks-club",
-  "client": "dtc-courses",
-  "reason": "api_request"
-}
-```
-
-Scopes:
+Unsubscribe accepts `scope` values:
 
 - `client`: unsubscribe from one client.
-- `audience`: unsubscribe from an entire audience.
+- `audience`: unsubscribe from the whole audience.
 - `global`: unsubscribe from all marketing email managed by Datamailer.
 
-## Campaign APIs
-
-### Create Campaign
+## Import and Export APIs
 
 ```text
-POST /api/campaigns
+POST /api/contacts/imports
+POST /api/contacts/imports/csv
+GET /api/contacts
+GET /api/contacts.csv
 ```
 
-Request:
+JSON and CSV imports are idempotent by normalized email plus audience/client scope. Invalid items are returned in partial errors while valid items continue. CSV export returns safe recreatable contact, subscription, tag, verification, validation, suppression, unsubscribe, and update timestamp columns.
 
-```json
-{
-  "audience": "datatalks-club",
-  "client": "dtc-newsletter",
-  "subject": "ML Zoomcamp starts soon",
-  "preview_text": "Registration closes this week",
-  "html_body": "<p>Hello...</p>",
-  "text_body": "Hello...",
-  "include_tags": ["ml-zoomcamp"],
-  "exclude_tags": ["unsubscribed-import"]
-}
-```
-
-### Queue Campaign
-
-```text
-POST /api/campaigns/{campaign_id}/queue
-```
-
-Behavior:
-
-- Snapshots recipients into `campaign_recipients`.
-- Marks skipped recipients with explicit reasons.
-- Enqueues send jobs.
-
-### Campaign Stats
-
-```text
-GET /api/campaigns/{campaign_id}/stats
-```
-
-Response:
-
-```json
-{
-  "campaign_id": "cmp_123",
-  "recipient_count": 120000,
-  "sent_count": 119500,
-  "skipped_count": 500,
-  "delivered_count": 118900,
-  "unique_open_count": 42000,
-  "open_count": 61000,
-  "open_rate": 0.3515,
-  "unique_click_count": 8500,
-  "click_count": 12200,
-  "click_rate": 0.0711,
-  "click_to_open_rate": 0.2024,
-  "unsubscribe_count": 180,
-  "bounce_count": 400,
-  "complaint_count": 8
-}
-```
-
-## Transactional Email APIs
-
-### Send Transactional Email
+## Transactional Email API
 
 ```text
 POST /api/transactional/send
 ```
 
-Request:
-
 ```json
 {
-  "email": "person@example.com",
-  "template_key": "email-verification",
-  "idempotency_key": "verify-user-123-email-1",
+  "email": "learner@example.com",
+  "template_key": "registration-welcome",
+  "idempotency_key": "registration-user-123",
   "context": {
-    "name": "Person",
-    "verification_url": "https://client.example/verify/placeholder"
+    "name": "Learner",
+    "course_name": "ML Zoomcamp"
   },
   "metadata": {
-    "source": "email-verification"
+    "source": "registration"
   }
 }
 ```
 
-Use cases:
+Transactional sends validate required template context before Datamailer creates a contact, message, event, or queue payload. Reusing an idempotency key returns the existing message.
 
-- Registration confirmation.
-- Password reset.
-- Email verification.
-- Course enrollment notification.
-- Payment or account notices.
+Local transactional send examples require the Datamailer server to be started with `SQS_TRANSACTIONAL_EMAIL_QUEUE_URL` configured, for example through LocalStack. With the default empty queue URL, the endpoint is documented but is not runnable because queueing provider work will fail.
 
-Transactional sends should be logged and trackable. They should not require marketing subscription, but they must respect hard suppression states. If the selected template declares required context variables, missing values return a JSON validation error before Datamailer creates contacts, messages, events, or queue payloads.
+Transactional sends do not require marketing subscription, but they are blocked for hard bounces and complaints.
 
-Template keys are client-scoped and visible to staff in `/templates/`. Staff users can inspect each transactional template's required context and placeholder example context there.
+## Contact History
 
-Registration/welcome example:
-
-```bash
-curl -sS -X POST "$DATAMAILER_URL/api/transactional/send" \
-  -H "Authorization: Bearer <client-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "person@example.com",
-    "template_key": "registration-welcome",
-    "idempotency_key": "registration-user-123",
-    "context": {"name": "Person", "course_name": "ML Zoomcamp"},
-    "metadata": {"source": "registration"}
-  }'
+```text
+GET /api/contacts/{contact_id}/history?audience=dtc-courses&client=dtc-courses&limit=25
 ```
 
-Password reset example:
+Returns safe scoped campaign recipient, transactional message, and event history. Secret hashes and delivery link tokens are never returned.
 
-```bash
-curl -sS -X POST "$DATAMAILER_URL/api/transactional/send" \
-  -H "Authorization: Bearer <client-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "person@example.com",
-    "template_key": "password-reset",
-    "idempotency_key": "password-reset-user-123-request-456",
-    "context": {"reset_url": "https://client.example/reset/placeholder"},
-    "metadata": {"source": "password-reset"}
-  }'
-```
+## Public and Provider Routes
 
-Email verification lifecycle:
-
-1. The client app creates its own verification URL and sends it through `/api/transactional/send`.
-2. The user completes verification in the client app, not in Datamailer.
-3. The client app marks the Datamailer contact verified with `PATCH /api/contacts/{contact_id}/verification` and the audience/client scope.
-4. Datamailer marketing eligibility uses the verified, subscription, validation, and suppression state.
-
-```python
-import requests
-
-headers = {"Authorization": "Bearer <client-api-key>"}
-
-requests.post(
-    f"{datamailer_url}/api/transactional/send",
-    headers=headers,
-    json={
-        "email": "person@example.com",
-        "template_key": "email-verification",
-        "idempotency_key": "verify-user-123-email-1",
-        "context": {
-            "name": "Person",
-            "verification_url": "https://client.example/verify/placeholder",
-        },
-        "metadata": {"source": "email-verification"},
-    },
-    timeout=10,
-)
-
-requests.patch(
-    f"{datamailer_url}/api/contacts/{contact_id}/verification",
-    headers=headers,
-    json={"audience": "datatalksclub", "client": "dtc-courses", "verified": True},
-    timeout=10,
-)
-```
-
-## Public Tracking Endpoints
-
-### Open Pixel
+Public tracking, unsubscribe, and provider webhook routes are documented in OpenAPI and the in-app endpoint reference for integration context:
 
 ```text
 GET /t/o/{tracking_token}.gif
-```
-
-Behavior:
-
-- Records an `open` event.
-- Updates first open and open count.
-- Returns a transparent 1x1 GIF.
-
-### Click Redirect
-
-```text
-GET /t/c/{tracking_token}?u=<encoded-url>
-```
-
-Behavior:
-
-- Validates token.
-- Records a `click` event.
-- Updates first click and click count.
-- Redirects to the destination URL.
-
-### Public Unsubscribe
-
-```text
+GET /t/c/{tracking_token}
 GET /unsubscribe/{unsubscribe_token}
 POST /unsubscribe/{unsubscribe_token}
-```
-
-Behavior:
-
-- Shows preferences for the recipient and message context.
-- Allows client, audience, or global unsubscribe depending on the message.
-- Records an unsubscribe event.
-
-## SES Webhook APIs
-
-```text
 POST /webhooks/ses
 ```
 
-Events to process:
-
-- `Delivery`
-- `Bounce`
-- `Complaint`
-- `Open`
-- `Click`
-
-SES message IDs should be correlated back to campaign recipient or transactional message rows.
+These are not client Bearer API routes.

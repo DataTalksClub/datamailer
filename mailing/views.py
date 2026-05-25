@@ -34,7 +34,13 @@ from mailing.services.api import (
     update_contact_verification_for_client,
     upsert_contact_for_client,
 )
-from mailing.services.api_docs import build_openapi_spec, endpoint_groups
+from mailing.services.api_docs import (
+    DEMO_API_KEYS,
+    DOCS_BASE_URL,
+    build_openapi_spec,
+    endpoint_groups,
+    workflow_examples,
+)
 from mailing.services.auth import authenticate_bearer_token
 from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
 from mailing.services.contact_import_export import (
@@ -117,6 +123,9 @@ def api_docs(request):
         "mailing/operator/api_docs.html",
         {
             "endpoint_groups": endpoint_groups(),
+            "workflow_examples": workflow_examples(),
+            "demo_api_keys": DEMO_API_KEYS,
+            "docs_base_url": DOCS_BASE_URL,
             "openapi_json_url": "mailing:api_docs_json",
         },
     )

@@ -3,175 +3,205 @@
 {% block title %}API Docs | Datamailer{% endblock %}
 
 {% block content %}
-  <div class="page-header">
+  <div class="page-header api-docs-header">
     <div>
+      <p class="breadcrumbs"><a href="{% url 'mailing:dashboard' %}">Dashboard</a> / API Docs</p>
       <h1>API Docs</h1>
-      <p>Datamailer-native API reference for staff users. Client API requests use Bearer authentication with named client API keys generated in Clients.</p>
+      <p>Runnable Datamailer API workflows for staff and client developers. Examples use local seeded demo keys, final <code>/api/...</code> paths, and a default base URL of <code>{{ docs_base_url }}</code>.</p>
     </div>
     <div class="actions">
       <a class="button" href="{% url openapi_json_url %}">OpenAPI JSON</a>
-      <a class="button secondary" href="{% url 'mailing:client_list' %}">Client keys</a>
+      <a class="button secondary" href="{% url 'mailing:client_list' %}">Client key management</a>
     </div>
   </div>
 
-  <section aria-labelledby="auth">
-    <h2 id="auth">Authentication</h2>
-    <div class="meta-grid">
-      <div class="meta-item">
-        <span class="meta-label">Scheme</span>
-        Bearer
-      </div>
-      <div class="meta-item">
-        <span class="meta-label">Keys</span>
-        Create named per-client keys from Clients.
-      </div>
-      <div class="meta-item">
-        <span class="meta-label">Scope</span>
-        Requests are limited to the authenticated client's organization.
-      </div>
+  <div class="api-docs-layout">
+    <aside class="api-docs-nav" aria-label="API docs sections">
+      <strong>Workflows</strong>
+      <nav>
+        {% for group in workflow_examples %}
+          <a href="#workflow-{{ forloop.counter }}">{{ group.section }}</a>
+        {% endfor %}
+        <a href="#common-errors">Common errors</a>
+        <a href="#endpoint-reference">Endpoint reference</a>
+      </nav>
+    </aside>
+
+    <div class="api-docs-main">
+      <section class="section api-docs-setup" aria-labelledby="auth">
+        <div class="section-header">
+          <div>
+            <h2 id="auth">Setup and Authentication</h2>
+            <p>Client API calls use Bearer authentication. Each key belongs to one active client and is named by purpose so it can be rotated without disturbing unrelated integrations.</p>
+          </div>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Base URL</span>
+            <code>$DATAMAILER_URL</code>, locally <code>{{ docs_base_url }}</code>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Header</span>
+            <code>Authorization: Bearer $DATAMAILER_API_KEY</code>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Manage keys</span>
+            <a href="{% url 'mailing:client_list' %}">Open Clients</a>, select a client, then create or revoke named keys.
+          </div>
+        </div>
+
+        <div class="api-key-grid">
+          {% for key in demo_api_keys %}
+            <div class="api-key-panel">
+              <div class="compact-row-main">
+                <span class="badge neutral">{{ key.client }}</span>
+                <strong>{{ key.name }}</strong>
+              </div>
+              <p>{{ key.purpose }}</p>
+              <dl class="api-key-meta">
+                <dt>Audience</dt>
+                <dd><code>{{ key.audience }}</code></dd>
+                <dt>Environment variable</dt>
+                <dd><code>{{ key.env_var }}</code></dd>
+                <dt>Seeded local value</dt>
+                <dd><code>{{ key.raw_key }}</code></dd>
+              </dl>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% for group in workflow_examples %}
+        <section class="section api-workflow-section" aria-labelledby="workflow-{{ forloop.counter }}">
+          <div class="section-header">
+            <div>
+              <h2 id="workflow-{{ forloop.counter }}">{{ group.section }}</h2>
+            </div>
+          </div>
+
+          {% for example in group.items %}
+            <article class="api-example" id="{{ example.id }}">
+              <div class="api-example-copy">
+                <div class="api-example-title">
+                  <span class="badge">{{ example.method }}</span>
+                  <h3>{{ example.title }}</h3>
+                </div>
+                <p>{{ example.summary }}</p>
+                <dl class="api-example-meta">
+                  <dt>Path</dt>
+                  <dd><code>{{ example.path }}</code></dd>
+                  <dt>Demo key</dt>
+                  <dd>{{ example.key }}</dd>
+                </dl>
+              </div>
+
+              <div class="api-example-code">
+                <div class="code-block">
+                  <div class="code-label">Curl</div>
+                  <pre><code>{{ example.curl }}</code></pre>
+                </div>
+                {% if example.python %}
+                  <div class="code-block">
+                    <div class="code-label">Python</div>
+                    <pre><code>{{ example.python }}</code></pre>
+                  </div>
+                {% endif %}
+                {% if example.request %}
+                  <div class="code-block">
+                    <div class="code-label">Request</div>
+                    <pre><code>{{ example.request }}</code></pre>
+                  </div>
+                {% endif %}
+                <div class="code-grid">
+                  <div class="code-block success">
+                    <div class="code-label">Success response</div>
+                    <pre><code>{{ example.success }}</code></pre>
+                  </div>
+                  <div class="code-block danger">
+                    <div class="code-label">Common error</div>
+                    <pre><code>{{ example.error }}</code></pre>
+                  </div>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+        </section>
+      {% endfor %}
+
+      <section class="section" aria-labelledby="common-errors">
+        <div class="section-header">
+          <div>
+            <h2 id="common-errors">Common Errors</h2>
+            <p>All client API errors return JSON. Validation failures include field-level details; auth and scope failures do not expose key internals.</p>
+          </div>
+        </div>
+        <div class="detail-grid">
+          <div class="summary-panel">
+            <span class="badge danger">401</span>
+            <h3>Authentication failed</h3>
+            <pre><code>{
+  "error": {
+    "code": "invalid_api_key",
+    "message": "Authentication credentials were not accepted."
+  }
+}</code></pre>
+          </div>
+          <div class="summary-panel">
+            <span class="badge warning">403</span>
+            <h3>Client scope mismatch</h3>
+            <pre><code>{
+  "error": {
+    "code": "validation_error",
+    "fields": {"client": "forbidden"}
+  }
+}</code></pre>
+          </div>
+          <div class="summary-panel">
+            <span class="badge neutral">405</span>
+            <h3>Wrong method</h3>
+            <pre><code>{
+  "error": {
+    "code": "method_not_allowed",
+    "allowed_methods": ["GET", "POST"]
+  }
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="endpoint-reference">
+        <div class="section-header">
+          <div>
+            <h2 id="endpoint-reference">Endpoint Reference</h2>
+            <p>Implemented routes only. Public tracking, unsubscribe, and provider webhook routes are included for integration context; client application endpoints under <code>/api</code> use Bearer authentication.</p>
+          </div>
+        </div>
+        {% for group in endpoint_groups %}
+          <section class="detail-section" aria-labelledby="endpoint-group-{{ forloop.counter }}">
+            <h3 id="endpoint-group-{{ forloop.counter }}">{{ group.name }}</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Purpose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for method, path, purpose in group.endpoints %}
+                    <tr>
+                      <td class="nowrap"><span class="badge">{{ method }}</span></td>
+                      <td><code>{{ path }}</code></td>
+                      <td>{{ purpose }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        {% endfor %}
+      </section>
     </div>
-  </section>
-
-  {% for group in endpoint_groups %}
-    <section aria-labelledby="group-{{ forloop.counter }}">
-      <h2 id="group-{{ forloop.counter }}">{{ group.name }}</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Method</th>
-              <th>Path</th>
-              <th>Purpose</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for method, path, purpose in group.endpoints %}
-              <tr>
-                <td class="nowrap"><span class="badge">{{ method }}</span></td>
-                <td><code>{{ path }}</code></td>
-                <td>{{ purpose }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  {% endfor %}
-
-  <section aria-labelledby="examples">
-    <h2 id="examples">Examples</h2>
-    <h3>DataTalksClub contact lifecycle</h3>
-    <pre><code>curl -sS -X POST "$DATAMAILER_URL/api/contacts" \
-  -H "Authorization: Bearer $DATAMAILER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "learner@example.com",
-    "audience": "datatalksclub",
-    "client": "dtc-courses",
-    "status": "subscribed",
-    "tags": ["ml-zoomcamp"],
-    "verified": false
-  }'
-
-curl -sS "$DATAMAILER_URL/api/contacts/status?email=learner@example.com&amp;audience=datatalksclub&amp;client=dtc-courses" \
-  -H "Authorization: Bearer $DATAMAILER_API_KEY"
-
-curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/{contact_id}/verification" \
-  -H "Authorization: Bearer $DATAMAILER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"audience":"datatalksclub","client":"dtc-courses","verified":true}'
-
-curl -sS "$DATAMAILER_URL/api/contacts?audience=datatalksclub&amp;client=dtc-courses&amp;tags=ml-zoomcamp&amp;limit=100" \
-  -H "Authorization: Bearer $DATAMAILER_API_KEY"</code></pre>
-
-    <h3>Transactional registration, reset, and verification</h3>
-    <pre><code>import requests
-
-base_url = "http://localhost:8000"
-headers = {"Authorization": f"Bearer {datamailer_api_key}"}
-
-requests.post(
-    f"{base_url}/api/transactional/send",
-    headers=headers,
-    json={
-        "email": "user@example.com",
-        "template_key": "registration-welcome",
-        "idempotency_key": "registration-user-123",
-        "context": {"name": "User", "course_name": "ML Zoomcamp"},
-        "metadata": {"source": "registration"},
-    },
-    timeout=10,
-)
-
-requests.post(
-    f"{base_url}/api/transactional/send",
-    headers=headers,
-    json={
-        "email": "user@example.com",
-        "template_key": "password-reset",
-        "idempotency_key": "password-reset-user-123-request-456",
-        "context": {"reset_url": "https://client.example/reset/placeholder"},
-        "metadata": {"source": "password-reset"},
-    },
-    timeout=10,
-)
-
-requests.post(
-    f"{base_url}/api/transactional/send",
-    headers=headers,
-    json={
-        "email": "user@example.com",
-        "template_key": "email-verification",
-        "idempotency_key": "verify-user-123-email-1",
-        "context": {"name": "User", "verification_url": "https://client.example/verify/placeholder"},
-        "metadata": {"source": "email-verification"},
-    },
-    timeout=10,
-)
-
-# After the user verifies in the client app, mark the Datamailer contact verified.
-requests.patch(
-    f"{base_url}/api/contacts/{contact_id}/verification",
-    headers=headers,
-    json={
-        "audience": "datatalksclub",
-        "client": "dtc-courses",
-        "verified": True,
-    },
-    timeout=10,
-)
-
-requests.post(
-    f"{base_url}/api/contacts/imports",
-    headers=headers,
-    json={
-        "audience": "ai-shipping-labs",
-        "client": "ai-shipping-labs",
-        "dry_run": False,
-        "contacts": [
-            {
-                "email": "subscriber@example.com",
-                "status": "subscribed",
-                "tags": ["newsletter"],
-                "email_validation": {"status": "externally_validated"},
-            }
-        ],
-    },
-    timeout=10,
-)
-
-requests.get(
-    f"{base_url}/api/contacts.csv",
-    headers=headers,
-    params={"audience": "ai-shipping-labs", "client": "ai-shipping-labs"},
-    timeout=10,
-)</code></pre>
-  </section>
-
-  <section aria-labelledby="notes">
-    <h2 id="notes">Notes</h2>
-    <p>Transactional templates are visible to staff in Templates. Client apps generate verification and reset URLs, pass them as context, and complete verification in their own app before marking the Datamailer contact verified.</p>
-    <p>Hard-bounced or complained contacts are blocked for transactional sends. Missing required template context returns a JSON validation error before Datamailer creates a contact, message, event, or queue payload.</p>
-    <p>Public tracking, unsubscribe, and SES webhook routes are documented for integration context; client application endpoints under <code>/api</code> use Bearer authentication.</p>
-  </section>
+  </div>
 {% endblock %}

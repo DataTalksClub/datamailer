@@ -1,10 +1,11 @@
 import json
+import re
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import resolve, reverse
 
-from mailing.services.api_docs import API_DOC_PATHS, build_openapi_spec, route_path_map
+from mailing.services.api_docs import API_DOC_PATHS, build_openapi_spec, route_path_map, workflow_examples
 
 pytestmark = pytest.mark.django_db
 
@@ -131,3 +132,88 @@ def test_api_docs_page_does_not_render_secret_examples(client, staff_user):
     assert "unsubscribe_token_hash" not in page
     assert "verify/token" not in page
     assert "reset/token" not in page
+
+
+def test_api_docs_page_renders_runnable_workflow_examples(client, staff_user):
+    client.force_login(staff_user)
+    response = client.get(reverse("mailing:api_docs"))
+    page = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Setup and Authentication" in page
+    assert "Client key management" in page
+    assert "dm_dtccourses_demo_transactional_email_key" in page
+    assert "dm_dtcnews_demo_newsletter_import_export_key" in page
+    assert "Course platform transactional" in page
+    assert "Newsletter import/export" in page
+
+    expected_examples = [
+        ("POST", "/api/contacts", "Create or update a contact"),
+        ("GET", "/api/contacts/status", "Check contact status"),
+        ("PATCH", "/api/contacts/{contact_id}/verification", "Mark email verified"),
+        ("PATCH", "/api/contacts/{contact_id}/validation", "Set validation state"),
+        ("PATCH", "/api/contacts/{contact_id}/suppression", "Set suppression state"),
+        ("POST", "/api/subscriptions/subscribe", "Subscribe a contact"),
+        ("POST", "/api/subscriptions/unsubscribe", "Unsubscribe a contact"),
+        ("PUT", "/api/contacts/{contact_id}/tags", "Replace contact tags"),
+        ("POST/DELETE", "/api/contacts/{contact_id}/tags/{tag_slug}", "Add and remove one tag"),
+        ("POST", "/api/transactional/send", "Send transactional email"),
+        ("POST", "/api/contacts/imports", "Import contacts with JSON"),
+        ("POST", "/api/contacts/imports/csv", "Import contacts with CSV"),
+        ("GET", "/api/contacts.csv", "Export contacts as CSV"),
+        ("GET", "/api/contacts/{contact_id}/history", "Retrieve contact history"),
+    ]
+    for method, path, title in expected_examples:
+        assert method in page
+        assert path in page
+        assert title in page
+
+    assert "Curl" in page
+    assert "Python" in page
+    assert "Request" in page
+    assert "Success response" in page
+    assert "Common error" in page
+    assert "validation_error" in page
+    assert "invalid_api_key" in page
+    assert "SQS_TRANSACTIONAL_EMAIL_QUEUE_URL" in page
+    assert "LocalStack" in page
+    assert "Endpoint Reference" in page
+    assert "/api/v1" not in page
+
+
+def test_api_docs_curl_examples_do_not_hard_code_contact_ids():
+    hard_coded_contact_url = re.compile(r"/api/contacts/\d+(?:/|\\?|$)")
+
+    for group in workflow_examples():
+        for example in group["items"]:
+            assert not hard_coded_contact_url.search(example["curl"]), example["id"]
+
+    rendered_curls = "\n".join(example["curl"] for group in workflow_examples() for example in group["items"])
+    assert "$CONTACT_ID" in rendered_curls
+    assert "$NEWSLETTER_CONTACT_ID" in rendered_curls
+    assert "python -c 'import json, sys; print(json.load(sys.stdin)[\"contact_id\"])'" in rendered_curls
+
+
+def test_transactional_send_example_documents_queue_prerequisite(client, staff_user):
+    client.force_login(staff_user)
+    response = client.get(reverse("mailing:api_docs"))
+    page = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Send transactional email" in page
+    assert "SQS_TRANSACTIONAL_EMAIL_QUEUE_URL" in page
+    assert "default empty queue URL" in page
+    assert "not runnable" in page
+
+
+def test_api_docs_endpoint_reference_matches_openapi_paths(client, staff_user):
+    client.force_login(staff_user)
+    response = client.get(reverse("mailing:api_docs"))
+    page = response.content.decode()
+    spec = build_openapi_spec()
+
+    for path in spec["paths"]:
+        assert path in page
+
+    assert "/api/campaigns" not in page
+    assert "/api/v1" not in page

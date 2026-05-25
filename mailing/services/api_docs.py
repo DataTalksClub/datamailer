@@ -1,8 +1,38 @@
+import json
 from copy import deepcopy
 
 from django.urls import reverse
 
 from mailing.models import EmailValidationStatus, SubscriptionStatus
+
+DOCS_BASE_URL = "http://127.0.0.1:8002"
+
+DEMO_API_KEYS = [
+    {
+        "client": "dtc-newsletter",
+        "audience": "datatalks-club",
+        "name": "Newsletter import/export",
+        "env_var": "DATAMAILER_DTC_NEWSLETTER_KEY",
+        "raw_key": "dm_dtcnews_demo_newsletter_import_export_key",
+        "purpose": "Contact sync, newsletter subscriptions, JSON/CSV import, CSV export.",
+    },
+    {
+        "client": "dtc-courses",
+        "audience": "dtc-courses",
+        "name": "Course platform transactional",
+        "env_var": "DATAMAILER_DTC_COURSES_KEY",
+        "raw_key": "dm_dtccourses_demo_transactional_email_key",
+        "purpose": "Course registration, password reset, email verification, course contact state.",
+    },
+    {
+        "client": "asl-platform",
+        "audience": "ai-shipping-labs",
+        "name": "ASL platform transactional",
+        "env_var": "DATAMAILER_ASL_PLATFORM_KEY",
+        "raw_key": "dm_aslplatform_demo_transactional_email_key",
+        "purpose": "AI Shipping Labs transactional and platform contact examples.",
+    },
+]
 
 API_DOC_PATHS = {
     "mailing:api_contacts": "/api/contacts",
@@ -24,6 +54,610 @@ API_DOC_PATHS = {
     "mailing:public_unsubscribe": "/unsubscribe/{unsubscribe_token}",
     "mailing:ses_webhook": "/webhooks/ses",
 }
+
+
+def code_json(value):
+    return json.dumps(value, indent=2)
+
+
+def contact_response(*, contact_id=101, email="learner@example.com", audience="dtc-courses", client="dtc-courses", tags=None):
+    tags = tags or ["course-ml-zoomcamp"]
+    return {
+        "contact_id": contact_id,
+        "email": email,
+        "exists": True,
+        "verified": True,
+        "verified_at": "2026-05-25T09:30:00Z",
+        "email_validation": {
+            "status": "externally_validated",
+            "reason": "client signup validation",
+            "validated_at": "2026-05-25T09:29:00Z",
+        },
+        "global_unsubscribed": False,
+        "hard_bounced": False,
+        "complained": False,
+        "audience": {
+            "slug": audience,
+            "subscribed": True,
+            "status": "subscribed",
+            "verified": True,
+            "verified_at": "2026-05-25T09:30:00Z",
+            "unsubscribed_at": None,
+            "unsubscribe_reason": "",
+        },
+        "client": {
+            "slug": client,
+            "subscribed": True,
+            "status": "subscribed",
+            "verified": True,
+            "verified_at": "2026-05-25T09:30:00Z",
+            "unsubscribed_at": None,
+            "unsubscribe_reason": "",
+        },
+        "can_send_marketing": True,
+        "can_send_transactional": True,
+        "tags": tags,
+    }
+
+
+def status_response():
+    payload = contact_response()
+    payload.pop("tags")
+    return payload
+
+
+def validation_error(fields):
+    return {"error": {"code": "validation_error", "fields": fields}}
+
+
+def workflow_examples():
+    return [
+        {
+            "section": "Setup and Authentication",
+            "items": [
+                {
+                    "id": "setup-auth",
+                    "title": "Use a named demo API key",
+                    "method": "Header",
+                    "path": "Authorization: Bearer",
+                    "key": "Course platform transactional",
+                    "summary": "Seeded local data creates named keys per client. Staff users can create and revoke additional purpose-specific keys from Clients.",
+                    "request": "",
+                    "curl": """export DATAMAILER_URL="${DATAMAILER_URL:-http://127.0.0.1:8002}"
+export DATAMAILER_API_KEY="dm_dtccourses_demo_transactional_email_key"
+
+curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=dtc-courses&client=dtc-courses" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" """,
+                    "python": """import os
+import requests
+
+base_url = os.getenv("DATAMAILER_URL", "http://127.0.0.1:8002")
+headers = {"Authorization": f"Bearer {os.environ['DATAMAILER_API_KEY']}"}
+
+response = requests.get(
+    f"{base_url}/api/contacts/status",
+    headers=headers,
+    params={
+        "email": "alex.verified@example.com",
+        "audience": "dtc-courses",
+        "client": "dtc-courses",
+    },
+    timeout=10,
+)
+response.raise_for_status()""",
+                    "success": code_json(status_response()),
+                    "error": code_json({"error": {"code": "invalid_api_key", "message": "Authentication credentials were not accepted."}}),
+                },
+            ],
+        },
+        {
+            "section": "Contact Workflows",
+            "items": [
+                {
+                    "id": "upsert-contact",
+                    "title": "Create or update a contact",
+                    "method": "POST",
+                    "path": "/api/contacts",
+                    "key": "Course platform transactional",
+                    "summary": "Upserts the global contact, creates the scoped subscription, adds scoped tags, and records verification/validation state supplied by the trusted client.",
+                    "request": code_json(
+                        {
+                            "email": "learner@example.com",
+                            "audience": "dtc-courses",
+                            "client": "dtc-courses",
+                            "status": "subscribed",
+                            "tags": ["course-ml-zoomcamp"],
+                            "verified": True,
+                            "email_validation": {
+                                "status": "externally_validated",
+                                "reason": "client signup validation",
+                            },
+                        }
+                    ),
+                    "curl": """CONTACT_ID=$(curl -sS -X POST "$DATAMAILER_URL/api/contacts" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email": "learner@example.com",
+    "audience": "dtc-courses",
+    "client": "dtc-courses",
+    "status": "subscribed",
+    "tags": ["course-ml-zoomcamp"],
+    "verified": true,
+    "email_validation": {
+      "status": "externally_validated",
+      "reason": "client signup validation"
+    }
+  }' | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+echo "Contact ID: $CONTACT_ID" """,
+                    "python": "",
+                    "success": code_json(contact_response()),
+                    "error": code_json(validation_error({"email": "invalid"})),
+                },
+                {
+                    "id": "contact-status",
+                    "title": "Check contact status",
+                    "method": "GET",
+                    "path": "/api/contacts/status",
+                    "key": "Course platform transactional",
+                    "summary": "Returns subscription, verification, validation, suppression, and sendability state for one email in the authenticated client scope.",
+                    "request": "email=learner@example.com&audience=dtc-courses&client=dtc-courses",
+                    "curl": """curl -sS "$DATAMAILER_URL/api/contacts/status?email=learner@example.com&audience=dtc-courses&client=dtc-courses" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" """,
+                    "python": "",
+                    "success": code_json(status_response()),
+                    "error": code_json(validation_error({"audience": "required"})),
+                },
+                {
+                    "id": "contact-history",
+                    "title": "Retrieve contact history",
+                    "method": "GET",
+                    "path": "/api/contacts/{contact_id}/history",
+                    "key": "Course platform transactional",
+                    "summary": "Fetches safe scoped campaign, transactional, and event history for troubleshooting support questions.",
+                    "request": "audience=dtc-courses&client=dtc-courses&limit=25",
+                    "curl": """CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=dtc-courses&client=dtc-courses" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+curl -sS "$DATAMAILER_URL/api/contacts/$CONTACT_ID/history?audience=dtc-courses&client=dtc-courses&limit=25" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" """,
+                    "python": "",
+                    "success": code_json(
+                        {
+                            "contact_id": 101,
+                            "email": "learner@example.com",
+                            "audience": "dtc-courses",
+                            "client": "dtc-courses",
+                            "campaign_recipients": [],
+                            "transactional_messages": [
+                                {
+                                    "type": "transactional_message",
+                                    "id": 901,
+                                    "template_key": "registration-welcome",
+                                    "status": "queued",
+                                    "subject": "Welcome to ML Zoomcamp",
+                                }
+                            ],
+                            "events": [{"type": "email_event", "id": 1201, "event_type": "queued", "metadata": {}}],
+                            "next_cursor": None,
+                        }
+                    ),
+                    "error": code_json(validation_error({"contact_id": "not_found"})),
+                },
+            ],
+        },
+        {
+            "section": "Subscription and Tag Workflows",
+            "items": [
+                {
+                    "id": "subscribe-contact",
+                    "title": "Subscribe a contact",
+                    "method": "POST",
+                    "path": "/api/subscriptions/subscribe",
+                    "key": "Newsletter import/export",
+                    "summary": "Creates the contact if needed and marks the client-scoped subscription subscribed.",
+                    "request": code_json(
+                        {
+                            "email": "subscriber@example.com",
+                            "audience": "datatalks-club",
+                            "client": "dtc-newsletter",
+                            "tags": ["newsletter"],
+                        }
+                    ),
+                    "curl": """NEWSLETTER_CONTACT_ID=$(curl -sS -X POST "$DATAMAILER_URL/api/subscriptions/subscribe" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"subscriber@example.com","audience":"datatalks-club","client":"dtc-newsletter","tags":["newsletter"]}' \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+echo "Newsletter contact ID: $NEWSLETTER_CONTACT_ID" """,
+                    "python": "",
+                    "success": code_json(
+                        contact_response(
+                            contact_id=202,
+                            email="subscriber@example.com",
+                            audience="datatalks-club",
+                            client="dtc-newsletter",
+                            tags=["newsletter"],
+                        )
+                    ),
+                    "error": code_json(validation_error({"client": "forbidden"})),
+                },
+                {
+                    "id": "unsubscribe-contact",
+                    "title": "Unsubscribe a contact",
+                    "method": "POST",
+                    "path": "/api/subscriptions/unsubscribe",
+                    "key": "Newsletter import/export",
+                    "summary": "Applies a client, audience, or global unsubscribe while preserving an audit-friendly reason.",
+                    "request": code_json(
+                        {
+                            "email": "subscriber@example.com",
+                            "audience": "datatalks-club",
+                            "client": "dtc-newsletter",
+                            "scope": "client",
+                            "reason": "user_requested",
+                        }
+                    ),
+                    "curl": """curl -sS -X POST "$DATAMAILER_URL/api/subscriptions/unsubscribe" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"subscriber@example.com","audience":"datatalks-club","client":"dtc-newsletter","scope":"client","reason":"user_requested"}'""",
+                    "python": "",
+                    "success": code_json(
+                        {
+                            **status_response(),
+                            "email": "subscriber@example.com",
+                            "scope": "client",
+                            "client": {
+                                "slug": "dtc-newsletter",
+                                "subscribed": False,
+                                "status": "unsubscribed",
+                                "verified": False,
+                                "verified_at": None,
+                                "unsubscribed_at": "2026-05-25T10:00:00Z",
+                                "unsubscribe_reason": "user_requested",
+                            },
+                        }
+                    ),
+                    "error": code_json(validation_error({"scope": "invalid"})),
+                },
+                {
+                    "id": "replace-tags",
+                    "title": "Replace contact tags",
+                    "method": "PUT",
+                    "path": "/api/contacts/{contact_id}/tags",
+                    "key": "Newsletter import/export",
+                    "summary": "Replaces the contact's tag set for the target audience.",
+                    "request": code_json({"audience": "datatalks-club", "client": "dtc-newsletter", "tags": ["newsletter", "events"]}),
+                    "curl": """NEWSLETTER_CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=datatalks-club&client=dtc-newsletter" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+curl -sS -X PUT "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/tags" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"audience":"datatalks-club","client":"dtc-newsletter","tags":["newsletter","events"]}'""",
+                    "python": "",
+                    "success": code_json(
+                        contact_response(
+                            contact_id=202,
+                            email="subscriber@example.com",
+                            audience="datatalks-club",
+                            client="dtc-newsletter",
+                            tags=["events", "newsletter"],
+                        )
+                    ),
+                    "error": code_json(validation_error({"tags": "must_be_list"})),
+                },
+                {
+                    "id": "add-remove-tag",
+                    "title": "Add and remove one tag",
+                    "method": "POST/DELETE",
+                    "path": "/api/contacts/{contact_id}/tags/{tag_slug}",
+                    "key": "Newsletter import/export",
+                    "summary": "Use single-tag mutations when a client workflow toggles one audience tag at a time.",
+                    "request": code_json({"audience": "datatalks-club", "client": "dtc-newsletter"}),
+                    "curl": """NEWSLETTER_CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=datatalks-club&client=dtc-newsletter" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+curl -sS -X POST "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/tags/events" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"audience":"datatalks-club","client":"dtc-newsletter"}'
+
+curl -sS -X DELETE "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/tags/events?audience=datatalks-club&client=dtc-newsletter" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" """,
+                    "python": "",
+                    "success": code_json(
+                        contact_response(
+                            contact_id=202,
+                            email="subscriber@example.com",
+                            audience="datatalks-club",
+                            client="dtc-newsletter",
+                            tags=["newsletter"],
+                        )
+                    ),
+                    "error": code_json(validation_error({"tag": "invalid"})),
+                },
+            ],
+        },
+        {
+            "section": "Verification, Validation, and Suppression",
+            "items": [
+                {
+                    "id": "mark-verified",
+                    "title": "Mark email verified",
+                    "method": "PATCH",
+                    "path": "/api/contacts/{contact_id}/verification",
+                    "key": "Course platform transactional",
+                    "summary": "After a user verifies in the client app, mark the Datamailer contact verified for marketing eligibility.",
+                    "request": code_json({"audience": "dtc-courses", "client": "dtc-courses", "verified": True}),
+                    "curl": """CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=dtc-courses&client=dtc-courses" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/$CONTACT_ID/verification" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"audience":"dtc-courses","client":"dtc-courses","verified":true}'""",
+                    "python": "",
+                    "success": code_json(contact_response()),
+                    "error": code_json(validation_error({"verified": "required"})),
+                },
+                {
+                    "id": "validation-state",
+                    "title": "Set validation state",
+                    "method": "PATCH",
+                    "path": "/api/contacts/{contact_id}/validation",
+                    "key": "Course platform transactional",
+                    "summary": "Stores external validation or manual hygiene decisions used by sendability checks.",
+                    "request": code_json(
+                        {
+                            "audience": "dtc-courses",
+                            "client": "dtc-courses",
+                            "status": "externally_validated",
+                            "reason": "validated at signup",
+                        }
+                    ),
+                    "curl": """CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=dtc-courses&client=dtc-courses" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/$CONTACT_ID/validation" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"audience":"dtc-courses","client":"dtc-courses","status":"externally_validated","reason":"validated at signup"}'""",
+                    "python": "",
+                    "success": code_json(contact_response()),
+                    "error": code_json(validation_error({"email_validation.status": "invalid"})),
+                },
+                {
+                    "id": "suppression-state",
+                    "title": "Set suppression state",
+                    "method": "PATCH",
+                    "path": "/api/contacts/{contact_id}/suppression",
+                    "key": "Newsletter import/export",
+                    "summary": "Records hard bounce, complaint, or global unsubscribe state when an external system owns the event source.",
+                    "request": code_json(
+                        {
+                            "audience": "datatalks-club",
+                            "client": "dtc-newsletter",
+                            "hard_bounced": True,
+                            "reason": "provider_hard_bounce",
+                        }
+                    ),
+                    "curl": """NEWSLETTER_CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=datatalks-club&client=dtc-newsletter" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
+)
+
+curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/suppression" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"audience":"datatalks-club","client":"dtc-newsletter","hard_bounced":true,"reason":"provider_hard_bounce"}'""",
+                    "python": "",
+                    "success": code_json(
+                        {
+                            **contact_response(
+                                contact_id=202,
+                                email="subscriber@example.com",
+                                audience="datatalks-club",
+                                client="dtc-newsletter",
+                                tags=["newsletter"],
+                            ),
+                            "hard_bounced": True,
+                            "can_send_marketing": False,
+                            "can_send_transactional": False,
+                        }
+                    ),
+                    "error": code_json(validation_error({"suppression.hard_bounced": "must_be_boolean"})),
+                },
+            ],
+        },
+        {
+            "section": "Imports, Exports, and Transactional Send",
+            "items": [
+                {
+                    "id": "transactional-send",
+                    "title": "Send transactional email",
+                    "method": "POST",
+                    "path": "/api/transactional/send",
+                    "key": "Course platform transactional",
+                    "summary": "Requires the Datamailer server to be started with SQS_TRANSACTIONAL_EMAIL_QUEUE_URL configured, for example through LocalStack. With the default empty queue URL, this endpoint is documented but is not runnable because queueing provider work will fail. When configured, it validates template context, creates a transactional message, and enqueues provider work.",
+                    "request": code_json(
+                        {
+                            "email": "learner@example.com",
+                            "template_key": "registration-welcome",
+                            "idempotency_key": "registration-user-123",
+                            "context": {"name": "Learner", "course_name": "ML Zoomcamp"},
+                            "metadata": {"source": "registration"},
+                        }
+                    ),
+                    "curl": """curl -sS -X POST "$DATAMAILER_URL/api/transactional/send" \\
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email": "learner@example.com",
+    "template_key": "registration-welcome",
+    "idempotency_key": "registration-user-123",
+    "context": {"name": "Learner", "course_name": "ML Zoomcamp"},
+    "metadata": {"source": "registration"}
+  }'""",
+                    "python": """requests.post(
+    f"{base_url}/api/transactional/send",
+    headers=headers,
+    json={
+        "email": "learner@example.com",
+        "template_key": "registration-welcome",
+        "idempotency_key": "registration-user-123",
+        "context": {"name": "Learner", "course_name": "ML Zoomcamp"},
+        "metadata": {"source": "registration"},
+    },
+    timeout=10,
+)
+
+requests.post(
+    f"{base_url}/api/transactional/send",
+    headers=headers,
+    json={
+        "email": "learner@example.com",
+        "template_key": "password-reset",
+        "idempotency_key": "password-reset-user-123-request-456",
+        "context": {"reset_url": "https://client.example/reset/placeholder"},
+        "metadata": {"source": "password-reset"},
+    },
+    timeout=10,
+)
+
+requests.post(
+    f"{base_url}/api/transactional/send",
+    headers=headers,
+    json={
+        "email": "learner@example.com",
+        "template_key": "email-verification",
+        "idempotency_key": "verify-user-123-email-1",
+        "context": {
+            "name": "Learner",
+            "verification_url": "https://client.example/verify/placeholder",
+        },
+        "metadata": {"source": "email-verification"},
+    },
+    timeout=10,
+)""",
+                    "success": code_json(
+                        {
+                            "message": {
+                                "id": 901,
+                                "email": "learner@example.com",
+                                "template_key": "registration-welcome",
+                                "status": "queued",
+                            },
+                            "idempotent_replay": False,
+                            "enqueued": True,
+                        }
+                    ),
+                    "error": code_json(validation_error({"context.course_name": "required"})),
+                },
+                {
+                    "id": "json-import",
+                    "title": "Import contacts with JSON",
+                    "method": "POST",
+                    "path": "/api/contacts/imports",
+                    "key": "Newsletter import/export",
+                    "summary": "Bulk upserts contacts. Invalid rows are reported in partial errors while valid rows continue.",
+                    "request": code_json(
+                        {
+                            "audience": "datatalks-club",
+                            "client": "dtc-newsletter",
+                            "dry_run": False,
+                            "idempotency_key": "newsletter-import-2026-05-25",
+                            "contacts": [
+                                {
+                                    "email": "subscriber@example.com",
+                                    "status": "subscribed",
+                                    "tags": ["newsletter"],
+                                    "email_validation": {"status": "externally_validated"},
+                                }
+                            ],
+                        }
+                    ),
+                    "curl": """curl -sS -X POST "$DATAMAILER_URL/api/contacts/imports" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "audience": "datatalks-club",
+    "client": "dtc-newsletter",
+    "dry_run": false,
+    "idempotency_key": "newsletter-import-2026-05-25",
+    "contacts": [{"email":"subscriber@example.com","status":"subscribed","tags":["newsletter"]}]
+  }'""",
+                    "python": "",
+                    "success": code_json(
+                        {
+                            "dry_run": False,
+                            "idempotency_key": "newsletter-import-2026-05-25",
+                            "counts": {"total": 1, "created": 1, "updated": 0, "unchanged": 0, "skipped": 0, "invalid": 0},
+                            "results": [{"index": 0, "item": 1, "action": "created", "contact": {"contact_id": 202}}],
+                            "errors": [],
+                        }
+                    ),
+                    "error": code_json(validation_error({"contacts": "must_be_list"})),
+                },
+                {
+                    "id": "csv-import",
+                    "title": "Import contacts with CSV",
+                    "method": "POST",
+                    "path": "/api/contacts/imports/csv",
+                    "key": "Newsletter import/export",
+                    "summary": "Uploads CSV using the same column semantics as export. JSON with a csv string also works for local scripts.",
+                    "request": "email,tags,subscription_status,verified\nsubscriber@example.com,newsletter,subscribed,true",
+                    "curl": """curl -sS -X POST "$DATAMAILER_URL/api/contacts/imports/csv" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -F audience=datatalks-club \\
+  -F client=dtc-newsletter \\
+  -F dry_run=false \\
+  -F file=@contacts.csv""",
+                    "python": "",
+                    "success": code_json(
+                        {
+                            "dry_run": False,
+                            "idempotency_key": "",
+                            "counts": {"total": 1, "created": 0, "updated": 1, "unchanged": 0, "skipped": 0, "invalid": 0},
+                            "results": [{"index": 0, "item": 1, "action": "updated", "contact": {"contact_id": 202}}],
+                            "errors": [],
+                        }
+                    ),
+                    "error": code_json(validation_error({"csv": "required"})),
+                },
+                {
+                    "id": "csv-export",
+                    "title": "Export contacts as CSV",
+                    "method": "GET",
+                    "path": "/api/contacts.csv",
+                    "key": "Newsletter import/export",
+                    "summary": "Exports safe recreatable contact, subscription, tag, verification, validation, suppression, and update timestamp columns.",
+                    "request": "audience=datatalks-club&client=dtc-newsletter&tags=newsletter",
+                    "curl": """curl -sS "$DATAMAILER_URL/api/contacts.csv?audience=datatalks-club&client=dtc-newsletter&tags=newsletter" \\
+  -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
+  -o contacts.csv""",
+                    "python": "",
+                    "success": "email,audience,client,tags,subscription_status,verified,verified_at,email_validation_status\nsubscriber@example.com,datatalks-club,dtc-newsletter,newsletter,subscribed,true,2026-05-25T09:30:00Z,externally_validated",
+                    "error": code_json(validation_error({"subscription_status": "invalid"})),
+                },
+            ],
+        },
+    ]
 
 
 def endpoint_groups():
