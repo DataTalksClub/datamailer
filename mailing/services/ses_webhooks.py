@@ -185,6 +185,19 @@ def normalize_ses_notification(sns_payload, *, received_at=None):
     return validate_ses_webhook_message(payload)
 
 
+def normalize_ses_webhook_worker_payload(payload, *, received_at=None):
+    if not isinstance(payload, dict):
+        raise SesWebhookError("SES webhook worker payload must be a JSON object")
+
+    if payload.get("contract") == SES_WEBHOOKS_CONTRACT:
+        return validate_ses_webhook_message(payload)
+
+    if payload.get("Type") == SNS_NOTIFICATION:
+        return normalize_ses_notification(payload, received_at=received_at)
+
+    raise SesWebhookError("unsupported SES webhook worker payload")
+
+
 def build_ses_metadata(ses_payload, sns_payload):
     notification_type = SES_EVENT_TYPES[ses_payload.get("eventType") or ses_payload.get("notificationType")]
     detail = ses_payload.get(notification_type) or {}

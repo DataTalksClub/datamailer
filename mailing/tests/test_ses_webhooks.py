@@ -220,6 +220,24 @@ def test_worker_delivery_updates_campaign_recipient_and_stats_idempotently(recip
     assert EmailEvent.objects.filter(event_type=EmailEventType.DELIVERED, campaign_recipient=recipient).count() == 1
 
 
+def test_worker_raw_sns_delivery_updates_campaign_recipient(recipient):
+    event = records_from_payloads(
+        [("message-1", sns_payload(ses_payload("Delivery", "ses-campaign-1"), message_id="sns-raw-delivery"))]
+    )
+
+    response = ses_webhooks_handler(event, None)
+
+    recipient.refresh_from_db()
+    recipient.campaign.refresh_from_db()
+    event = EmailEvent.objects.get()
+    assert response == {"batchItemFailures": []}
+    assert recipient.delivered_at is not None
+    assert recipient.campaign.delivered_count == 1
+    assert event.event_type == EmailEventType.DELIVERED
+    assert event.provider_event_id == "sns-raw-delivery"
+    assert event.metadata["sns_message_id"] == "sns-raw-delivery"
+
+
 def test_worker_delivery_updates_transactional_message(transactional_message):
     response = ses_webhooks_handler(
         records_from_payloads([("message-1", webhook_payload("delivery", "sns-tx-delivery", "ses-tx-1"))]),
@@ -257,6 +275,37 @@ def test_worker_hard_bounce_suppresses_campaign_contact(recipient, audience, app
     assert EmailEvent.objects.filter(event_type=EmailEventType.BOUNCE, campaign_recipient=recipient).count() == 1
 
 
+def test_worker_raw_sns_hard_bounce_suppresses_campaign_contact(recipient, audience, app_client):
+    event = records_from_payloads(
+        [
+            (
+                "message-1",
+                sns_payload(
+                    ses_payload(
+                        "Bounce",
+                        "ses-campaign-1",
+                        detail={"bounceType": "Permanent", "bounceSubType": "General"},
+                    ),
+                    message_id="sns-raw-bounce",
+                ),
+            )
+        ]
+    )
+
+    response = ses_webhooks_handler(event, None)
+
+    recipient.refresh_from_db()
+    recipient.contact.refresh_from_db()
+    recipient.campaign.refresh_from_db()
+    assert response == {"batchItemFailures": []}
+    assert recipient.status == CampaignRecipientStatus.BOUNCED
+    assert recipient.contact.hard_bounced_at is not None
+    assert recipient.campaign.bounce_count == 1
+    assert is_marketing_email_allowed(recipient.contact, audience, app_client) is False
+    assert is_transactional_email_allowed(recipient.contact) is False
+    assert EmailEvent.objects.filter(event_type=EmailEventType.BOUNCE, campaign_recipient=recipient).count() == 1
+
+
 def test_worker_complaint_suppresses_transactional_contact(transactional_message):
     payload = webhook_payload("complaint", "sns-complaint-1", "ses-tx-1")
 
@@ -264,6 +313,33 @@ def test_worker_complaint_suppresses_transactional_contact(transactional_message
 
     transactional_message.refresh_from_db()
     transactional_message.contact.refresh_from_db()
+    assert transactional_message.status == TransactionalMessageStatus.COMPLAINED
+    assert transactional_message.contact.complained_at is not None
+    assert is_transactional_email_allowed(transactional_message.contact) is False
+    assert EmailEvent.objects.filter(
+        event_type=EmailEventType.COMPLAINT,
+        transactional_message=transactional_message,
+    ).count() == 1
+
+
+def test_worker_raw_sns_complaint_suppresses_transactional_contact(transactional_message):
+    event = records_from_payloads(
+        [
+            (
+                "message-1",
+                sns_payload(
+                    ses_payload("Complaint", "ses-tx-1", detail={"complaintFeedbackType": "abuse"}),
+                    message_id="sns-raw-complaint",
+                ),
+            )
+        ]
+    )
+
+    response = ses_webhooks_handler(event, None)
+
+    transactional_message.refresh_from_db()
+    transactional_message.contact.refresh_from_db()
+    assert response == {"batchItemFailures": []}
     assert transactional_message.status == TransactionalMessageStatus.COMPLAINED
     assert transactional_message.contact.complained_at is not None
     assert is_transactional_email_allowed(transactional_message.contact) is False
@@ -342,6 +418,22 @@ def test_worker_returns_partial_batch_failures_for_bad_records(recipient):
     assert recipient.delivered_at is not None
 
 
+def test_worker_raw_sns_invalid_envelope_fails_only_that_batch_item(recipient):
+    valid = sns_payload(ses_payload("Delivery", "ses-campaign-1"), message_id="sns-raw-delivery-2")
+    invalid = sns_payload(ses_payload("Delivery", "ses-campaign-1"), message_id="sns-raw-invalid") | {
+        "Message": "{not-json",
+    }
+    event = records_from_payloads([("valid", valid), ("invalid", invalid)])
+
+    response = ses_webhooks_handler(event, None)
+
+    recipient.refresh_from_db()
+    assert response == {"batchItemFailures": [{"itemIdentifier": "invalid"}]}
+    assert recipient.delivered_at is not None
+    assert EmailEvent.objects.filter(provider_event_id="sns-raw-delivery-2").count() == 1
+    assert EmailEvent.objects.filter(provider_event_id="sns-raw-invalid").count() == 0
+
+
 def sns_payload(message, *, message_id="sns-message-1", message_type="Notification", signature=SNS_MOCK_SIGNATURE):
     return {
         "Type": message_type,
@@ -355,7 +447,7 @@ def sns_payload(message, *, message_id="sns-message-1", message_type="Notificati
     }
 
 
-def ses_payload(event_type, ses_message_id):
+def ses_payload(event_type, ses_message_id, *, detail=None):
     return {
         "eventType": event_type,
         "mail": {
@@ -363,7 +455,7 @@ def ses_payload(event_type, ses_message_id):
             "source": "newsletter@example.com",
             "messageId": ses_message_id,
         },
-        event_type.casefold(): {},
+        event_type.casefold(): detail or {},
     }
 
 

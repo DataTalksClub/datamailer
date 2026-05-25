@@ -122,6 +122,10 @@ Idempotency: the future sender must load each `campaign_recipients` row and only
 
 Purpose: process SES delivery, bounce, complaint, open, click, send, or reject notifications asynchronously.
 
+Terraform-managed sandbox and production deployments route SES configuration-set events to SNS and subscribe that SNS topic directly to the `ses-webhooks` SQS queue. In that default path, the worker receives raw SNS `Notification` envelopes from SQS and normalizes the embedded SES `Message` into this Datamailer contract before processing it.
+
+The HTTP SES/SNS webhook endpoint remains an optional ingress path for deployments that cannot use direct SNS-to-SQS delivery or need an externally reachable, signature-validated webhook URL. That endpoint performs the same normalization and enqueues this contract payload. Both ingress paths converge on the processor below.
+
 Required fields:
 
 | Field | Type | Notes |

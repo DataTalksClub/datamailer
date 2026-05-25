@@ -12,6 +12,10 @@ The sandbox creates:
 - A least-privilege IAM policy document output for whichever sandbox role/user runs Datamailer.
 - SES inbound receiving for `datamailer@dtcdev.click`, storing raw MIME messages in S3.
 
+SES event delivery in this Terraform root uses direct SNS-to-SQS routing: SES configuration set -> SNS topic -> `ses-webhooks` SQS queue -> Datamailer webhook worker. The worker accepts the raw SNS notification envelope from SQS and normalizes the embedded SES event before updating Datamailer state.
+
+The HTTP SES/SNS webhook endpoint is still available as an optional alternate ingress for deployments that need a public webhook URL, but it is not the default path created by this Terraform root.
+
 ## SES Sandbox Emails
 
 By default Terraform requests SES verification for:
@@ -81,6 +85,27 @@ terraform output -raw runtime_iam_policy_json
 For a local Datamailer run against sandbox queues/SES, copy values from `terraform output app_environment` into your local environment. Keep using local/staging-safe sender values until the SES identities above are verified.
 
 Attach `runtime_iam_policy_json` to the sandbox IAM principal used by local Datamailer, AI Shipping Labs, or another future client app. Do not create or commit access keys here.
+
+## Smoke Check
+
+After Terraform has been applied and AWS credentials are available for the sandbox account, run:
+
+```bash
+make smoke-sandbox
+```
+
+This runs `scripts/smoke_test_sandbox.py` against the resources from `terraform output -json`. It checks AWS caller context, SQS queues and DLQs, a safe transactional SQS send/receive/delete round trip, the SES configuration set and identity verification states, SNS wiring to `ses-webhooks`, inbound S3 visibility, and optional Route53 state.
+
+The smoke check prints `PASS`, `WARN`, and `FAIL` lines. It exits non-zero only for `FAIL`. SES production access, unverified SES identities, pending domain registration/delegation, and DNS propagation are warning/manual gates so the command remains useful in SES sandbox mode.
+
+Useful overrides:
+
+```bash
+uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer-sandbox
+uv run python scripts/smoke_test_sandbox.py --terraform-output-json /path/to/terraform-output.json
+uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer-sandbox --round-trip-all-queues
+uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer-sandbox --require-inbound-s3-read
+```
 
 ## Inbound Test Mailbox
 
