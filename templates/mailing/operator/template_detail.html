@@ -93,7 +93,13 @@
           <tbody>
             {% for message in recent_messages %}
               <tr>
-                <td>{{ message.email }}</td>
+                <td>
+                  {% if message.contact %}
+                    <a href="{% url 'mailing:contact_detail' message.contact.normalized_email %}">{{ message.email }}</a>
+                  {% else %}
+                    {{ message.email }}
+                  {% endif %}
+                </td>
                 <td><span class="badge">{{ message.status }}</span></td>
                 <td class="nowrap">{{ message.created_at|date:"Y-m-d H:i" }}</td>
                 <td>{{ message.last_error }}</td>

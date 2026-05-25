@@ -170,8 +170,8 @@ def test_contact_state_and_subscription_mutations_are_audited_and_idempotent(cli
         "hard_bounced": "",
         "complained": "",
     }
-    client.post(reverse("mailing:contact_state_update", args=[contact.id]), state_payload)
-    client.post(reverse("mailing:contact_state_update", args=[contact.id]), state_payload)
+    client.post(reverse("mailing:contact_state_update", args=[contact.normalized_email]), state_payload)
+    client.post(reverse("mailing:contact_state_update", args=[contact.normalized_email]), state_payload)
     contact.refresh_from_db()
     assert contact.verified_at is not None
     assert contact.email_validation_status == EmailValidationStatus.MANUALLY_INVALID
@@ -185,8 +185,8 @@ def test_contact_state_and_subscription_mutations_are_audited_and_idempotent(cli
         "verified": "on",
         "unsubscribe_reason": "manual request",
     }
-    client.post(reverse("mailing:contact_subscription_update", args=[contact.id]), subscription_payload)
-    client.post(reverse("mailing:contact_subscription_update", args=[contact.id]), subscription_payload)
+    client.post(reverse("mailing:contact_subscription_update", args=[contact.normalized_email]), subscription_payload)
+    client.post(reverse("mailing:contact_subscription_update", args=[contact.normalized_email]), subscription_payload)
     subscription = Subscription.objects.get(contact=contact, audience=audience, client=client_record)
     assert subscription.status == SubscriptionStatus.UNSUBSCRIBED
     assert subscription.unsubscribe_reason == "manual request"
@@ -208,16 +208,16 @@ def test_contact_tag_mutations_are_idempotent_and_feed_campaign_segmentation(cli
     )
 
     payload = {"audience": audience.id, "tag": tag.id, "new_tag_name": "", "new_tag_slug": ""}
-    client.post(reverse("mailing:contact_tag_add", args=[contact.id]), payload)
-    client.post(reverse("mailing:contact_tag_add", args=[contact.id]), payload)
+    client.post(reverse("mailing:contact_tag_add", args=[contact.normalized_email]), payload)
+    client.post(reverse("mailing:contact_tag_add", args=[contact.normalized_email]), payload)
     assert ContactTag.objects.filter(contact=contact, tag=tag).count() == 1
     assert OperatorAudit.objects.filter(action="contact.tag.add", target_id=contact.id).count() == 1
     assert estimate_campaign_recipients(campaign).recipient_count == 1
     assert snapshot_campaign_recipients(campaign).recipient_count == 1
 
     membership = ContactTag.objects.get(contact=contact, tag=tag)
-    client.post(reverse("mailing:contact_tag_remove", args=[contact.id]), {"membership": membership.id})
-    client.post(reverse("mailing:contact_tag_remove", args=[contact.id]), {"membership": membership.id})
+    client.post(reverse("mailing:contact_tag_remove", args=[contact.normalized_email]), {"membership": membership.id})
+    client.post(reverse("mailing:contact_tag_remove", args=[contact.normalized_email]), {"membership": membership.id})
     assert ContactTag.objects.filter(contact=contact, tag=tag).count() == 0
     assert OperatorAudit.objects.filter(action="contact.tag.remove", target_id=contact.id).count() == 1
 
@@ -229,7 +229,7 @@ def test_contact_tag_form_rejects_cross_audience_tag(client, operator, organizat
     client.force_login(operator)
 
     response = client.post(
-        reverse("mailing:contact_tag_add", args=[contact.id]),
+        reverse("mailing:contact_tag_add", args=[contact.normalized_email]),
         {"audience": audience.id, "tag": tag.id, "new_tag_name": "", "new_tag_slug": ""},
         follow=True,
     )

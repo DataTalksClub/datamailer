@@ -166,7 +166,7 @@ API docs should feel closer to Resend than to generated reference docs:
 
 - Product UI routes should not use `/operator`.
 - Client API routes should not use `/api/v1` before production; use `/api`.
-- Contact UI URLs should use email addresses instead of numeric IDs.
+- Contact UI URLs should use stored normalized email addresses instead of numeric IDs.
 - Keep Django admin at `/admin/`.
 - Route names, page titles, and navigation labels should use the same vocabulary.
 

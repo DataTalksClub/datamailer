@@ -160,7 +160,7 @@
             {% for row in member_rows %}
               <tr>
                 <td>
-                  <a href="{% url 'mailing:contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
+                  <a href="{% url 'mailing:contact_detail' row.contact.normalized_email %}">{{ row.contact.email }}</a>
                   <div class="muted">{{ row.contact.normalized_email }}</div>
                 </td>
                 <td><span class="badge">{{ row.contact.get_email_validation_status_display }}</span></td>
@@ -240,7 +240,7 @@
             <span class="muted">{{ row.event.created_at|date:"Y-m-d H:i:s" }}</span>
             <div>{{ row.context }}</div>
             {% if row.event.contact %}
-              <div><a href="{% url 'mailing:contact_detail' row.event.contact_id %}">{{ row.event.contact.email }}</a></div>
+              <div><a href="{% url 'mailing:contact_detail' row.event.contact.normalized_email %}">{{ row.event.contact.email }}</a></div>
             {% endif %}
             {% if row.event.url %}<div class="truncate"><a href="{{ row.event.url }}">{{ row.event.url }}</a></div>{% endif %}
             {% if row.metadata_summary %}<div class="muted truncate">{{ row.metadata_summary }}</div>{% endif %}

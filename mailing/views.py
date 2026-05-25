@@ -263,9 +263,13 @@ def contact_search(request):
     )
 
 
+def get_contact_by_email_or_404(contact_email):
+    return get_object_or_404(contact_detail_queryset(), normalized_email=contact_email.casefold())
+
+
 @staff_member_required
-def contact_detail(request, contact_id):
-    contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+def contact_detail(request, contact_email):
+    contact = get_contact_by_email_or_404(contact_email)
     detail_context = contact_detail_context(contact)
     events = paginate(request, contact_event_timeline(contact), per_page=50)
     event_rows = [
@@ -312,8 +316,8 @@ def contact_detail(request, contact_id):
 
 @staff_member_required
 @require_POST
-def contact_state_update(request, contact_id):
-    contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+def contact_state_update(request, contact_email):
+    contact = get_contact_by_email_or_404(contact_email)
     form = ContactStateForm(request.POST)
     if form.is_valid():
         update_contact_state(
@@ -331,13 +335,13 @@ def contact_state_update(request, contact_id):
         messages.success(request, "Contact state updated.")
     else:
         messages.error(request, "Contact state was not updated; check the form values.")
-    return redirect("mailing:contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_email=contact.normalized_email)
 
 
 @staff_member_required
 @require_POST
-def contact_subscription_update(request, contact_id):
-    contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+def contact_subscription_update(request, contact_email):
+    contact = get_contact_by_email_or_404(contact_email)
     form = ContactSubscriptionForm(request.POST)
     if form.is_valid():
         update_subscription(
@@ -352,13 +356,13 @@ def contact_subscription_update(request, contact_id):
         messages.success(request, "Subscription updated.")
     else:
         messages.error(request, "Subscription was not updated; check the form values.")
-    return redirect("mailing:contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_email=contact.normalized_email)
 
 
 @staff_member_required
 @require_POST
-def contact_tag_add(request, contact_id):
-    contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+def contact_tag_add(request, contact_email):
+    contact = get_contact_by_email_or_404(contact_email)
     form = ContactTagAddForm(request.POST)
     if form.is_valid():
         add_contact_tag(
@@ -372,20 +376,20 @@ def contact_tag_add(request, contact_id):
         messages.success(request, "Tag added.")
     else:
         messages.error(request, "Tag was not added; check the form values.")
-    return redirect("mailing:contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_email=contact.normalized_email)
 
 
 @staff_member_required
 @require_POST
-def contact_tag_remove(request, contact_id):
-    contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
+def contact_tag_remove(request, contact_email):
+    contact = get_contact_by_email_or_404(contact_email)
     form = ContactTagRemoveForm(request.POST, contact=contact)
     if form.is_valid():
         remove_contact_tag(actor=request.user, contact=contact, tag=form.cleaned_data["membership"].tag)
         messages.success(request, "Tag removed.")
     else:
         messages.error(request, "Tag was not removed; check the form values.")
-    return redirect("mailing:contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_email=contact.normalized_email)
 
 
 @staff_member_required

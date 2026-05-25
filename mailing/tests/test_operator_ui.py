@@ -348,7 +348,7 @@ def test_operator_contact_views_show_email_validation_status(client, operator, a
     Subscription.objects.create(contact=contact, audience=audience, client=client_record)
 
     search_response = client.get(reverse("mailing:contact_search"), {"q": "person@example.com"})
-    detail_response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
+    detail_response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
 
     assert search_response.status_code == 200
     assert b"Manually invalid" in search_response.content
@@ -357,6 +357,75 @@ def test_operator_contact_views_show_email_validation_status(client, operator, a
     assert b"Validation" in detail_response.content
     assert b"Manually invalid" in detail_response.content
     assert b"staff marked bad" in detail_response.content
+
+
+def test_contact_detail_uses_normalized_email_url_and_mixed_case_lookup(client, operator):
+    client.force_login(operator)
+    contact = create_contact(" Person@Example.COM ")
+
+    canonical_url = reverse("mailing:contact_detail", args=[contact.normalized_email])
+    response = client.get("/contacts/PERSON@EXAMPLE.COM/")
+
+    assert canonical_url == "/contacts/person@example.com/"
+    assert response.status_code == 200
+    assert b"Person@Example.COM" in response.content
+    assert f'action="{reverse("mailing:contact_state_update", args=[contact.normalized_email])}"'.encode() in response.content
+    assert f'action="{reverse("mailing:contact_subscription_update", args=[contact.normalized_email])}"'.encode() in response.content
+    assert f'action="{reverse("mailing:contact_tag_add", args=[contact.normalized_email])}"'.encode() in response.content
+    assert f'action="{reverse("mailing:contact_tag_remove", args=[contact.normalized_email])}"'.encode() in response.content
+    assert f"/contacts/{contact.id}/".encode() not in response.content
+
+
+def test_contact_mutation_routes_redirect_to_normalized_email(client, operator, audience, client_record):
+    client.force_login(operator)
+    contact = create_contact("Person@Example.COM")
+    tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+    membership = ContactTag.objects.create(contact=contact, tag=tag)
+
+    expected_location = reverse("mailing:contact_detail", args=[contact.normalized_email])
+    responses = [
+        client.post(
+            reverse("mailing:contact_state_update", args=["PERSON@EXAMPLE.COM"]),
+            {
+                "verified_state": "verified",
+                "email_validation_status": EmailValidationStatus.VALID,
+                "email_validation_reason": "",
+                "global_unsubscribed": "",
+                "hard_bounced": "",
+                "complained": "",
+            },
+        ),
+        client.post(
+            reverse("mailing:contact_subscription_update", args=["PERSON@EXAMPLE.COM"]),
+            {
+                "audience": audience.id,
+                "client": client_record.id,
+                "status": SubscriptionStatus.SUBSCRIBED,
+                "verified": "on",
+                "unsubscribe_reason": "",
+            },
+        ),
+        client.post(
+            reverse("mailing:contact_tag_add", args=["PERSON@EXAMPLE.COM"]),
+            {"audience": audience.id, "tag": tag.id, "new_tag_name": "", "new_tag_slug": ""},
+        ),
+        client.post(
+            reverse("mailing:contact_tag_remove", args=["PERSON@EXAMPLE.COM"]),
+            {"membership": membership.id},
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [302, 302, 302, 302]
+    assert [response["Location"] for response in responses] == [expected_location] * 4
+
+
+def test_contact_email_url_unknown_and_numeric_ids_return_404(client, operator):
+    client.force_login(operator)
+    contact = create_contact("person@example.com")
+
+    assert client.get("/contacts/missing@example.com/").status_code == 404
+    assert client.get(f"/contacts/{contact.id}/").status_code == 404
+    assert client.post(f"/contacts/{contact.id}/state/").status_code == 404
 
 
 def test_operator_contact_explorer_renders_filters_and_pagination_querystring(client, operator, audience, client_record):
@@ -431,7 +500,7 @@ def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
     )
 
     detail = contact_detail_context(contact)
-    response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
+    response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
 
     assert detail.eligibility[0].can_send_marketing is False
     assert "unverified" in detail.eligibility[0].marketing_reasons
@@ -538,6 +607,8 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
     assert b"Breakdowns" in detail_response.content
     assert b"No MX" in detail_response.content
     assert b"invalid@example.com" in detail_response.content
+    assert b'href="/contacts/invalid@example.com/"' in detail_response.content
+    assert b'href="/contacts/valid@example.com/"' in detail_response.content
     assert b"Campaign History" in detail_response.content
     assert b"Recent Events" in detail_response.content
     assert b"reason: tracking" in detail_response.content
@@ -583,6 +654,7 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     assert recipient.email.encode() in response.content
     assert b"other@example.com" not in response.content
     assert b"ses-123" in response.content
+    assert b'href="/contacts/person@example.com/"' in response.content
     assert f'id="recipient-{recipient.id}"'.encode() in response.content
 
 
@@ -859,7 +931,7 @@ def test_contact_search_and_detail_render_product_context(client, operator, audi
     )
 
     search_response = client.get(reverse("mailing:contact_search"), {"q": "person@example.com"})
-    detail_response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
+    detail_response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
 
     assert search_response.status_code == 200
     assert b"Person@Example.COM" in search_response.content
@@ -867,6 +939,7 @@ def test_contact_search_and_detail_render_product_context(client, operator, audi
     assert b"Global unsubscribe" in detail_response.content
     assert b"requested" in detail_response.content
     assert b"Newsletter" in detail_response.content
+    assert b'href="/contacts/person@example.com/"' in search_response.content
     assert f"/campaigns/{campaign.id}/#recipient-{recipient.id}".encode() in detail_response.content
     assert b"Transactional Messages" in detail_response.content
     assert b"Unsubscribe" in detail_response.content
@@ -876,6 +949,7 @@ def test_contact_search_and_detail_render_product_context(client, operator, audi
 
 
 def test_transactional_template_catalog_is_staff_only(client, operator, client_record):
+    contact = create_contact("Person@Example.COM")
     template = EmailTemplate.objects.create(
         client=client_record,
         key="email-verification",
@@ -891,6 +965,15 @@ def test_transactional_template_catalog_is_staff_only(client, operator, client_r
             "product": "Datamailer",
             "verification_url": "https://client.example/verify/placeholder",
         },
+    )
+    TransactionalMessage.objects.create(
+        client=client_record,
+        contact=contact,
+        email=contact.email,
+        template=template,
+        template_key=template.key,
+        status=TransactionalMessageStatus.SENT,
+        subject="Verify account",
     )
 
     anonymous = client.get(reverse("mailing:template_catalog"))
@@ -922,6 +1005,7 @@ def test_transactional_template_catalog_is_staff_only(client, operator, client_r
     assert b"Client-generated verification URL." in detail_response.content
     assert b"https://client.example/verify/placeholder" in detail_response.content
     assert b"Verify at https://client.example/verify/placeholder" in detail_response.content
+    assert b'href="/contacts/person@example.com/"' in detail_response.content
 
 
 def test_contact_detail_paginates_events(client, operator, campaign, client_record, audience):
@@ -937,7 +1021,7 @@ def test_contact_detail_paginates_events(client, operator, campaign, client_reco
             metadata={"index": index},
         )
 
-    response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
+    response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
 
     assert response.status_code == 200
     assert b"Page 1 of 2" in response.content

@@ -156,7 +156,7 @@
             {% for recipient in recipients %}
               <tr id="recipient-{{ recipient.id }}">
                 <td class="truncate">
-                  <a href="{% url 'mailing:contact_detail' recipient.contact_id %}">{{ recipient.email }}</a>
+                  <a href="{% url 'mailing:contact_detail' recipient.contact.normalized_email %}">{{ recipient.email }}</a>
                 </td>
                 <td><span class="badge">{{ recipient.get_status_display }}</span></td>
                 <td>{{ recipient.get_skip_reason_display|default:"-" }}</td>
