@@ -192,7 +192,11 @@ class ClientApiKeyForm(forms.ModelForm):
     def __init__(self, *args, client=None, **kwargs):
         self.client = client
         super().__init__(*args, **kwargs)
+        self.fields["name"].label = "Key name"
+        self.fields["name"].help_text = "Use a human-readable integration name, such as website signup or course platform."
+        self.fields["notes"].label = "Purpose and notes"
         self.fields["notes"].required = False
+        self.fields["notes"].help_text = "Describe what uses this key. Do not store raw secrets here."
 
     def clean_name(self):
         return self.cleaned_data["name"].strip()

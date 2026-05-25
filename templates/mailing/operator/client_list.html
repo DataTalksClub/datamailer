@@ -6,21 +6,64 @@
   <div class="page-header">
     <div>
       <h1>Clients</h1>
-      <p>Manage client records and named API keys.</p>
+      <p>External integrations, their operational state, and API-key health.</p>
     </div>
     <a class="button" href="{% url 'mailing:client_create' %}">Create client</a>
   </div>
   {% if clients.object_list %}
-    <div class="table-wrap">
+    <div class="table-wrap client-table">
       <table>
-        <thead><tr><th scope="col">Client</th><th scope="col">Organization</th><th scope="col">Active</th><th scope="col">Active API keys</th></tr></thead>
+        <thead>
+          <tr>
+            <th scope="col">Integration</th>
+            <th scope="col">Organization</th>
+            <th scope="col">Client status</th>
+            <th scope="col">API keys</th>
+            <th scope="col">Last used</th>
+            <th scope="col">Updated</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
         <tbody>
           {% for client in clients %}
             <tr>
-              <td><a href="{% url 'mailing:client_detail' client.id %}">{{ client.name }}</a><div class="muted">{{ client.slug }}</div></td>
-              <td>{{ client.organization.name }}</td>
-              <td>{% if client.is_active %}<span class="badge success">Active</span>{% else %}<span class="badge danger">Inactive</span>{% endif %}</td>
-              <td>{{ client.active_api_key_count }}</td>
+              <td class="integration-cell">
+                <a href="{% url 'mailing:client_detail' client.id %}"><strong>{{ client.name }}</strong></a>
+                <div class="muted truncate">{{ client.slug }}</div>
+              </td>
+              <td class="truncate">{{ client.organization.name }}</td>
+              <td>
+                {% if client.is_active %}
+                  <span class="badge success">Active</span>
+                {% else %}
+                  <span class="badge danger">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="badge-row">
+                  {% if client.active_key_count %}
+                    <span class="badge success">{{ client.active_key_count }} active</span>
+                  {% else %}
+                    <span class="badge warning">No active keys</span>
+                  {% endif %}
+                  {% if client.revoked_key_count %}
+                    <span class="badge neutral">{{ client.revoked_key_count }} revoked</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="nowrap">
+                {% if client.latest_key_used_at %}
+                  {{ client.latest_key_used_at|date:"Y-m-d H:i" }}
+                {% else %}
+                  <span class="muted">Never</span>
+                {% endif %}
+              </td>
+              <td class="nowrap">{{ client.updated_at|date:"Y-m-d H:i" }}</td>
+              <td>
+                <div class="actions">
+                  <a class="button secondary" href="{% url 'mailing:client_detail' client.id %}">View keys</a>
+                </div>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -28,6 +71,9 @@
     </div>
     {% include "mailing/operator/_pagination.html" with page_obj=clients querystring=pagination_querystring %}
   {% else %}
-    <div class="empty-state">No clients found.</div>
+    <div class="empty-state">
+      <strong>No clients found.</strong>
+      <div class="muted">Create a client before issuing named API keys for an integration.</div>
+    </div>
   {% endif %}
 {% endblock %}

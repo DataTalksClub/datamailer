@@ -3,6 +3,7 @@ import json
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
+from django.db.models import Count, Max, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
@@ -543,7 +544,13 @@ def tag_edit(request, tag_id):
 def client_list(request):
     clients = paginate(
         request,
-        Client.objects.select_related("organization").prefetch_related("api_keys").order_by("organization__slug", "slug"),
+        Client.objects.select_related("organization")
+        .annotate(
+            active_key_count=Count("api_keys", filter=Q(api_keys__revoked_at__isnull=True), distinct=True),
+            revoked_key_count=Count("api_keys", filter=Q(api_keys__revoked_at__isnull=False), distinct=True),
+            latest_key_used_at=Max("api_keys__last_used_at"),
+        )
+        .order_by("organization__slug", "slug"),
         per_page=25,
     )
     return render(
@@ -567,14 +574,20 @@ def client_create(request):
 @staff_member_required
 def client_detail(request, client_id):
     client = get_object_or_404(Client.objects.select_related("organization"), pk=client_id)
-    raw_api_key_context = request.session.pop("operator_raw_api_key", None)
+    raw_api_key_context = None
+    session_raw_api_key = request.session.get("operator_raw_api_key")
+    if session_raw_api_key and session_raw_api_key.get("client_id") == client.id:
+        raw_api_key_context = request.session.pop("operator_raw_api_key")
     key_form = ClientApiKeyForm(client=client)
+    api_keys = client_api_keys_for_detail(client)
     return render(
         request,
         "mailing/operator/client_detail.html",
         {
             "client": client,
-            "api_keys": client_api_keys_for_detail(client),
+            "api_keys": api_keys,
+            "active_key_count": sum(1 for api_key in api_keys if api_key.revoked_at is None),
+            "revoked_key_count": sum(1 for api_key in api_keys if api_key.revoked_at is not None),
             "key_form": key_form,
             "raw_api_key_context": raw_api_key_context,
             "audit_rows": latest_audits_for(client),
@@ -606,6 +619,8 @@ def client_api_key_create(request, client_id):
             {
                 "client": client,
                 "api_keys": client_api_keys_for_detail(client),
+                "active_key_count": client.active_api_key_count,
+                "revoked_key_count": client.api_keys.filter(revoked_at__isnull=False).count(),
                 "key_form": form,
                 "raw_api_key_context": None,
                 "audit_rows": latest_audits_for(client),
@@ -617,6 +632,7 @@ def client_api_key_create(request, client_id):
         "raw_key": raw_key,
         "name": api_key.name,
         "prefix": api_key.display_prefix,
+        "client_id": client.id,
     }
     messages.success(request, "API key generated. Copy it now; it will not be shown again.")
     return redirect("mailing:client_detail", client_id=client.id)

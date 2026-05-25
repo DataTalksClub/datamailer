@@ -3,63 +3,103 @@
 {% block title %}{{ client.name }} | Datamailer{% endblock %}
 
 {% block content %}
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{% url 'mailing:client_list' %}">Clients</a>
+    <span>/</span>
+    <span>{{ client.name }}</span>
+  </nav>
   <div class="page-header">
     <div>
       <h1>{{ client.name }}</h1>
       <p>{{ client.organization.name }} / {{ client.slug }}</p>
+      <div class="badge-row">
+        {% if client.is_active %}
+          <span class="badge success">Active client</span>
+        {% else %}
+          <span class="badge danger">Inactive client</span>
+        {% endif %}
+        {% if active_key_count %}
+          <span class="badge success">{{ active_key_count }} active API keys</span>
+        {% else %}
+          <span class="badge warning">No active API keys</span>
+        {% endif %}
+        {% if revoked_key_count %}
+          <span class="badge neutral">{{ revoked_key_count }} revoked</span>
+        {% endif %}
+      </div>
     </div>
     <div class="actions">
       <a class="button secondary" href="{% url 'mailing:client_edit' client.id %}">Edit client</a>
-      <a class="button secondary" href="{% url 'mailing:client_list' %}">All clients</a>
+      <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
     </div>
   </div>
   {% if raw_api_key_context %}
     <div class="message success">
-      <strong>New API key for {{ raw_api_key_context.name }} ({{ raw_api_key_context.prefix }}):</strong>
-      <code>{{ raw_api_key_context.raw_key }}</code>
-      <div>Copy this now. It will not be shown again.</div>
+      <strong>New API key for {{ raw_api_key_context.name }}</strong>
+      <div class="secret-reveal">
+        <code>{{ raw_api_key_context.raw_key }}</code>
+      </div>
+      <div>Copy this now. Datamailer stores only the hash and will not show the raw key again.</div>
     </div>
   {% endif %}
-  <section aria-labelledby="client-state">
-    <h2 id="client-state">State</h2>
-    <div class="meta-grid">
-      <div class="meta-item"><span class="meta-label">Active</span>{{ client.is_active|yesno:"Yes,No" }}</div>
-      <div class="meta-item"><span class="meta-label">Active API keys</span>{{ client.active_api_key_count }}</div>
+  <section class="detail-section" aria-labelledby="client-summary">
+    <div class="section-header">
+      <div>
+        <h2 id="client-summary">Integration summary</h2>
+        <p class="muted">Identity and key health for this external integration.</p>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat">
+        <span class="stat-value">{{ active_key_count }}</span>
+        <span class="stat-label">Active API keys</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">{{ revoked_key_count }}</span>
+        <span class="stat-label">Revoked keys</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">{% if client.is_active %}Active{% else %}Inactive{% endif %}</span>
+        <span class="stat-label">Client state</span>
+      </div>
+    </div>
+    <div class="detail-grid">
+      <div class="meta-item"><span class="meta-label">Organization</span>{{ client.organization.name }}</div>
+      <div class="meta-item"><span class="meta-label">Slug</span><code>{{ client.slug }}</code></div>
+      <div class="meta-item"><span class="meta-label">Created</span>{{ client.created_at|date:"Y-m-d H:i" }}</div>
+      <div class="meta-item"><span class="meta-label">Updated</span>{{ client.updated_at|date:"Y-m-d H:i" }}</div>
     </div>
   </section>
-  <section aria-labelledby="api-keys">
+  <section class="detail-section" aria-labelledby="api-keys">
     <div class="section-header">
       <div>
         <h2 id="api-keys">API keys</h2>
-        <p class="muted">Named credentials for each integration. Raw keys are shown only once.</p>
+        <p class="muted">Named credentials for this integration. Prefixes are safe to display; raw keys are shown once on creation.</p>
       </div>
     </div>
-    <form method="post" action="{% url 'mailing:client_api_key_create' client.id %}" class="form-grid">
-      {% csrf_token %}
-      {% include "mailing/operator/_form_fields.html" with form=key_form %}
-      <div class="actions">
-        <button type="submit">Create API key</button>
-      </div>
-    </form>
     {% if api_keys %}
-      <div class="table-wrap">
+      <div class="table-wrap api-key-table">
         <table>
           <thead>
             <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Prefix</th>
+              <th scope="col">Key and purpose</th>
+              <th scope="col">Safe prefix</th>
               <th scope="col">State</th>
               <th scope="col">Created</th>
               <th scope="col">Last used</th>
               <th scope="col">Revoked</th>
-              <th scope="col">Notes</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
             {% for api_key in api_keys %}
               <tr>
-                <td>{{ api_key.name }}</td>
+                <td>
+                  <strong>{{ api_key.name }}</strong>
+                  <div class="muted truncate">
+                    {% if api_key.notes %}{{ api_key.notes }}{% else %}No notes recorded.{% endif %}
+                  </div>
+                </td>
                 <td><code>{{ api_key.display_prefix }}</code></td>
                 <td>
                   {% if api_key.revoked_at %}
@@ -71,12 +111,11 @@
                 <td>{{ api_key.created_at|date:"Y-m-d H:i" }}</td>
                 <td>{% if api_key.last_used_at %}{{ api_key.last_used_at|date:"Y-m-d H:i" }}{% else %}<span class="muted">Never</span>{% endif %}</td>
                 <td>{% if api_key.revoked_at %}{{ api_key.revoked_at|date:"Y-m-d H:i" }}{% else %}<span class="muted">-</span>{% endif %}</td>
-                <td>{% if api_key.notes %}{{ api_key.notes }}{% else %}<span class="muted">-</span>{% endif %}</td>
                 <td>
                   {% if not api_key.revoked_at %}
                     <form method="post" action="{% url 'mailing:client_api_key_revoke' client.id api_key.id %}">
                       {% csrf_token %}
-                      <button type="submit" class="danger" onclick="return confirm('Revoke this API key?');">Revoke</button>
+                      <button type="submit" class="danger" onclick="return confirm('Revoke only {{ api_key.name|escapejs }} for {{ client.name|escapejs }}?');">Revoke key</button>
                     </form>
                   {% else %}
                     <span class="muted">-</span>
@@ -88,11 +127,33 @@
         </table>
       </div>
     {% else %}
-      <div class="empty-state">No API keys found.</div>
+      <div class="empty-state">
+        <strong>No API keys found.</strong>
+        <div class="muted">Create a named key before this client can call the Datamailer API.</div>
+      </div>
     {% endif %}
+    <div class="secondary-section">
+      <div class="section-header">
+        <div>
+          <h3>Create named API key</h3>
+          <p class="muted">The raw secret appears only on the next page load. Store it outside Datamailer immediately.</p>
+        </div>
+      </div>
+      <form method="post" action="{% url 'mailing:client_api_key_create' client.id %}" class="form-stack">
+        {% include "mailing/operator/_form_fields.html" with form=key_form %}
+        <div class="actions">
+          <button type="submit">Create API key</button>
+        </div>
+      </form>
+    </div>
   </section>
-  <section aria-labelledby="audit">
-    <h2 id="audit">Audit</h2>
+  <section class="detail-section secondary-section" aria-labelledby="audit">
+    <div class="section-header">
+      <div>
+        <h2 id="audit">Audit</h2>
+        <p class="muted">Recent operator changes for this client.</p>
+      </div>
+    </div>
     {% include "mailing/operator/_audit.html" with audit_rows=audit_rows %}
   </section>
 {% endblock %}

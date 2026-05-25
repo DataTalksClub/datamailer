@@ -88,9 +88,11 @@ def test_staff_can_load_client_list(client, operator, client_record):
 
 def test_client_list_renders_active_api_key_count(client, operator, audience, client_record):
     active_one, _ = create_client_api_key(client=client_record, name="Website")
-    create_client_api_key(client=client_record, name="Course platform")
+    active_two, _ = create_client_api_key(client=client_record, name="Course platform")
     active_one.revoked_at = timezone.now()
     active_one.save(update_fields=["revoked_at", "updated_at"])
+    active_two.last_used_at = timezone.now()
+    active_two.save(update_fields=["last_used_at", "updated_at"])
     assert client_record.active_api_key_count == 1
     assert not hasattr(audience, "active_api_key_count")
     client.force_login(operator)
@@ -99,12 +101,34 @@ def test_client_list_renders_active_api_key_count(client, operator, audience, cl
     page = response.content.decode()
 
     assert response.status_code == 200
-    assert "Active API keys" in page
-    assert "<td>1</td>" in page
+    assert "API keys" in page
+    assert '<span class="badge success">1 active</span>' in page
+    assert '<span class="badge neutral">1 revoked</span>' in page
+    assert "Never" not in page
 
 
-def test_client_detail_renders_active_api_key_count(client, operator, client_record):
+def test_client_list_key_counts_do_not_bleed_between_clients(client, operator, client_record):
+    other_organization = Organization.objects.create(name="Other Org", slug="other-org")
+    other_client = Client.objects.create(organization=other_organization, name="Other", slug="other")
     create_client_api_key(client=client_record, name="Website")
+    create_client_api_key(client=other_client, name="Other website")
+    create_client_api_key(client=other_client, name="Other course")
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:client_list"))
+    page = response.content.decode()
+
+    own_row = page[page.index("DTC") : page.index("Other")]
+    other_row = page[page.index("Other") :]
+    assert '<span class="badge success">1 active</span>' in own_row
+    assert '<span class="badge success">2 active</span>' in other_row
+
+
+def test_client_detail_renders_identity_status_and_api_key_rows(client, operator, client_record):
+    active_key, _ = create_client_api_key(client=client_record, name="Website")
+    active_key.notes = "Used by public signup."
+    active_key.last_used_at = timezone.now()
+    active_key.save(update_fields=["notes", "last_used_at", "updated_at"])
     revoked_key, _ = create_client_api_key(client=client_record, name="Old script")
     revoked_key.revoked_at = timezone.now()
     revoked_key.save(update_fields=["revoked_at", "updated_at"])
@@ -114,9 +138,21 @@ def test_client_detail_renders_active_api_key_count(client, operator, client_rec
     page = response.content.decode()
 
     assert response.status_code == 200
-    assert '<span class="meta-label">Active API keys</span>1' in page
-    assert '<span class="badge success">Active</span>' in page
+    assert "Integration summary" in page
+    assert "<code>dtc</code>" in page
+    assert '<span class="badge success">1 active API keys</span>' in page
+    assert '<span class="badge neutral">1 revoked</span>' in page
+    assert "Key and purpose" in page
+    assert "Safe prefix" in page
+    assert "Used by public signup." in page
+    assert active_key.display_prefix in page
+    assert revoked_key.display_prefix in page
     assert '<span class="badge danger">Revoked</span>' in page
+    assert page.count("Revoke key") == 1
+    assert reverse("mailing:client_api_key_revoke", args=[client_record.id, active_key.id]) in page
+    assert reverse("mailing:client_api_key_revoke", args=[client_record.id, revoked_key.id]) not in page
+    assert active_key.key_hash not in page
+    assert revoked_key.key_hash not in page
 
 
 def test_client_api_keys_create_list_revoke_one_key_and_auth_safe(client, operator, client_record):
@@ -140,6 +176,7 @@ def test_client_api_keys_create_list_revoke_one_key_and_auth_safe(client, operat
 
     later_get = client.get(reverse("mailing:client_detail", args=[client_record.id]))
     assert raw_key not in later_get.content.decode()
+    assert api_key.key_hash not in later_get.content.decode()
     assert b"Website registration" in later_get.content
     assert b"Used by the signup form." in later_get.content
 
@@ -160,6 +197,28 @@ def test_client_api_keys_create_list_revoke_one_key_and_auth_safe(client, operat
     assert second_key.revoked_at is None
     assert authenticate_bearer_token(f"Bearer {raw_key}").error == "invalid_api_key"
     assert authenticate_bearer_token(f"Bearer {second_raw_key}").client == client_record
+
+
+def test_raw_api_key_reveal_is_scoped_to_created_key_client(client, operator, client_record):
+    other_organization = Organization.objects.create(name="Other Org", slug="other-org")
+    other_client = Client.objects.create(organization=other_organization, name="Other", slug="other")
+    client.force_login(operator)
+
+    generated = client.post(
+        reverse("mailing:client_api_key_create", args=[client_record.id]),
+        {"name": "Website registration"},
+    )
+    assert generated.status_code == 302
+    api_key = ClientApiKey.objects.get(client=client_record, name="Website registration")
+    session_key = client.session["operator_raw_api_key"]
+    raw_key = session_key["raw_key"]
+
+    other_detail = client.get(reverse("mailing:client_detail", args=[other_client.id]))
+    assert raw_key not in other_detail.content.decode()
+
+    own_detail = client.get(reverse("mailing:client_detail", args=[client_record.id]))
+    assert raw_key in own_detail.content.decode()
+    assert api_key.key_hash not in own_detail.content.decode()
 
 
 def test_inactive_client_rejects_otherwise_valid_key(client, operator, client_record):

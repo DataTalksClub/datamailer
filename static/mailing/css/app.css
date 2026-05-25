@@ -750,6 +750,51 @@ tr:last-child td {
   width: 12%;
 }
 
+.client-table table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.client-table .integration-cell {
+  width: 24%;
+}
+
+.api-key-table table {
+  min-width: 1040px;
+  table-layout: fixed;
+}
+
+.api-key-table th:first-child,
+.api-key-table td:first-child {
+  width: 28%;
+}
+
+.api-key-table th:nth-child(2),
+.api-key-table td:nth-child(2) {
+  width: 18%;
+}
+
+.api-key-table code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.secret-reveal {
+  max-width: 100%;
+  margin: var(--dm-space-2) 0;
+  overflow-x: auto;
+}
+
+.secret-reveal code {
+  display: inline-block;
+  min-width: max-content;
+  padding: var(--dm-space-2);
+  border: 1px solid var(--dm-color-success-border);
+  border-radius: var(--dm-radius-sm);
+  color: var(--dm-color-text);
+  background: var(--dm-color-background);
+}
+
 .pagination {
   display: flex;
   flex-wrap: wrap;
