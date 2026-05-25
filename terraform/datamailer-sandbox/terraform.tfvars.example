@@ -14,7 +14,9 @@ alarm_email = ""
 queue_receive_wait_time_seconds = 20
 
 # SES inbound mail test address. This stores raw MIME messages in S3 so the
-# S3 bucket acts as an inspectable test inbox.
-inbound_mail_domain        = "dtcdev.click"
+# S3 bucket acts as an inspectable test inbox. Records are created in the
+# reusable dtcdev.click hosted zone.
+inbound_mail_domain        = "mailer.dtcdev.click"
+inbound_mail_dns_zone_name = "dtcdev.click"
 manage_inbound_dns_records = true
 inbound_mail_recipients    = ["datamailer"]

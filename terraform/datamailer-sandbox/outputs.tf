@@ -80,6 +80,8 @@ output "inbound_mail" {
   description = "Optional SES inbound mail test mailbox details. Null when inbound_mail_domain is empty."
   value = var.inbound_mail_domain == "" ? null : {
     domain                 = var.inbound_mail_domain
+    dns_zone_name          = var.inbound_mail_dns_zone_name
+    dns_zone_id            = var.manage_inbound_dns_records ? data.aws_route53_zone.inbound_mail[0].zone_id : null
     recipients             = [for local_part in sort(tolist(var.inbound_mail_recipients)) : "${local_part}@${var.inbound_mail_domain}"]
     bucket                 = aws_s3_bucket.inbound_mail[0].bucket
     s3_prefix              = var.inbound_mail_s3_prefix

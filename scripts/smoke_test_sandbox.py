@@ -104,6 +104,15 @@ def config_from_sources(args):
     inbound_bucket = args.inbound_bucket or os.environ.get("INBOUND_MAIL_BUCKET") or inbound_mail.get("bucket") or ""
     inbound_prefix = args.inbound_prefix or os.environ.get("INBOUND_MAIL_PREFIX") or inbound_mail.get("s3_prefix") or ""
     inbound_domain = args.inbound_domain or os.environ.get("INBOUND_MAIL_DOMAIN") or inbound_mail.get("domain") or ""
+    inbound_dns_zone_id = (
+        args.route53_hosted_zone_id
+        or os.environ.get("INBOUND_MAIL_ROUTE53_ZONE_ID")
+        or inbound_mail.get("dns_zone_id")
+        or ""
+    )
+    inbound_dns_zone_name = (
+        os.environ.get("INBOUND_MAIL_ROUTE53_ZONE_NAME") or inbound_mail.get("dns_zone_name") or inbound_domain
+    )
     topic_arn = (
         args.ses_events_topic_arn or os.environ.get("SES_EVENTS_TOPIC_ARN") or outputs.get("ses_events_topic_arn") or ""
     )
@@ -120,6 +129,8 @@ def config_from_sources(args):
         "inbound_bucket": inbound_bucket,
         "inbound_prefix": inbound_prefix,
         "inbound_domain": inbound_domain,
+        "inbound_dns_zone_id": inbound_dns_zone_id,
+        "inbound_dns_zone_name": inbound_dns_zone_name,
         "sender": sender,
     }
 
@@ -627,7 +638,7 @@ def run_checks(config, session, args):
     results.extend(
         check_inbound_s3(s3, config["inbound_bucket"], config["inbound_prefix"], args.require_inbound_s3_read)
     )
-    results.extend(check_route53(route53, config["inbound_domain"], args.route53_hosted_zone_id))
+    results.extend(check_route53(route53, config["inbound_dns_zone_name"], config["inbound_dns_zone_id"]))
     results.append(warn("SES production access", "manual gate; not required for this sandbox smoke check"))
     results.append(
         warn(

@@ -51,7 +51,13 @@ variable "alarm_email" {
 }
 
 variable "inbound_mail_domain" {
-  description = "Domain for SES inbound mail testing. Defaults to the shared sandbox domain."
+  description = "Subdomain for SES inbound mail testing. Records are created in inbound_mail_dns_zone_name."
+  type        = string
+  default     = "mailer.dtcdev.click"
+}
+
+variable "inbound_mail_dns_zone_name" {
+  description = "Route 53 hosted zone that contains inbound_mail_domain."
   type        = string
   default     = "dtcdev.click"
 }

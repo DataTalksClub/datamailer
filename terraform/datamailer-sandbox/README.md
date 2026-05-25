@@ -10,7 +10,7 @@ The sandbox creates:
 - SES email identities for sandbox testing.
 - Basic SQS queue-age and DLQ CloudWatch alarms.
 - A least-privilege IAM policy document output for whichever sandbox role/user runs Datamailer.
-- SES inbound receiving for `datamailer@dtcdev.click`, storing raw MIME messages in S3.
+- SES inbound receiving for `datamailer@mailer.dtcdev.click`, storing raw MIME messages in S3.
 
 SES event delivery in this Terraform root uses direct SNS-to-SQS routing: SES configuration set -> SNS topic -> `ses-webhooks` SQS queue -> Datamailer webhook worker. The worker accepts the raw SNS notification envelope from SQS and normalizes the embedded SES event before updating Datamailer state.
 
@@ -112,7 +112,7 @@ uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer
 The default inbound address is:
 
 ```text
-datamailer@dtcdev.click
+datamailer@mailer.dtcdev.click
 ```
 
 SES receiving stores raw MIME messages in the S3 bucket shown by:
@@ -123,7 +123,7 @@ terraform output inbound_mail
 
 Use this for inbox-style tests:
 
-1. Send a Datamailer transactional email to `datamailer@dtcdev.click`.
+1. Send a Datamailer transactional email to `datamailer@mailer.dtcdev.click`.
 2. Wait for SES receiving to write a raw MIME object under the configured `raw/` prefix.
 3. Inspect the S3 object to verify headers, body, unsubscribe links, and tracking links.
 
@@ -132,7 +132,7 @@ Fixture-first inspection does not require AWS credentials:
 ```bash
 uv run python scripts/inspect_inbound_mail.py \
   --fixture tests/fixtures/inbound/sample.eml \
-  --expect-to datamailer@dtcdev.click \
+  --expect-to datamailer@mailer.dtcdev.click \
   --expect-subject "inbound smoke" \
   --expect-unsubscribe-link \
   --expect-tracking-substring track.example.com

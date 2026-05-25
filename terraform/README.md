@@ -4,7 +4,7 @@ This directory contains separate Terraform roots:
 
 - `state/`: bootstrap S3 remote state resources with native S3 lockfiles.
 - `domain/`: reusable base DNS setup for `dtcdev.click`.
-- `datamailer-sandbox/`: Datamailer-specific sandbox resources that use `dtcdev.click`, including `datamailer@dtcdev.click` inbound mail to S3.
+- `datamailer-sandbox/`: Datamailer-specific sandbox resources that use the `mailer.dtcdev.click` subdomain, including `datamailer@mailer.dtcdev.click` inbound mail to S3.
 
 Keep state files private. Do not commit `terraform.tfvars`, `backend.hcl`, `*.tfstate`, AWS credentials, or contact details used for domain registration.
 
@@ -51,4 +51,4 @@ terraform apply
 terraform output inbound_mail
 ```
 
-The default inbound test address is `datamailer@dtcdev.click`. SES receiving stores raw MIME messages in the S3 bucket shown by `terraform output inbound_mail`.
+The default inbound test address is `datamailer@mailer.dtcdev.click`. SES receiving stores raw MIME messages in the S3 bucket shown by `terraform output inbound_mail`.

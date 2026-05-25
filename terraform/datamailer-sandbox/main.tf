@@ -32,7 +32,7 @@ data "aws_region" "current" {}
 data "aws_route53_zone" "inbound_mail" {
   count = local.inbound_mail_enabled && var.manage_inbound_dns_records ? 1 : 0
 
-  name         = var.inbound_mail_domain
+  name         = var.inbound_mail_dns_zone_name
   private_zone = false
 }
 
