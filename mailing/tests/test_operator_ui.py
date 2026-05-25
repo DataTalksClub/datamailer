@@ -13,6 +13,7 @@ from mailing.models import (
     CampaignRecipientSkipReason,
     CampaignRecipientStatus,
     Client,
+    ClientApiKey,
     Contact,
     ContactTag,
     EmailEvent,
@@ -133,6 +134,73 @@ def test_base_template_loads_datamailer_static_css(client, operator):
     assert b"<style>" not in response.content
     assert b'aria-current="page">Datamailer' in response.content
     assert finders.find("mailing/css/app.css") is not None
+
+
+def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
+    client,
+    operator,
+    audience,
+    client_record,
+    campaign,
+):
+    client.force_login(operator)
+    bounced = create_contact("bounced@example.com", hard_bounced_at=timezone.now())
+    EmailEvent.objects.create(
+        contact=bounced,
+        client=client_record,
+        audience=audience,
+        campaign=campaign,
+        event_type=EmailEventType.BOUNCE,
+        metadata={"bounce_type": "Permanent"},
+    )
+    ClientApiKey.objects.create(
+        client=client_record,
+        name="Transactional API",
+        key_hash="hashed",
+        public_id="dashboarddemo",
+    )
+    EmailTemplate.objects.create(
+        client=client_record,
+        key="welcome",
+        name="Welcome",
+        subject="Welcome",
+        is_transactional=True,
+        is_active=True,
+    )
+
+    response = client.get(reverse("mailing:dashboard"))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Operational Summary" in html
+    assert "Recent Campaign Activity" in html
+    assert "Deliverability Attention" in html
+    assert "Integration and API Readiness" in html
+    assert "Quick Links" in html
+    assert "Weekly update" in html
+    assert f'href="{reverse("mailing:campaign_detail", args=[campaign.id])}"' in html
+    assert "Bounce" in html
+    assert "bounce_type: Permanent" in html
+    assert 'href="/contacts/bounced@example.com/"' in html
+    assert "DTC Courses" in html
+    assert f'href="{reverse("mailing:client_detail", args=[client_record.id])}"' in html
+    assert f'href="{reverse("mailing:audience_list")}"' in html
+    assert f'href="{reverse("mailing:contact_search")}"' in html
+    assert f'href="{reverse("mailing:template_catalog")}"' in html
+    assert "/operator/" not in html
+
+
+def test_dashboard_empty_states_are_actionable(client, operator):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:dashboard"))
+
+    assert response.status_code == 200
+    assert b"No campaigns yet" in response.content
+    assert b"No deliverability issues found" in response.content
+    assert b"No clients configured" in response.content
+    assert f'href="{reverse("mailing:campaign_create")}"'.encode() in response.content
+    assert f'href="{reverse("mailing:client_create")}"'.encode() in response.content
 
 
 def test_rate_hides_unavailable_denominators():

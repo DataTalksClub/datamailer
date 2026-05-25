@@ -1,4 +1,5 @@
-from django.test import SimpleTestCase
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 
@@ -10,14 +11,29 @@ class HealthCheckTests(SimpleTestCase):
         assert response.json() == {"status": "ok"}
 
 
-class DashboardTests(SimpleTestCase):
-    def test_dashboard_renders_product_shell(self):
+class DashboardTests(TestCase):
+    def test_dashboard_renders_product_shell_for_staff(self):
+        operator = get_user_model().objects.create_user(
+            "operator",
+            "operator@example.com",
+            "password",
+            is_staff=True,
+        )
+        self.client.force_login(operator)
+
         response = self.client.get(reverse("mailing:dashboard"))
 
         assert response.status_code == 200
         page = response.content.decode()
-        assert "Datamailer" in page
+        assert "Dashboard" in page
+        assert "Operational Summary" in page
         assert "/operator/" not in page
+
+    def test_dashboard_requires_staff(self):
+        response = self.client.get(reverse("mailing:dashboard"))
+
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
 
 
 class ProductRouteTests(SimpleTestCase):

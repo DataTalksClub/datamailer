@@ -166,6 +166,7 @@ textarea:focus-visible,
 
 .section,
 .detail-section {
+  min-width: 0;
   margin: 28px 0;
 }
 
@@ -316,6 +317,16 @@ textarea:focus-visible,
 .compact-row {
   display: grid;
   gap: var(--dm-space-2);
+}
+
+a.compact-row {
+  color: var(--dm-color-text);
+  text-decoration: none;
+}
+
+a.compact-row:hover {
+  border-color: var(--dm-color-muted);
+  background: var(--dm-color-surface);
 }
 
 .compact-row-main,

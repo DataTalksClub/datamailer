@@ -82,6 +82,7 @@ from mailing.services.operator_ui import (
     contact_explorer_queryset,
     contact_result_rows,
     contact_transactional_history,
+    dashboard_context,
     event_context,
     metadata_summary,
     parse_contact_explorer_filters,
@@ -101,8 +102,9 @@ def health(request):
     return JsonResponse({"status": "ok"})
 
 
+@staff_member_required
 def dashboard(request):
-    return render(request, "mailing/dashboard.html")
+    return render(request, "mailing/dashboard.html", {"dashboard": dashboard_context()})
 
 
 def paginate(request, queryset, *, per_page):

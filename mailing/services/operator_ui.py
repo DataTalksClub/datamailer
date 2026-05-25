@@ -14,11 +14,14 @@ from mailing.models import (
     CampaignRecipient,
     CampaignRecipientSkipReason,
     CampaignRecipientStatus,
+    CampaignStatus,
     Client,
+    ClientApiKey,
     Contact,
     ContactTag,
     EmailEvent,
     EmailEventType,
+    EmailTemplate,
     EmailValidationStatus,
     Subscription,
     SubscriptionStatus,
@@ -189,6 +192,36 @@ class ContactDetailContext:
     recent_activity: list[ContactActivity]
 
 
+@dataclass(frozen=True)
+class DashboardCampaign:
+    campaign: Campaign
+    badge: Badge
+
+
+@dataclass(frozen=True)
+class DashboardAttentionItem:
+    occurred_at: object | None
+    badge: Badge
+    title: str
+    detail: str
+    href: str = ""
+
+
+@dataclass(frozen=True)
+class DashboardClient:
+    client: Client
+    active_api_key_count: int
+
+
+@dataclass(frozen=True)
+class DashboardContext:
+    summary_stats: list[Stat]
+    recent_campaigns: list[DashboardCampaign]
+    attention_items: list[DashboardAttentionItem]
+    integration_stats: list[Stat]
+    integration_clients: list[DashboardClient]
+
+
 def rate(numerator: int, denominator: int) -> str:
     if denominator <= 0:
         return ""
@@ -197,6 +230,119 @@ def rate(numerator: int, denominator: int) -> str:
 
 def choices_from_text_choices(text_choices) -> list[Choice]:
     return [Choice(value=value, label=label) for value, label in text_choices.choices]
+
+
+def dashboard_context() -> DashboardContext:
+    active_campaigns = Campaign.objects.filter(
+        status__in=[
+            CampaignStatus.QUEUED,
+            CampaignStatus.SNAPSHOTTING,
+            CampaignStatus.SENDING,
+        ]
+    ).count()
+    draft_campaigns = Campaign.objects.filter(status=CampaignStatus.DRAFT).count()
+    subscribed_contacts = (
+        Subscription.objects.filter(status=SubscriptionStatus.SUBSCRIBED).values("contact_id").distinct().count()
+    )
+    suppressed_contacts = suppressed_contact_queryset().count()
+    hard_bounces = Contact.objects.filter(hard_bounced_at__isnull=False).count()
+    complaints = Contact.objects.filter(complained_at__isnull=False).count()
+    active_clients = Client.objects.filter(is_active=True).count()
+    active_api_keys = ClientApiKey.objects.filter(revoked_at__isnull=True).count()
+    active_templates = EmailTemplate.objects.filter(is_transactional=True, is_active=True).count()
+
+    recent_campaigns = [
+        DashboardCampaign(campaign, campaign_status_badge(campaign.status))
+        for campaign in Campaign.objects.select_related("client", "audience").order_by("-updated_at", "-id")[:5]
+    ]
+    integration_clients = [
+        DashboardClient(client, client.active_api_key_count)
+        for client in Client.objects.select_related("organization").order_by("organization__slug", "slug")[:4]
+    ]
+
+    return DashboardContext(
+        summary_stats=[
+            Stat("campaigns", "Campaigns", Campaign.objects.count(), f"{active_campaigns} active / {draft_campaigns} drafts"),
+            Stat(
+                "contacts",
+                "Contacts",
+                Contact.objects.count(),
+                f"{subscribed_contacts} subscribed / {Audience.objects.count()} audiences",
+            ),
+            Stat("deliverability", "Deliverability attention", suppressed_contacts, f"{hard_bounces} bounces / {complaints} complaints"),
+            Stat("api_access", "API access", active_clients, f"{active_api_keys} active keys"),
+            Stat("templates", "Transactional templates", active_templates, "active templates"),
+        ],
+        recent_campaigns=recent_campaigns,
+        attention_items=dashboard_attention_items(),
+        integration_stats=[
+            Stat("clients", "Active clients", active_clients, f"{Client.objects.count()} total"),
+            Stat("api_keys", "Active API keys", active_api_keys),
+            Stat("templates", "Active templates", active_templates),
+        ],
+        integration_clients=integration_clients,
+    )
+
+
+def suppressed_contact_queryset():
+    return Contact.objects.filter(
+        Q(global_unsubscribed_at__isnull=False)
+        | Q(hard_bounced_at__isnull=False)
+        | Q(complained_at__isnull=False)
+        | Q(subscriptions__status=SubscriptionStatus.UNSUBSCRIBED)
+    ).distinct()
+
+
+def dashboard_attention_items() -> list[DashboardAttentionItem]:
+    event_items = [
+        DashboardAttentionItem(
+            event.created_at,
+            Badge(event.get_event_type_display(), event_tone(event.event_type)),
+            event_context(event),
+            metadata_summary(event.metadata) or event.url or "Email event recorded",
+            href=f"/contacts/{event.contact.normalized_email}/" if event.contact_id else "",
+        )
+        for event in EmailEvent.objects.select_related("contact", "client", "audience", "campaign")
+        .filter(
+            event_type__in=[
+                EmailEventType.BOUNCE,
+                EmailEventType.COMPLAINT,
+                EmailEventType.FAILED,
+                EmailEventType.SKIPPED,
+                EmailEventType.UNSUBSCRIBE,
+            ]
+        )
+        .order_by("-created_at", "-id")[:5]
+    ]
+    if event_items:
+        return event_items
+
+    return [
+        DashboardAttentionItem(
+            latest_datetime(
+                contact.global_unsubscribed_at,
+                contact.hard_bounced_at,
+                contact.complained_at,
+                contact.updated_at,
+            ),
+            subscription_badge(contact, contact.subscriptions.all()),
+            contact.normalized_email,
+            "Suppressed contact needs review before future sends.",
+            href=f"/contacts/{contact.normalized_email}/",
+        )
+        for contact in suppressed_contact_queryset().prefetch_related("subscriptions").order_by("-updated_at", "normalized_email")[:5]
+    ]
+
+
+def campaign_status_badge(status: str) -> Badge:
+    label = CampaignStatus(status).label
+    if status == CampaignStatus.SENT:
+        return Badge(label, "success")
+    if status in {CampaignStatus.QUEUED, CampaignStatus.SNAPSHOTTING, CampaignStatus.SENDING}:
+        return Badge(label, "warning")
+    if status in {CampaignStatus.FAILED, CampaignStatus.CANCELLED}:
+        return Badge(label, "danger")
+    return Badge(label, "neutral")
 
 
 def campaign_stats(campaign: Campaign) -> list[Stat]:
