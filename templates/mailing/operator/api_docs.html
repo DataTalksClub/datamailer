@@ -6,11 +6,11 @@
   <div class="page-header">
     <div>
       <h1>API Docs</h1>
-      <p>Datamailer-native API reference for staff operators. Client API requests use Bearer authentication with client API keys generated in the operator UI.</p>
+      <p>Datamailer-native API reference for staff users. Client API requests use Bearer authentication with client API keys generated in Clients.</p>
     </div>
     <div class="actions">
       <a class="button" href="{% url openapi_json_url %}">OpenAPI JSON</a>
-      <a class="button secondary" href="{% url 'mailing:operator_client_list' %}">Client keys</a>
+      <a class="button secondary" href="{% url 'mailing:client_list' %}">Client keys</a>
     </div>
   </div>
 
@@ -170,7 +170,7 @@ requests.get(
 
   <section aria-labelledby="notes">
     <h2 id="notes">Notes</h2>
-    <p>Transactional templates are visible to staff in the operator template catalog. Client apps generate verification and reset URLs, pass them as context, and complete verification in their own app before marking the Datamailer contact verified.</p>
+    <p>Transactional templates are visible to staff in Templates. Client apps generate verification and reset URLs, pass them as context, and complete verification in their own app before marking the Datamailer contact verified.</p>
     <p>Hard-bounced or complained contacts are blocked for transactional sends. Missing required template context returns a JSON validation error before Datamailer creates a contact, message, event, or queue payload.</p>
     <p>Public tracking, unsubscribe, and SES webhook routes are documented for integration context; client application endpoints under <code>/api/v1</code> use Bearer authentication.</p>
   </section>

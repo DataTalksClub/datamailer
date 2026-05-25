@@ -8,7 +8,7 @@
       <h1>{% if mode == "create" %}Create tag{% else %}Edit tag{% endif %}</h1>
       <p>{{ audience.name }} / {{ audience.slug }}</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_audience_detail' audience.id %}">Audience</a>
+    <a class="button secondary" href="{% url 'mailing:audience_detail' audience.id %}">Audience</a>
   </div>
   <form method="post">
     {% include "mailing/operator/_form_fields.html" with form=form %}

@@ -9,8 +9,8 @@
       <p>{{ client.organization.name }} / {{ client.slug }}</p>
     </div>
     <div class="actions">
-      <a class="button secondary" href="{% url 'mailing:operator_client_edit' client.id %}">Edit client</a>
-      <a class="button secondary" href="{% url 'mailing:operator_client_list' %}">All clients</a>
+      <a class="button secondary" href="{% url 'mailing:client_edit' client.id %}">Edit client</a>
+      <a class="button secondary" href="{% url 'mailing:client_list' %}">All clients</a>
     </div>
   </div>
   {% if raw_api_key %}
@@ -26,11 +26,11 @@
       <div class="meta-item"><span class="meta-label">API key</span>{% if client.api_key_hash %}Present{% else %}None{% endif %}</div>
     </div>
     <div class="toolbar">
-      <form method="post" action="{% url 'mailing:operator_client_api_key_generate' client.id %}">
+      <form method="post" action="{% url 'mailing:client_api_key_generate' client.id %}">
         {% csrf_token %}
         <button type="submit">{% if client.api_key_hash %}Rotate API key{% else %}Generate API key{% endif %}</button>
       </form>
-      <form method="post" action="{% url 'mailing:operator_client_api_key_revoke' client.id %}">
+      <form method="post" action="{% url 'mailing:client_api_key_revoke' client.id %}">
         {% csrf_token %}
         <button type="submit">Revoke API key</button>
       </form>

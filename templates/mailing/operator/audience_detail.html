@@ -9,10 +9,10 @@
       <p>{{ audience.organization.name }} / {{ audience.slug }}</p>
     </div>
     <div class="actions">
-      <a class="button secondary" href="{% url 'mailing:operator_audience_edit' audience.id %}">Edit audience</a>
-      <a class="button secondary" href="{% url 'mailing:operator_tag_create' audience.id %}">Create tag</a>
-      <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">All audiences</a>
-      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}?audience={{ audience.id }}">Open in explorer</a>
+      <a class="button secondary" href="{% url 'mailing:audience_edit' audience.id %}">Edit audience</a>
+      <a class="button secondary" href="{% url 'mailing:tag_create' audience.id %}">Create tag</a>
+      <a class="button secondary" href="{% url 'mailing:audience_list' %}">All audiences</a>
+      <a class="button secondary" href="{% url 'mailing:contact_search' %}?audience={{ audience.id }}">Open in explorer</a>
     </div>
   </div>
 
@@ -37,7 +37,7 @@
       </div>
       <div class="meta-item">
         <span class="meta-label">Tags</span>
-        {% for tag in breakdowns.tags %}<div><a href="{% url 'mailing:operator_tag_detail' tag.id %}">{{ tag.slug }}</a>: {{ tag.count }}</div>{% empty %}<div>-</div>{% endfor %}
+        {% for tag in breakdowns.tags %}<div><a href="{% url 'mailing:tag_detail' tag.id %}">{{ tag.slug }}</a>: {{ tag.count }}</div>{% empty %}<div>-</div>{% endfor %}
       </div>
       <div class="meta-item">
         <span class="meta-label">Campaign statuses</span>
@@ -137,7 +137,7 @@
       </div>
       <div class="toolbar">
         <button type="submit">Apply filters</button>
-        <a class="button secondary" href="{% url 'mailing:operator_audience_detail' audience.id %}">Clear</a>
+        <a class="button secondary" href="{% url 'mailing:audience_detail' audience.id %}">Clear</a>
       </div>
     </form>
 
@@ -160,7 +160,7 @@
             {% for row in member_rows %}
               <tr>
                 <td>
-                  <a href="{% url 'mailing:operator_contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
+                  <a href="{% url 'mailing:contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
                   <div class="muted">{{ row.contact.normalized_email }}</div>
                 </td>
                 <td><span class="badge">{{ row.contact.get_email_validation_status_display }}</span></td>
@@ -200,7 +200,7 @@
           <tbody>
             {% for campaign in campaigns %}
               <tr>
-                <td class="truncate"><a href="{% url 'mailing:operator_campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
+                <td class="truncate"><a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
                 <td>{{ campaign.client.name }}</td>
                 <td><span class="badge">{{ campaign.get_status_display }}</span></td>
                 <td>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
@@ -240,7 +240,7 @@
             <span class="muted">{{ row.event.created_at|date:"Y-m-d H:i:s" }}</span>
             <div>{{ row.context }}</div>
             {% if row.event.contact %}
-              <div><a href="{% url 'mailing:operator_contact_detail' row.event.contact_id %}">{{ row.event.contact.email }}</a></div>
+              <div><a href="{% url 'mailing:contact_detail' row.event.contact_id %}">{{ row.event.contact.email }}</a></div>
             {% endif %}
             {% if row.event.url %}<div class="truncate"><a href="{{ row.event.url }}">{{ row.event.url }}</a></div>{% endif %}
             {% if row.metadata_summary %}<div class="muted truncate">{{ row.metadata_summary }}</div>{% endif %}

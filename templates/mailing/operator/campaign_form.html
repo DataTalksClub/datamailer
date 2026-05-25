@@ -8,7 +8,7 @@
       <h1>{% if mode == "create" %}Create campaign{% else %}Edit campaign{% endif %}</h1>
       <p>Paste final campaign content prepared outside Datamailer.</p>
     </div>
-    <a class="button secondary" href="{% if campaign %}{% url 'mailing:operator_campaign_detail' campaign.id %}{% else %}{% url 'mailing:operator_campaign_list' %}{% endif %}">Cancel</a>
+    <a class="button secondary" href="{% if campaign %}{% url 'mailing:campaign_detail' campaign.id %}{% else %}{% url 'mailing:campaign_list' %}{% endif %}">Cancel</a>
   </div>
 
   <form method="post" novalidate>
@@ -30,7 +30,7 @@
 
     <div class="toolbar">
       <button type="submit">{% if mode == "create" %}Create draft{% else %}Save draft{% endif %}</button>
-      <a class="button secondary" href="{% if campaign %}{% url 'mailing:operator_campaign_detail' campaign.id %}{% else %}{% url 'mailing:operator_campaign_list' %}{% endif %}">Cancel</a>
+      <a class="button secondary" href="{% if campaign %}{% url 'mailing:campaign_detail' campaign.id %}{% else %}{% url 'mailing:campaign_list' %}{% endif %}">Cancel</a>
     </div>
   </form>
 {% endblock %}

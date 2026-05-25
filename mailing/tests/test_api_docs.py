@@ -30,7 +30,7 @@ def regular_user():
 
 
 def test_api_docs_page_is_staff_only(client, staff_user, regular_user):
-    url = reverse("mailing:operator_api_docs")
+    url = reverse("mailing:api_docs")
 
     anonymous = client.get(url)
     assert anonymous.status_code == 302
@@ -49,7 +49,7 @@ def test_api_docs_page_is_staff_only(client, staff_user, regular_user):
 
 
 def test_openapi_json_is_staff_only_and_valid(client, staff_user, regular_user):
-    url = reverse("mailing:operator_api_docs_json")
+    url = reverse("mailing:api_docs_json")
 
     anonymous = client.get(url)
     assert anonymous.status_code == 302
@@ -94,9 +94,11 @@ def test_openapi_uses_bearer_auth_only_and_omits_forbidden_strings():
         "unsubscribe_token_hash",
         "legacy",
         "backwards compatibility",
+        "operator",
     ]
+    spec_text_lower = spec_text.lower()
     for value in forbidden:
-        assert value not in spec_text
+        assert value.lower() not in spec_text_lower
 
     assert "BearerAuth" in spec_text
     assert '"scheme": "bearer"' in spec_text
@@ -109,7 +111,7 @@ def test_openapi_paths_do_not_include_unimplemented_public_campaign_api():
 
 def test_api_docs_page_does_not_render_secret_examples(client, staff_user):
     client.force_login(staff_user)
-    response = client.get(reverse("mailing:operator_api_docs"))
+    response = client.get(reverse("mailing:api_docs"))
     page = response.content.decode()
 
     assert response.status_code == 200
@@ -120,6 +122,7 @@ def test_api_docs_page_does_not_render_secret_examples(client, staff_user):
     assert "https://client.example/verify/placeholder" in page
     assert "https://client.example/reset/placeholder" in page
     assert "Authorization: Token" not in page
+    assert "operator" not in page.lower()
     assert "api_key_hash" not in page
     assert "tracking_token_hash" not in page
     assert "unsubscribe_token_hash" not in page

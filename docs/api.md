@@ -224,7 +224,7 @@ Use cases:
 
 Transactional sends should be logged and trackable. They should not require marketing subscription, but they must respect hard suppression states. If the selected template declares required context variables, missing values return a JSON validation error before Datamailer creates contacts, messages, events, or queue payloads.
 
-Template keys are client-scoped and visible to staff in `/operator/templates/`. Operators can inspect each transactional template's required context and placeholder example context there.
+Template keys are client-scoped and visible to staff in `/templates/`. Staff users can inspect each transactional template's required context and placeholder example context there.
 
 Registration/welcome example:
 

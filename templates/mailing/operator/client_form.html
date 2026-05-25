@@ -8,7 +8,7 @@
       <h1>{% if mode == "create" %}Create client{% else %}Edit client{% endif %}</h1>
       <p>Client slugs are unique within each organization.</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_client_list' %}">All clients</a>
+    <a class="button secondary" href="{% url 'mailing:client_list' %}">All clients</a>
   </div>
   <form method="post">
     {% include "mailing/operator/_form_fields.html" with form=form %}

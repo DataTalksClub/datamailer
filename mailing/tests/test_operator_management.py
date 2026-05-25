@@ -53,10 +53,10 @@ def create_contact(email="person@example.com", **kwargs):
 
 def test_management_views_require_staff(client, nonstaff, audience, client_record):
     routes = [
-        reverse("mailing:operator_client_list"),
-        reverse("mailing:operator_client_detail", args=[client_record.id]),
-        reverse("mailing:operator_audience_create"),
-        reverse("mailing:operator_tag_create", args=[audience.id]),
+        reverse("mailing:client_list"),
+        reverse("mailing:client_detail", args=[client_record.id]),
+        reverse("mailing:audience_create"),
+        reverse("mailing:tag_create", args=[audience.id]),
     ]
 
     for route in routes:
@@ -74,7 +74,7 @@ def test_management_views_require_staff(client, nonstaff, audience, client_recor
 def test_staff_can_load_client_list(client, operator, client_record):
     client.force_login(operator)
 
-    response = client.get(reverse("mailing:operator_client_list"))
+    response = client.get(reverse("mailing:client_list"))
 
     assert response.status_code == 200
     assert b"Clients" in response.content
@@ -85,7 +85,7 @@ def test_staff_can_load_client_list(client, operator, client_record):
 def test_client_api_key_generate_rotate_revoke_is_one_time_and_auth_safe(client, operator, client_record):
     client.force_login(operator)
 
-    generated = client.post(reverse("mailing:operator_client_api_key_generate", args=[client_record.id]), follow=True)
+    generated = client.post(reverse("mailing:client_api_key_generate", args=[client_record.id]), follow=True)
     client_record.refresh_from_db()
     raw_key = generated.context["raw_api_key"]
     assert raw_key.startswith("dm_")
@@ -96,17 +96,17 @@ def test_client_api_key_generate_rotate_revoke_is_one_time_and_auth_safe(client,
     assert authenticate_bearer_token(f"Bearer {raw_key}").client == client_record
     assert raw_key not in str(OperatorAudit.objects.latest("id").metadata)
 
-    later_get = client.get(reverse("mailing:operator_client_detail", args=[client_record.id]))
+    later_get = client.get(reverse("mailing:client_detail", args=[client_record.id]))
     assert raw_key not in later_get.content.decode()
 
-    rotated = client.post(reverse("mailing:operator_client_api_key_generate", args=[client_record.id]), follow=True)
+    rotated = client.post(reverse("mailing:client_api_key_generate", args=[client_record.id]), follow=True)
     new_key = rotated.context["raw_api_key"]
     client_record.refresh_from_db()
     assert new_key != raw_key
     assert authenticate_bearer_token(f"Bearer {raw_key}").error == "invalid_api_key"
     assert authenticate_bearer_token(f"Bearer {new_key}").client == client_record
 
-    client.post(reverse("mailing:operator_client_api_key_revoke", args=[client_record.id]))
+    client.post(reverse("mailing:client_api_key_revoke", args=[client_record.id]))
     client_record.refresh_from_db()
     assert client_record.api_key_hash == ""
     assert authenticate_bearer_token(f"Bearer {new_key}").error == "invalid_api_key"
@@ -114,7 +114,7 @@ def test_client_api_key_generate_rotate_revoke_is_one_time_and_auth_safe(client,
 
 def test_inactive_client_rejects_otherwise_valid_key(client, operator, client_record):
     client.force_login(operator)
-    response = client.post(reverse("mailing:operator_client_api_key_generate", args=[client_record.id]), follow=True)
+    response = client.post(reverse("mailing:client_api_key_generate", args=[client_record.id]), follow=True)
     raw_key = response.context["raw_api_key"]
     client_record.is_active = False
     client_record.save(update_fields=["is_active", "updated_at"])
@@ -125,7 +125,7 @@ def test_inactive_client_rejects_otherwise_valid_key(client, operator, client_re
 def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organization, audience):
     client.force_login(operator)
     duplicate_audience = client.post(
-        reverse("mailing:operator_audience_create"),
+        reverse("mailing:audience_create"),
         {"organization": organization.id, "name": "Duplicate", "slug": audience.slug},
     )
     assert duplicate_audience.status_code == 200
@@ -133,7 +133,7 @@ def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organ
 
     Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
     duplicate_tag = client.post(
-        reverse("mailing:operator_tag_create", args=[audience.id]),
+        reverse("mailing:tag_create", args=[audience.id]),
         {"name": "Newsletter again", "slug": "newsletter"},
     )
     assert duplicate_tag.status_code == 200
@@ -143,7 +143,7 @@ def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organ
 def test_client_create_edit_validation_and_audit(client, operator, organization):
     client.force_login(operator)
     response = client.post(
-        reverse("mailing:operator_client_create"),
+        reverse("mailing:client_create"),
         {"organization": organization.id, "name": "New Client", "slug": "new-client", "is_active": "on"},
     )
     app_client = Client.objects.get(slug="new-client")
@@ -151,7 +151,7 @@ def test_client_create_edit_validation_and_audit(client, operator, organization)
     assert OperatorAudit.objects.filter(action="client.create", target_id=app_client.id).exists()
 
     duplicate = client.post(
-        reverse("mailing:operator_client_create"),
+        reverse("mailing:client_create"),
         {"organization": organization.id, "name": "Dup", "slug": "new-client", "is_active": "on"},
     )
     assert duplicate.status_code == 200
@@ -165,13 +165,13 @@ def test_contact_state_and_subscription_mutations_are_audited_and_idempotent(cli
     state_payload = {
         "verified_state": "verified",
         "email_validation_status": EmailValidationStatus.MANUALLY_INVALID,
-        "email_validation_reason": "operator review",
+        "email_validation_reason": "staff review",
         "global_unsubscribed": "on",
         "hard_bounced": "",
         "complained": "",
     }
-    client.post(reverse("mailing:operator_contact_state_update", args=[contact.id]), state_payload)
-    client.post(reverse("mailing:operator_contact_state_update", args=[contact.id]), state_payload)
+    client.post(reverse("mailing:contact_state_update", args=[contact.id]), state_payload)
+    client.post(reverse("mailing:contact_state_update", args=[contact.id]), state_payload)
     contact.refresh_from_db()
     assert contact.verified_at is not None
     assert contact.email_validation_status == EmailValidationStatus.MANUALLY_INVALID
@@ -185,8 +185,8 @@ def test_contact_state_and_subscription_mutations_are_audited_and_idempotent(cli
         "verified": "on",
         "unsubscribe_reason": "manual request",
     }
-    client.post(reverse("mailing:operator_contact_subscription_update", args=[contact.id]), subscription_payload)
-    client.post(reverse("mailing:operator_contact_subscription_update", args=[contact.id]), subscription_payload)
+    client.post(reverse("mailing:contact_subscription_update", args=[contact.id]), subscription_payload)
+    client.post(reverse("mailing:contact_subscription_update", args=[contact.id]), subscription_payload)
     subscription = Subscription.objects.get(contact=contact, audience=audience, client=client_record)
     assert subscription.status == SubscriptionStatus.UNSUBSCRIBED
     assert subscription.unsubscribe_reason == "manual request"
@@ -208,16 +208,16 @@ def test_contact_tag_mutations_are_idempotent_and_feed_campaign_segmentation(cli
     )
 
     payload = {"audience": audience.id, "tag": tag.id, "new_tag_name": "", "new_tag_slug": ""}
-    client.post(reverse("mailing:operator_contact_tag_add", args=[contact.id]), payload)
-    client.post(reverse("mailing:operator_contact_tag_add", args=[contact.id]), payload)
+    client.post(reverse("mailing:contact_tag_add", args=[contact.id]), payload)
+    client.post(reverse("mailing:contact_tag_add", args=[contact.id]), payload)
     assert ContactTag.objects.filter(contact=contact, tag=tag).count() == 1
     assert OperatorAudit.objects.filter(action="contact.tag.add", target_id=contact.id).count() == 1
     assert estimate_campaign_recipients(campaign).recipient_count == 1
     assert snapshot_campaign_recipients(campaign).recipient_count == 1
 
     membership = ContactTag.objects.get(contact=contact, tag=tag)
-    client.post(reverse("mailing:operator_contact_tag_remove", args=[contact.id]), {"membership": membership.id})
-    client.post(reverse("mailing:operator_contact_tag_remove", args=[contact.id]), {"membership": membership.id})
+    client.post(reverse("mailing:contact_tag_remove", args=[contact.id]), {"membership": membership.id})
+    client.post(reverse("mailing:contact_tag_remove", args=[contact.id]), {"membership": membership.id})
     assert ContactTag.objects.filter(contact=contact, tag=tag).count() == 0
     assert OperatorAudit.objects.filter(action="contact.tag.remove", target_id=contact.id).count() == 1
 
@@ -229,7 +229,7 @@ def test_contact_tag_form_rejects_cross_audience_tag(client, operator, organizat
     client.force_login(operator)
 
     response = client.post(
-        reverse("mailing:operator_contact_tag_add", args=[contact.id]),
+        reverse("mailing:contact_tag_add", args=[contact.id]),
         {"audience": audience.id, "tag": tag.id, "new_tag_name": "", "new_tag_slug": ""},
         follow=True,
     )

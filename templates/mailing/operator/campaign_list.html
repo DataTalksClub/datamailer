@@ -9,9 +9,9 @@
       <p>Recent campaign status, schedule, and high-level engagement.</p>
     </div>
     <div class="actions">
-      <a class="button" href="{% url 'mailing:operator_campaign_create' %}">Create campaign</a>
-      <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">Audiences</a>
-      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Find contact</a>
+      <a class="button" href="{% url 'mailing:campaign_create' %}">Create campaign</a>
+      <a class="button secondary" href="{% url 'mailing:audience_list' %}">Audiences</a>
+      <a class="button secondary" href="{% url 'mailing:contact_search' %}">Find contact</a>
     </div>
   </div>
 
@@ -35,10 +35,10 @@
         <tbody>
           {% for campaign in campaigns %}
             <tr>
-              <td class="truncate"><a href="{% url 'mailing:operator_campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
+              <td class="truncate"><a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
               <td><span class="badge">{{ campaign.get_status_display }}</span></td>
               <td>{{ campaign.client.name }}</td>
-              <td><a href="{% url 'mailing:operator_audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a></td>
+              <td><a href="{% url 'mailing:audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a></td>
               <td class="nowrap">{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</td>
               <td class="nowrap">{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
               <td class="nowrap">{{ campaign.recipient_count }}</td>
@@ -46,7 +46,7 @@
               <td class="nowrap">{{ campaign.unique_click_count }} / {{ campaign.click_count }}</td>
               <td class="nowrap">
                 {% if campaign.status == "draft" %}
-                  <a href="{% url 'mailing:operator_campaign_edit' campaign.id %}">Edit</a>
+                  <a href="{% url 'mailing:campaign_edit' campaign.id %}">Edit</a>
                 {% else %}
                   Locked
                 {% endif %}

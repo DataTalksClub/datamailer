@@ -9,8 +9,8 @@
       <p>Filter contacts by audience, subscription, validation, suppression, campaign state, and engagement.</p>
     </div>
     <div class="actions">
-      <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">Audiences</a>
-      <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">Campaigns</a>
+      <a class="button secondary" href="{% url 'mailing:audience_list' %}">Audiences</a>
+      <a class="button secondary" href="{% url 'mailing:campaign_list' %}">Campaigns</a>
     </div>
   </div>
 
@@ -129,7 +129,7 @@
 
     <div class="toolbar">
       <button type="submit">Apply filters</button>
-      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Clear</a>
+      <a class="button secondary" href="{% url 'mailing:contact_search' %}">Clear</a>
     </div>
   </form>
 
@@ -154,7 +154,7 @@
             {% for row in contact_rows %}
               <tr>
                 <td>
-                  <a href="{% url 'mailing:operator_contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
+                  <a href="{% url 'mailing:contact_detail' row.contact.id %}">{{ row.contact.email }}</a>
                   <div class="muted">{{ row.contact.normalized_email }}</div>
                   <div>{% if row.contact.verified_at %}<span class="badge success">Verified</span>{% else %}<span class="badge">Unverified</span>{% endif %}</div>
                 </td>

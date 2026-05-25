@@ -72,7 +72,7 @@ Use these runbooks for staging and production operations. Commands are examples;
 
 ## Campaign Pause And Resume
 
-1. Pause the campaign in the operator/admin surface.
+1. Pause the campaign in the product UI or Django admin.
 2. Disable or reduce `campaign-email` event-source concurrency if queue pressure continues.
 3. Investigate failed recipients and DLQ messages.
 4. Resume only pending/failed recipients after the root cause is fixed.

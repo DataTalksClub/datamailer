@@ -8,7 +8,7 @@
       <h1>{% if mode == "create" %}Create audience{% else %}Edit audience{% endif %}</h1>
       <p>Audience slugs are unique within each organization.</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:operator_audience_list' %}">All audiences</a>
+    <a class="button secondary" href="{% url 'mailing:audience_list' %}">All audiences</a>
   </div>
   <form method="post">
     {% include "mailing/operator/_form_fields.html" with form=form %}

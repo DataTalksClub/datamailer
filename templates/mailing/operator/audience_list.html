@@ -9,8 +9,8 @@
       <p>Audience membership, history, and management entry points.</p>
     </div>
     <div class="actions">
-      <a class="button" href="{% url 'mailing:operator_audience_create' %}">Create audience</a>
-      <a class="button secondary" href="{% url 'mailing:operator_contact_search' %}">Contact explorer</a>
+      <a class="button" href="{% url 'mailing:audience_create' %}">Create audience</a>
+      <a class="button secondary" href="{% url 'mailing:contact_search' %}">Contact explorer</a>
     </div>
   </div>
 
@@ -29,7 +29,7 @@
         <tbody>
           {% for audience in audiences %}
             <tr>
-              <td><a href="{% url 'mailing:operator_audience_detail' audience.id %}">{{ audience.name }}</a></td>
+              <td><a href="{% url 'mailing:audience_detail' audience.id %}">{{ audience.name }}</a></td>
               <td>{{ audience.organization.name }}</td>
               <td>{{ audience.contact_count }}</td>
               <td>{{ audience.subscription_count }}</td>

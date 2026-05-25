@@ -7,7 +7,7 @@ Datamailer is a standalone email service used by multiple client applications. I
 - Replace high per-contact mailing platform costs with SES-based delivery.
 - Serve multiple clients: DataTalksClub newsletter, DataTalksClub courses, AI Shipping Labs, and future apps.
 - Support shared and separate audiences.
-- Provide a UI for operators and an API for client applications.
+- Provide a product UI for staff users and an API for client applications.
 - Track sends, skips, opens, clicks, unsubscribes, bounces, complaints, and transactional email history.
 - Keep an audit trail for every intended campaign recipient.
 
@@ -25,7 +25,7 @@ Datamailer is a standalone email service used by multiple client applications. I
 
 Responsibilities:
 
-- Operator UI and Django admin.
+- Product UI and Django admin.
 - Audience, contact, tag, subscription, campaign, and template management.
 - Client API for contact sync, verification lookup, subscription changes, campaign creation, and transactional sends.
 - Public endpoints for email verification, unsubscribe, open pixels, click redirects, and hosted preference pages.
@@ -106,8 +106,8 @@ SES integration must cover:
 
 ### Campaign Send
 
-1. Operator creates a campaign for a client and audience.
-2. Operator selects include/exclude tags and other filters.
+1. A staff user creates a campaign for a client and audience.
+2. The staff user selects include/exclude tags and other filters.
 3. A Lambda job snapshots intended recipients into `campaign_recipients`.
 4. Each recipient row is marked `pending`, `skipped`, or later `sent`/`failed`.
 5. Campaign send Lambda workers send through SES in batches.

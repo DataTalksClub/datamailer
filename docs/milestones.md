@@ -15,7 +15,7 @@ Tasks:
 - Add AWS/SQS/Lambda configuration placeholders.
 - Add pytest/ruff setup.
 - Add health check endpoint.
-- Add base templates and minimal operator navigation.
+- Add base templates and minimal product navigation.
 - Create GitHub repo under `DataTalksClub/datamailer`.
 
 Acceptance:
@@ -160,7 +160,7 @@ Acceptance:
 - Bounced/complained contacts are suppressed.
 - Campaign and transactional stats reflect provider events.
 
-## Milestone 8: Operator UI And Reporting
+## Milestone 8: Product UI And Reporting
 
 Goal: Make the service usable without shell access.
 
@@ -176,7 +176,7 @@ Tasks:
 
 Acceptance:
 
-- Operators can manage audiences and inspect delivery outcomes from the UI.
+- Staff users can manage audiences and inspect delivery outcomes from the UI.
 
 ## Milestone 9: Production Hardening
 

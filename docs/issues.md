@@ -203,7 +203,7 @@ Acceptance:
 - Bounce/complaint events update contact suppression state.
 - Campaign and transactional stats update correctly.
 
-## 12. Add operator campaign/contact UI
+## 12. Add product campaign/contact UI
 
 Labels: `P1`, `frontend`, `campaigns`
 
@@ -217,7 +217,7 @@ Scope:
 
 Acceptance:
 
-- Operator can inspect delivery and engagement without shell access.
+- Staff users can inspect delivery and engagement without shell access.
 - Contact history shows subscription, send, open, click, unsubscribe, bounce, and complaint events.
 
 ## 13. Add production infrastructure and monitoring
@@ -270,4 +270,4 @@ Acceptance:
 
 - First production email is sent through Datamailer.
 - Bounce/complaint/unsubscribe paths are verified.
-- Operators can inspect campaign results.
+- Staff users can inspect campaign results.

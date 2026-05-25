@@ -9,8 +9,8 @@
       <p>{{ tag.audience.name }} / {{ tag.slug }}</p>
     </div>
     <div class="actions">
-      <a class="button secondary" href="{% url 'mailing:operator_tag_edit' tag.id %}">Edit tag</a>
-      <a class="button secondary" href="{% url 'mailing:operator_audience_detail' tag.audience_id %}">Audience</a>
+      <a class="button secondary" href="{% url 'mailing:tag_edit' tag.id %}">Edit tag</a>
+      <a class="button secondary" href="{% url 'mailing:audience_detail' tag.audience_id %}">Audience</a>
     </div>
   </div>
   <div class="meta-grid">

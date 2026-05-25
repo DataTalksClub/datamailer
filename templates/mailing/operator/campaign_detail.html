@@ -10,15 +10,15 @@
     </div>
     <div class="actions">
       {% if can_edit %}
-        <a class="button secondary" href="{% url 'mailing:operator_campaign_edit' campaign.id %}">Edit draft</a>
+        <a class="button secondary" href="{% url 'mailing:campaign_edit' campaign.id %}">Edit draft</a>
       {% endif %}
       {% if can_queue %}
-        <form method="post" action="{% url 'mailing:operator_campaign_queue' campaign.id %}">
+        <form method="post" action="{% url 'mailing:campaign_queue' campaign.id %}">
           {% csrf_token %}
           <button type="submit">Snapshot and queue</button>
         </form>
       {% endif %}
-      <a class="button secondary" href="{% url 'mailing:operator_campaign_list' %}">All campaigns</a>
+      <a class="button secondary" href="{% url 'mailing:campaign_list' %}">All campaigns</a>
     </div>
   </div>
 
@@ -131,7 +131,7 @@
       </div>
       <button type="submit">Apply</button>
       {% if active_filter %}
-        <a class="button secondary" href="{% url 'mailing:operator_campaign_detail' campaign.id %}">Clear</a>
+        <a class="button secondary" href="{% url 'mailing:campaign_detail' campaign.id %}">Clear</a>
       {% endif %}
     </form>
 
@@ -156,7 +156,7 @@
             {% for recipient in recipients %}
               <tr id="recipient-{{ recipient.id }}">
                 <td class="truncate">
-                  <a href="{% url 'mailing:operator_contact_detail' recipient.contact_id %}">{{ recipient.email }}</a>
+                  <a href="{% url 'mailing:contact_detail' recipient.contact_id %}">{{ recipient.email }}</a>
                 </td>
                 <td><span class="badge">{{ recipient.get_status_display }}</span></td>
                 <td>{{ recipient.get_skip_reason_display|default:"-" }}</td>

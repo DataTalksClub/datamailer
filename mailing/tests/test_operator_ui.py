@@ -342,21 +342,21 @@ def test_operator_contact_views_show_email_validation_status(client, operator, a
     contact = create_contact(
         "Person@Example.COM",
         email_validation_status=EmailValidationStatus.MANUALLY_INVALID,
-        email_validation_reason="operator marked bad",
+        email_validation_reason="staff marked bad",
         email_validated_at=timezone.now(),
     )
     Subscription.objects.create(contact=contact, audience=audience, client=client_record)
 
-    search_response = client.get(reverse("mailing:operator_contact_search"), {"q": "person@example.com"})
-    detail_response = client.get(reverse("mailing:operator_contact_detail", args=[contact.id]))
+    search_response = client.get(reverse("mailing:contact_search"), {"q": "person@example.com"})
+    detail_response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
 
     assert search_response.status_code == 200
     assert b"Manually invalid" in search_response.content
-    assert b"operator marked bad" in search_response.content
+    assert b"staff marked bad" in search_response.content
     assert detail_response.status_code == 200
     assert b"Validation" in detail_response.content
     assert b"Manually invalid" in detail_response.content
-    assert b"operator marked bad" in detail_response.content
+    assert b"staff marked bad" in detail_response.content
 
 
 def test_operator_contact_explorer_renders_filters_and_pagination_querystring(client, operator, audience, client_record):
@@ -365,7 +365,7 @@ def test_operator_contact_explorer_renders_filters_and_pagination_querystring(cl
         create_subscribed_contact(f"person-{index:02d}@example.com", audience, client_record)
 
     response = client.get(
-        reverse("mailing:operator_contact_search"),
+        reverse("mailing:contact_search"),
         {"audience": audience.id, "subscription_status": SubscriptionStatus.SUBSCRIBED},
     )
 
@@ -380,7 +380,7 @@ def test_operator_contact_explorer_renders_filters_and_pagination_querystring(cl
 def test_operator_contact_explorer_empty_state(client, operator):
     client.force_login(operator)
 
-    response = client.get(reverse("mailing:operator_contact_search"), {"q": "missing@example.com"})
+    response = client.get(reverse("mailing:contact_search"), {"q": "missing@example.com"})
 
     assert response.status_code == 200
     assert b"No contacts match these filters" in response.content
@@ -431,7 +431,7 @@ def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
     )
 
     detail = contact_detail_context(contact)
-    response = client.get(reverse("mailing:operator_contact_detail", args=[contact.id]))
+    response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
 
     assert detail.eligibility[0].can_send_marketing is False
     assert "unverified" in detail.eligibility[0].marketing_reasons
@@ -445,16 +445,16 @@ def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
     assert b"client unsubscribe" in response.content
 
 
-def test_operator_campaign_list_requires_staff(client):
-    response = client.get(reverse("mailing:operator_campaign_list"))
+def test_campaign_list_requires_staff(client):
+    response = client.get(reverse("mailing:campaign_list"))
 
     assert response.status_code == 302
     assert "/admin/login/" in response["Location"]
 
 
 def test_operator_audience_views_require_staff(client, audience):
-    list_response = client.get(reverse("mailing:operator_audience_list"))
-    detail_response = client.get(reverse("mailing:operator_audience_detail", args=[audience.id]))
+    list_response = client.get(reverse("mailing:audience_list"))
+    detail_response = client.get(reverse("mailing:audience_detail", args=[audience.id]))
 
     assert list_response.status_code == 302
     assert detail_response.status_code == 302
@@ -462,10 +462,10 @@ def test_operator_audience_views_require_staff(client, audience):
     assert "/admin/login/" in detail_response["Location"]
 
 
-def test_operator_campaign_list_renders_recent_campaigns(client, operator, campaign):
+def test_campaign_list_renders_recent_campaigns(client, operator, campaign):
     client.force_login(operator)
 
-    response = client.get(reverse("mailing:operator_campaign_list"))
+    response = client.get(reverse("mailing:campaign_list"))
 
     assert response.status_code == 200
     assert b"Weekly update" in response.content
@@ -523,9 +523,9 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
     )
 
     summary = {stat.key: stat.value for stat in audience_summary(audience)}
-    list_response = client.get(reverse("mailing:operator_audience_list"))
+    list_response = client.get(reverse("mailing:audience_list"))
     detail_response = client.get(
-        reverse("mailing:operator_audience_detail", args=[audience.id]),
+        reverse("mailing:audience_detail", args=[audience.id]),
         {"email_validation_status": EmailValidationStatus.NO_MX},
     )
 
@@ -575,7 +575,7 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     )
     create_recipient(campaign, "other@example.com")
 
-    response = client.get(reverse("mailing:operator_campaign_detail", args=[campaign.id]), {"filter": "opened"})
+    response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]), {"filter": "opened"})
 
     assert response.status_code == 200
     assert b"Unique opens" in response.content
@@ -592,7 +592,7 @@ def test_operator_can_create_campaign_draft_with_tag_filters(client, operator, a
     exclude_tag = Tag.objects.create(audience=audience, name="Inactive", slug="inactive")
 
     response = client.post(
-        reverse("mailing:operator_campaign_create"),
+        reverse("mailing:campaign_create"),
         {
             "audience": audience.id,
             "client": client_record.id,
@@ -608,7 +608,7 @@ def test_operator_can_create_campaign_draft_with_tag_filters(client, operator, a
 
     campaign = Campaign.objects.get(subject="Final subject")
     assert response.status_code == 302
-    assert response["Location"] == reverse("mailing:operator_campaign_detail", args=[campaign.id])
+    assert response["Location"] == reverse("mailing:campaign_detail", args=[campaign.id])
     assert campaign.status == "draft"
     assert campaign.preview_text == "Final preview"
     assert campaign.html_body == "<p>Final HTML</p>"
@@ -623,7 +623,7 @@ def test_campaign_create_validation_rejects_missing_final_bodies_and_cross_org_c
     other_client = Client.objects.create(organization=other_org, name="Other Client", slug="other-client")
 
     response = client.post(
-        reverse("mailing:operator_campaign_create"),
+        reverse("mailing:campaign_create"),
         {
             "audience": audience.id,
             "client": other_client.id,
@@ -650,7 +650,7 @@ def test_operator_can_edit_draft_but_not_queued_send_content(client, operator, a
         text_body="Old",
     )
     response = client.post(
-        reverse("mailing:operator_campaign_edit", args=[draft.id]),
+        reverse("mailing:campaign_edit", args=[draft.id]),
         {
             "audience": audience.id,
             "client": client_record.id,
@@ -666,7 +666,7 @@ def test_operator_can_edit_draft_but_not_queued_send_content(client, operator, a
     draft.status = "queued"
     draft.save()
     locked_response = client.post(
-        reverse("mailing:operator_campaign_edit", args=[draft.id]),
+        reverse("mailing:campaign_edit", args=[draft.id]),
         {
             "audience": audience.id,
             "client": client_record.id,
@@ -733,7 +733,7 @@ def test_campaign_detail_shows_draft_estimate_and_state_dependent_controls(clien
     )
     create_subscribed_contact("person@example.com", audience, client_record)
 
-    draft_response = client.get(reverse("mailing:operator_campaign_detail", args=[campaign.id]))
+    draft_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
 
     assert draft_response.status_code == 200
     assert b"Recipient Estimate" in draft_response.content
@@ -742,7 +742,7 @@ def test_campaign_detail_shows_draft_estimate_and_state_dependent_controls(clien
 
     campaign.status = "queued"
     campaign.save()
-    queued_response = client.get(reverse("mailing:operator_campaign_detail", args=[campaign.id]))
+    queued_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
     assert b"Recipient Estimate" not in queued_response.content
     assert b"Snapshot and queue" not in queued_response.content
     assert b"Edit draft" not in queued_response.content
@@ -772,8 +772,8 @@ def test_queue_action_snapshots_enqueues_idempotently_and_does_not_call_ses(
         lambda: (_ for _ in ()).throw(AssertionError("SES should not be called by queue action")),
     )
 
-    first = client.post(reverse("mailing:operator_campaign_queue", args=[campaign.id]))
-    second = client.post(reverse("mailing:operator_campaign_queue", args=[campaign.id]))
+    first = client.post(reverse("mailing:campaign_queue", args=[campaign.id]))
+    second = client.post(reverse("mailing:campaign_queue", args=[campaign.id]))
 
     campaign.refresh_from_db()
     assert first.status_code == 302
@@ -798,7 +798,7 @@ def test_campaign_detail_paginates_recipients(client, operator, campaign):
     for index in range(55):
         create_recipient(campaign, f"person-{index:02d}@example.com")
 
-    response = client.get(reverse("mailing:operator_campaign_detail", args=[campaign.id]))
+    response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
 
     assert response.status_code == 200
     assert b"person-00@example.com" in response.content
@@ -806,7 +806,7 @@ def test_campaign_detail_paginates_recipients(client, operator, campaign):
     assert b"Page 1 of 2" in response.content
 
 
-def test_contact_search_and_detail_render_operator_context(client, operator, audience, client_record, campaign):
+def test_contact_search_and_detail_render_product_context(client, operator, audience, client_record, campaign):
     client.force_login(operator)
     contact = create_contact(
         "Person@Example.COM",
@@ -858,8 +858,8 @@ def test_contact_search_and_detail_render_operator_context(client, operator, aud
         metadata={"scope": "global"},
     )
 
-    search_response = client.get(reverse("mailing:operator_contact_search"), {"q": "person@example.com"})
-    detail_response = client.get(reverse("mailing:operator_contact_detail", args=[contact.id]))
+    search_response = client.get(reverse("mailing:contact_search"), {"q": "person@example.com"})
+    detail_response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
 
     assert search_response.status_code == 200
     assert b"Person@Example.COM" in search_response.content
@@ -867,10 +867,12 @@ def test_contact_search_and_detail_render_operator_context(client, operator, aud
     assert b"Global unsubscribe" in detail_response.content
     assert b"requested" in detail_response.content
     assert b"Newsletter" in detail_response.content
-    assert f"/operator/campaigns/{campaign.id}/#recipient-{recipient.id}".encode() in detail_response.content
+    assert f"/campaigns/{campaign.id}/#recipient-{recipient.id}".encode() in detail_response.content
     assert b"Transactional Messages" in detail_response.content
     assert b"Unsubscribe" in detail_response.content
     assert b"scope: global" in detail_response.content
+    assert b"Operator Audit" not in detail_response.content
+    assert b"No operator audit entries found" not in detail_response.content
 
 
 def test_transactional_template_catalog_is_staff_only(client, operator, client_record):
@@ -891,25 +893,25 @@ def test_transactional_template_catalog_is_staff_only(client, operator, client_r
         },
     )
 
-    anonymous = client.get(reverse("mailing:operator_template_catalog"))
+    anonymous = client.get(reverse("mailing:template_catalog"))
     assert anonymous.status_code == 302
     assert "/admin/login/" in anonymous["Location"]
-    anonymous_detail = client.get(reverse("mailing:operator_template_detail", args=[template.id]))
+    anonymous_detail = client.get(reverse("mailing:template_detail", args=[template.id]))
     assert anonymous_detail.status_code == 302
     assert "/admin/login/" in anonymous_detail["Location"]
 
     regular_user = get_user_model().objects.create_user("regular", "regular@example.com", "password", is_staff=False)
     client.force_login(regular_user)
-    non_staff = client.get(reverse("mailing:operator_template_catalog"))
+    non_staff = client.get(reverse("mailing:template_catalog"))
     assert non_staff.status_code == 302
     assert "/admin/login/" in non_staff["Location"]
-    non_staff_detail = client.get(reverse("mailing:operator_template_detail", args=[template.id]))
+    non_staff_detail = client.get(reverse("mailing:template_detail", args=[template.id]))
     assert non_staff_detail.status_code == 302
     assert "/admin/login/" in non_staff_detail["Location"]
 
     client.force_login(operator)
-    list_response = client.get(reverse("mailing:operator_template_catalog"))
-    detail_response = client.get(reverse("mailing:operator_template_detail", args=[template.id]))
+    list_response = client.get(reverse("mailing:template_catalog"))
+    detail_response = client.get(reverse("mailing:template_detail", args=[template.id]))
 
     assert list_response.status_code == 200
     assert b"email-verification" in list_response.content
@@ -935,7 +937,7 @@ def test_contact_detail_paginates_events(client, operator, campaign, client_reco
             metadata={"index": index},
         )
 
-    response = client.get(reverse("mailing:operator_contact_detail", args=[contact.id]))
+    response = client.get(reverse("mailing:contact_detail", args=[contact.id]))
 
     assert response.status_code == 200
     assert b"Page 1 of 2" in response.content

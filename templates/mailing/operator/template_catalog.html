@@ -9,7 +9,7 @@
       <p>Template keys, required context, and recent send state for client transactional emails.</p>
     </div>
     <div class="actions">
-      <a class="button secondary" href="{% url 'mailing:operator_api_docs' %}">API docs</a>
+      <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
     </div>
   </div>
 
@@ -43,7 +43,7 @@
           {% for template in templates.object_list %}
             <tr>
               <td>
-                <a href="{% url 'mailing:operator_template_detail' template.id %}"><code>{{ template.key }}</code></a>
+                <a href="{% url 'mailing:template_detail' template.id %}"><code>{{ template.key }}</code></a>
                 <div class="muted">{{ template.name }}</div>
               </td>
               <td>{{ template.client.name }}<div class="muted">{{ template.client.slug }}</div></td>

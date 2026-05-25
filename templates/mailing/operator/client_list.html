@@ -8,7 +8,7 @@
       <h1>Clients</h1>
       <p>Manage client records and single active API keys.</p>
     </div>
-    <a class="button" href="{% url 'mailing:operator_client_create' %}">Create client</a>
+    <a class="button" href="{% url 'mailing:client_create' %}">Create client</a>
   </div>
   {% if clients.object_list %}
     <div class="table-wrap">
@@ -17,7 +17,7 @@
         <tbody>
           {% for client in clients %}
             <tr>
-              <td><a href="{% url 'mailing:operator_client_detail' client.id %}">{{ client.name }}</a><div class="muted">{{ client.slug }}</div></td>
+              <td><a href="{% url 'mailing:client_detail' client.id %}">{{ client.name }}</a><div class="muted">{{ client.slug }}</div></td>
               <td>{{ client.organization.name }}</td>
               <td>{% if client.is_active %}<span class="badge success">Active</span>{% else %}<span class="badge danger">Inactive</span>{% endif %}</td>
               <td>{% if client.api_key_hash %}<span class="badge success">Present</span>{% else %}<span class="badge">None</span>{% endif %}</td>

@@ -109,24 +109,24 @@ def pagination_querystring(request):
 
 
 @staff_member_required
-def operator_api_docs(request):
+def api_docs(request):
     return render(
         request,
         "mailing/operator/api_docs.html",
         {
             "endpoint_groups": endpoint_groups(),
-            "openapi_json_url": "mailing:operator_api_docs_json",
+            "openapi_json_url": "mailing:api_docs_json",
         },
     )
 
 
 @staff_member_required
-def operator_api_docs_json(request):
+def api_docs_json(request):
     return JsonResponse(build_openapi_spec(request), json_dumps_params={"indent": 2})
 
 
 @staff_member_required
-def operator_template_catalog(request):
+def template_catalog(request):
     client_id = request.GET.get("client", "")
     templates = paginate(
         request,
@@ -150,7 +150,7 @@ def operator_template_catalog(request):
 
 
 @staff_member_required
-def operator_template_detail(request, template_id):
+def template_detail(request, template_id):
     template = get_object_or_404(transactional_template_queryset(), pk=template_id)
     recent_messages = template.transactional_messages.select_related("contact").order_by("-created_at", "-id")[:10]
     return render(
@@ -161,7 +161,7 @@ def operator_template_detail(request, template_id):
 
 
 @staff_member_required
-def operator_campaign_list(request):
+def campaign_list(request):
     campaigns = paginate(request, campaign_queryset(), per_page=25)
     return render(
         request,
@@ -172,12 +172,12 @@ def operator_campaign_list(request):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_campaign_create(request):
+def campaign_create(request):
     form = CampaignForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         campaign = form.save()
         messages.success(request, "Campaign draft created.")
-        return redirect("mailing:operator_campaign_detail", campaign_id=campaign.id)
+        return redirect("mailing:campaign_detail", campaign_id=campaign.id)
 
     return render(
         request,
@@ -188,13 +188,13 @@ def operator_campaign_create(request):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_campaign_edit(request, campaign_id):
+def campaign_edit(request, campaign_id):
     campaign = get_object_or_404(Campaign.objects.select_related("client", "audience"), pk=campaign_id)
     form = CampaignForm(request.POST or None, instance=campaign)
     if request.method == "POST" and form.is_valid():
         campaign = form.save()
         messages.success(request, "Campaign draft updated.")
-        return redirect("mailing:operator_campaign_detail", campaign_id=campaign.id)
+        return redirect("mailing:campaign_detail", campaign_id=campaign.id)
 
     return render(
         request,
@@ -204,7 +204,7 @@ def operator_campaign_edit(request, campaign_id):
 
 
 @staff_member_required
-def operator_campaign_detail(request, campaign_id):
+def campaign_detail(request, campaign_id):
     campaign = get_object_or_404(
         Campaign.objects.select_related("client", "audience", "audience__organization"),
         pk=campaign_id,
@@ -231,7 +231,7 @@ def operator_campaign_detail(request, campaign_id):
 
 @staff_member_required
 @require_POST
-def operator_campaign_queue(request, campaign_id):
+def campaign_queue(request, campaign_id):
     campaign = get_object_or_404(Campaign, pk=campaign_id)
     result = queue_campaign(campaign)
     if result.queued:
@@ -242,11 +242,11 @@ def operator_campaign_queue(request, campaign_id):
         )
     else:
         messages.info(request, "Campaign was already queued or locked for sending.")
-    return redirect("mailing:operator_campaign_detail", campaign_id=campaign.id)
+    return redirect("mailing:campaign_detail", campaign_id=campaign.id)
 
 
 @staff_member_required
-def operator_contact_search(request):
+def contact_search(request):
     filters = parse_contact_explorer_filters(request.GET)
     contacts = paginate(request, contact_explorer_queryset(filters), per_page=25) if filters.has_filters else None
     rows = contact_result_rows(contacts.object_list) if contacts is not None else []
@@ -264,7 +264,7 @@ def operator_contact_search(request):
 
 
 @staff_member_required
-def operator_contact_detail(request, contact_id):
+def contact_detail(request, contact_id):
     contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
     detail_context = contact_detail_context(contact)
     events = paginate(request, contact_event_timeline(contact), per_page=50)
@@ -312,7 +312,7 @@ def operator_contact_detail(request, contact_id):
 
 @staff_member_required
 @require_POST
-def operator_contact_state_update(request, contact_id):
+def contact_state_update(request, contact_id):
     contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
     form = ContactStateForm(request.POST)
     if form.is_valid():
@@ -331,12 +331,12 @@ def operator_contact_state_update(request, contact_id):
         messages.success(request, "Contact state updated.")
     else:
         messages.error(request, "Contact state was not updated; check the form values.")
-    return redirect("mailing:operator_contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_id=contact.id)
 
 
 @staff_member_required
 @require_POST
-def operator_contact_subscription_update(request, contact_id):
+def contact_subscription_update(request, contact_id):
     contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
     form = ContactSubscriptionForm(request.POST)
     if form.is_valid():
@@ -352,12 +352,12 @@ def operator_contact_subscription_update(request, contact_id):
         messages.success(request, "Subscription updated.")
     else:
         messages.error(request, "Subscription was not updated; check the form values.")
-    return redirect("mailing:operator_contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_id=contact.id)
 
 
 @staff_member_required
 @require_POST
-def operator_contact_tag_add(request, contact_id):
+def contact_tag_add(request, contact_id):
     contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
     form = ContactTagAddForm(request.POST)
     if form.is_valid():
@@ -372,12 +372,12 @@ def operator_contact_tag_add(request, contact_id):
         messages.success(request, "Tag added.")
     else:
         messages.error(request, "Tag was not added; check the form values.")
-    return redirect("mailing:operator_contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_id=contact.id)
 
 
 @staff_member_required
 @require_POST
-def operator_contact_tag_remove(request, contact_id):
+def contact_tag_remove(request, contact_id):
     contact = get_object_or_404(contact_detail_queryset(), pk=contact_id)
     form = ContactTagRemoveForm(request.POST, contact=contact)
     if form.is_valid():
@@ -385,11 +385,11 @@ def operator_contact_tag_remove(request, contact_id):
         messages.success(request, "Tag removed.")
     else:
         messages.error(request, "Tag was not removed; check the form values.")
-    return redirect("mailing:operator_contact_detail", contact_id=contact.id)
+    return redirect("mailing:contact_detail", contact_id=contact.id)
 
 
 @staff_member_required
-def operator_audience_list(request):
+def audience_list(request):
     audiences = paginate(request, audience_queryset(), per_page=25)
     return render(
         request,
@@ -400,29 +400,29 @@ def operator_audience_list(request):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_audience_create(request):
+def audience_create(request):
     form = AudienceForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         audience = create_or_update_audience(actor=request.user, **form.cleaned_data)
         messages.success(request, "Audience created.")
-        return redirect("mailing:operator_audience_detail", audience_id=audience.id)
+        return redirect("mailing:audience_detail", audience_id=audience.id)
     return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "create"})
 
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_audience_edit(request, audience_id):
+def audience_edit(request, audience_id):
     audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
     form = AudienceForm(request.POST or None, instance=audience)
     if request.method == "POST" and form.is_valid():
         audience = create_or_update_audience(actor=request.user, audience=audience, **form.cleaned_data)
         messages.success(request, "Audience updated.")
-        return redirect("mailing:operator_audience_detail", audience_id=audience.id)
+        return redirect("mailing:audience_detail", audience_id=audience.id)
     return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "edit", "audience": audience})
 
 
 @staff_member_required
-def operator_audience_detail(request, audience_id):
+def audience_detail(request, audience_id):
     audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
     filters = parse_contact_explorer_filters(request.GET, forced_audience_id=audience.id)
     members = paginate(request, contact_explorer_queryset(filters), per_page=25)
@@ -459,18 +459,18 @@ def operator_audience_detail(request, audience_id):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_tag_create(request, audience_id):
+def tag_create(request, audience_id):
     audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
     form = TagForm(request.POST or None, audience=audience)
     if request.method == "POST" and form.is_valid():
         tag = create_or_update_tag(actor=request.user, audience=audience, **form.cleaned_data)
         messages.success(request, "Tag created.")
-        return redirect("mailing:operator_tag_detail", tag_id=tag.id)
+        return redirect("mailing:tag_detail", tag_id=tag.id)
     return render(request, "mailing/operator/tag_form.html", {"form": form, "audience": audience, "mode": "create"})
 
 
 @staff_member_required
-def operator_tag_detail(request, tag_id):
+def tag_detail(request, tag_id):
     tag = get_object_or_404(Tag.objects.select_related("audience", "audience__organization"), pk=tag_id)
     return render(
         request,
@@ -485,18 +485,18 @@ def operator_tag_detail(request, tag_id):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_tag_edit(request, tag_id):
+def tag_edit(request, tag_id):
     tag = get_object_or_404(Tag.objects.select_related("audience"), pk=tag_id)
     form = TagForm(request.POST or None, instance=tag, audience=tag.audience)
     if request.method == "POST" and form.is_valid():
         tag = create_or_update_tag(actor=request.user, tag=tag, audience=tag.audience, **form.cleaned_data)
         messages.success(request, "Tag updated.")
-        return redirect("mailing:operator_tag_detail", tag_id=tag.id)
+        return redirect("mailing:tag_detail", tag_id=tag.id)
     return render(request, "mailing/operator/tag_form.html", {"form": form, "tag": tag, "audience": tag.audience, "mode": "edit"})
 
 
 @staff_member_required
-def operator_client_list(request):
+def client_list(request):
     clients = paginate(
         request,
         Client.objects.select_related("organization").order_by("organization__slug", "slug"),
@@ -511,17 +511,17 @@ def operator_client_list(request):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_client_create(request):
+def client_create(request):
     form = ClientForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         client = create_or_update_client(actor=request.user, **form.cleaned_data)
         messages.success(request, "Client created.")
-        return redirect("mailing:operator_client_detail", client_id=client.id)
+        return redirect("mailing:client_detail", client_id=client.id)
     return render(request, "mailing/operator/client_form.html", {"form": form, "mode": "create"})
 
 
 @staff_member_required
-def operator_client_detail(request, client_id):
+def client_detail(request, client_id):
     client = get_object_or_404(Client.objects.select_related("organization"), pk=client_id)
     raw_api_key = request.session.pop("operator_raw_api_key", "")
     return render(
@@ -533,34 +533,34 @@ def operator_client_detail(request, client_id):
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
-def operator_client_edit(request, client_id):
+def client_edit(request, client_id):
     client = get_object_or_404(Client.objects.select_related("organization"), pk=client_id)
     form = ClientForm(request.POST or None, instance=client)
     if request.method == "POST" and form.is_valid():
         client = create_or_update_client(actor=request.user, client=client, **form.cleaned_data)
         messages.success(request, "Client updated.")
-        return redirect("mailing:operator_client_detail", client_id=client.id)
+        return redirect("mailing:client_detail", client_id=client.id)
     return render(request, "mailing/operator/client_form.html", {"form": form, "mode": "edit", "client": client})
 
 
 @staff_member_required
 @require_POST
-def operator_client_api_key_generate(request, client_id):
+def client_api_key_generate(request, client_id):
     client = get_object_or_404(Client, pk=client_id)
     request.session["operator_raw_api_key"] = generate_or_rotate_api_key(actor=request.user, client=client)
     messages.success(request, "API key generated. Copy it now; it will not be shown again.")
-    return redirect("mailing:operator_client_detail", client_id=client.id)
+    return redirect("mailing:client_detail", client_id=client.id)
 
 
 @staff_member_required
 @require_POST
-def operator_client_api_key_revoke(request, client_id):
+def client_api_key_revoke(request, client_id):
     client = get_object_or_404(Client, pk=client_id)
     if revoke_api_key(actor=request.user, client=client):
         messages.success(request, "API key revoked.")
     else:
         messages.info(request, "Client did not have an active API key.")
-    return redirect("mailing:operator_client_detail", client_id=client.id)
+    return redirect("mailing:client_detail", client_id=client.id)
 
 
 def transparent_gif_response(*, status=200):
