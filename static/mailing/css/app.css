@@ -537,6 +537,19 @@ a.compact-row:hover {
   width: 100%;
 }
 
+.checkbox-field label {
+  display: flex;
+  align-items: center;
+  gap: var(--dm-space-2);
+  color: var(--dm-color-text);
+  font-size: var(--dm-font-size-base);
+}
+
+.checkbox-field input {
+  width: auto;
+  min-height: 0;
+}
+
 .field-errors,
 .form-errors,
 .errorlist {

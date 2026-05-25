@@ -164,6 +164,18 @@ class ClientForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("slug")
+        self.fields["organization"].help_text = "The organization that owns this integration and scopes its slug."
+        self.fields["name"].label = "Client name"
+        self.fields["name"].help_text = "Operator-facing name for the product, app, or external system using Datamailer."
+        self.fields["slug"].label = "Client slug"
+        self.fields["slug"].help_text = (
+            "Stable identifier used in URLs, support conversations, logs, audit context, and API examples. "
+            "It is not a secret or API key."
+        )
+        self.fields["is_active"].label = "Client is active"
+        self.fields["is_active"].help_text = (
+            "Inactive clients cannot use their API keys for authenticated API activity or sending."
+        )
 
     def clean_slug(self):
         slug = slugify(self.cleaned_data["slug"])

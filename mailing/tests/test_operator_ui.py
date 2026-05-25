@@ -204,6 +204,89 @@ def test_dashboard_empty_states_are_actionable(client, operator):
     assert f'href="{reverse("mailing:client_create")}"'.encode() in response.content
 
 
+def test_client_form_pages_remain_staff_only(client, organization, client_record):
+    create_url = reverse("mailing:client_create")
+    edit_url = reverse("mailing:client_edit", args=[client_record.id])
+
+    assert client.get(create_url).status_code == 302
+    assert client.get(edit_url).status_code == 302
+
+    user = get_user_model().objects.create_user("viewer", "viewer@example.com", "password")
+    client.force_login(user)
+
+    assert client.get(create_url).status_code == 302
+    assert client.get(edit_url).status_code == 302
+
+
+def test_client_create_form_renders_redesigned_sections_and_redirects_to_detail(client, operator, organization):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:client_create"))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Create client" in html
+    assert "Organization scope" in html
+    assert "Integration identity" in html
+    assert "API access state" in html
+    assert "Client slug" in html
+    assert "It is not a secret or API key." in html
+    assert "Inactive clients cannot use their API keys for authenticated API activity or sending." in html
+    assert f'href="{reverse("mailing:client_list")}"' in html
+    assert "Create named API key" not in html
+
+    response = client.post(
+        reverse("mailing:client_create"),
+        {
+            "organization": organization.id,
+            "name": "Course Platform",
+            "slug": "course-platform",
+            "is_active": "on",
+        },
+    )
+
+    created = Client.objects.get(slug="course-platform")
+    assert response.status_code == 302
+    assert response.headers["Location"] == reverse("mailing:client_detail", args=[created.id])
+
+
+def test_client_edit_form_renders_existing_values_and_detail_cancel(client, operator, client_record):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:client_edit", args=[client_record.id]))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Edit client" in html
+    assert f'href="{reverse("mailing:client_detail", args=[client_record.id])}"' in html
+    assert f'value="{client_record.name}"' in html
+    assert f'value="{client_record.slug}"' in html
+    assert "checked" in html
+    assert "Save client" in html
+
+
+def test_client_form_validation_errors_keep_page_structure(client, operator, organization, client_record):
+    client.force_login(operator)
+
+    response = client.post(
+        reverse("mailing:client_create"),
+        {
+            "organization": organization.id,
+            "name": "Duplicate",
+            "slug": client_record.slug,
+            "is_active": "on",
+        },
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Organization scope" in html
+    assert "Integration identity" in html
+    assert "API access state" in html
+    assert "Client slug must be unique within this organization." in html
+    assert 'class="field-errors"' in html
+
+
 def test_rate_hides_unavailable_denominators():
     assert rate(1, 4) == "25.0%"
     assert rate(1, 0) == ""

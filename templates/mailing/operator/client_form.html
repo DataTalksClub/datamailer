@@ -5,13 +5,106 @@
 {% block content %}
   <div class="page-header">
     <div>
+      <div class="breadcrumbs">
+        <a href="{% url 'mailing:client_list' %}">Clients</a>
+        {% if mode == "edit" %}
+          <span>/</span>
+          <a href="{% url 'mailing:client_detail' client.id %}">{{ client.name }}</a>
+        {% endif %}
+      </div>
       <h1>{% if mode == "create" %}Create client{% else %}Edit client{% endif %}</h1>
-      <p>Client slugs are unique within each organization.</p>
+      <p>
+        {% if mode == "create" %}
+          Define an organization-scoped integration before issuing named API keys.
+        {% else %}
+          Update the integration identity and API access state without managing keys on this form.
+        {% endif %}
+      </p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:client_list' %}">All clients</a>
+    {% if mode == "edit" %}
+      <a class="button secondary" href="{% url 'mailing:client_detail' client.id %}">Cancel</a>
+    {% else %}
+      <a class="button secondary" href="{% url 'mailing:client_list' %}">Cancel</a>
+    {% endif %}
   </div>
-  <form method="post">
-    {% include "mailing/operator/_form_fields.html" with form=form %}
-    <div class="toolbar"><button type="submit">Save client</button></div>
+
+  <form class="form-page" method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <section class="form-section" aria-labelledby="client-scope-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="client-scope-heading">Organization scope</h2>
+          <p>A client belongs to one organization. Slugs only need to be unique inside that organization.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full">
+          {{ form.organization.label_tag }}
+          {{ form.organization }}
+          {% if form.organization.help_text %}<div class="helptext">{{ form.organization.help_text }}</div>{% endif %}
+          {% if form.organization.errors %}<div class="field-errors">{{ form.organization.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section" aria-labelledby="client-identity-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="client-identity-heading">Integration identity</h2>
+          <p>Name is shown to operators. Slug is the durable operational identifier for this integration.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.name.label_tag }}
+          {{ form.name }}
+          {% if form.name.help_text %}<div class="helptext">{{ form.name.help_text }}</div>{% endif %}
+          {% if form.name.errors %}<div class="field-errors">{{ form.name.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.slug.label_tag }}
+          {{ form.slug }}
+          {% if form.slug.help_text %}<div class="helptext">{{ form.slug.help_text }}</div>{% endif %}
+          {% if form.slug.errors %}<div class="field-errors">{{ form.slug.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section" aria-labelledby="client-access-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="client-access-heading">API access state</h2>
+          <p>Use inactive when this integration should stop authenticating with Datamailer API keys.</p>
+        </div>
+        {% if form.is_active.value %}
+          <span class="badge success">Active</span>
+        {% else %}
+          <span class="badge warning">Inactive</span>
+        {% endif %}
+      </div>
+      <div class="form-grid">
+        <div class="form-field checkbox-field full">
+          <label>
+            {{ form.is_active }}
+            {{ form.is_active.label }}
+          </label>
+          {% if form.is_active.help_text %}<div class="helptext">{{ form.is_active.help_text }}</div>{% endif %}
+          {% if form.is_active.errors %}<div class="field-errors">{{ form.is_active.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="action-row">
+      {% if mode == "edit" %}
+        <a class="button secondary" href="{% url 'mailing:client_detail' client.id %}">Cancel</a>
+      {% else %}
+        <a class="button secondary" href="{% url 'mailing:client_list' %}">Cancel</a>
+      {% endif %}
+      <button type="submit">{% if mode == "create" %}Create client{% else %}Save client{% endif %}</button>
+    </div>
   </form>
 {% endblock %}
