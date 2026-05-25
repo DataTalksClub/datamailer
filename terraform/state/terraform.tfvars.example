@@ -1,7 +1,6 @@
 aws_region      = "us-east-1"
 project         = "datamailer"
 environment     = "sandbox"
-lock_table_name = "datamailer-sandbox-terraform-locks"
 
 # Optional. Must be globally unique if set.
 # state_bucket_name = "datamailer-sandbox-123456789012-us-east-1-tfstate"
