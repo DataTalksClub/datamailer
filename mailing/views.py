@@ -67,6 +67,7 @@ from mailing.services.operator_ui import (
     audience_breakdowns,
     audience_campaign_history,
     audience_detail_queryset,
+    audience_list_rows,
     audience_queryset,
     audience_recent_events,
     audience_summary,
@@ -431,7 +432,11 @@ def audience_list(request):
     return render(
         request,
         "mailing/operator/audience_list.html",
-        {"audiences": audiences, "pagination_querystring": pagination_querystring(request)},
+        {
+            "audiences": audiences,
+            "audience_rows": audience_list_rows(audiences.object_list),
+            "pagination_querystring": pagination_querystring(request),
+        },
     )
 
 
@@ -463,7 +468,7 @@ def audience_detail(request, audience_id):
     audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
     filters = parse_contact_explorer_filters(request.GET, forced_audience_id=audience.id)
     members = paginate(request, contact_explorer_queryset(filters), per_page=25)
-    member_rows = contact_result_rows(members.object_list)
+    member_rows = contact_result_rows(members.object_list, audience=audience)
     campaigns = paginate(request, audience_campaign_history(audience), per_page=10)
     event_type = request.GET.get("event_type", "")
     events = paginate(request, audience_recent_events(audience, event_type), per_page=25)

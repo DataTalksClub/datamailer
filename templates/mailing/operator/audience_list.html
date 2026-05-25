@@ -15,32 +15,69 @@
   </div>
 
   {% if audiences.object_list %}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Audience</th>
-            <th scope="col">Organization</th>
-            <th scope="col">Members</th>
-            <th scope="col">Subscriptions</th>
-            <th scope="col">Campaigns</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for audience in audiences %}
+    <section class="section" aria-labelledby="audiences-table">
+      <div class="section-header">
+        <div>
+          <h2 id="audiences-table">Audience Health</h2>
+          <p class="muted">Membership, sendable contacts, inactive discovery, and the latest audience activity.</p>
+        </div>
+      </div>
+      <div class="table-wrap audience-table">
+        <table>
+          <thead>
             <tr>
-              <td><a href="{% url 'mailing:audience_detail' audience.id %}">{{ audience.name }}</a></td>
-              <td>{{ audience.organization.name }}</td>
-              <td>{{ audience.contact_count }}</td>
-              <td>{{ audience.subscription_count }}</td>
-              <td>{{ audience.campaign_count }}</td>
+              <th scope="col">Audience</th>
+              <th scope="col">Membership</th>
+              <th scope="col">Inactive / suppressed</th>
+              <th scope="col">Recent activity</th>
+              <th scope="col">Action</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {% for row in audience_rows %}
+              {% with audience=row.audience %}
+                <tr>
+                  <td class="truncate">
+                    <a href="{% url 'mailing:audience_detail' audience.id %}">{{ audience.name }}</a>
+                    <div class="helptext">{{ audience.organization.name }} / {{ audience.slug }}</div>
+                  </td>
+                  <td class="nowrap">
+                    {{ row.member_count }} members
+                    <div class="helptext">{{ row.subscribed_count }} subscribed / {{ audience.subscription_count }} subscriptions</div>
+                  </td>
+                  <td class="nowrap">
+                    <span class="badge neutral">{{ row.inactive_count }} inactive</span>
+                    {% if row.suppressed_count %}
+                      <span class="badge danger">{{ row.suppressed_count }} suppressed</span>
+                    {% else %}
+                      <span class="badge success">No suppression</span>
+                    {% endif %}
+                  </td>
+                  <td class="truncate">
+                    {% if row.recent_campaign %}
+                      <a href="{% url 'mailing:campaign_detail' row.recent_campaign.id %}">{{ row.recent_campaign.subject }}</a>
+                      <div class="helptext">{{ row.recent_campaign.get_status_display }} / {{ row.recent_campaign.updated_at|date:"Y-m-d H:i" }}</div>
+                    {% elif row.recent_event %}
+                      {{ row.recent_event.get_event_type_display }}
+                      <div class="helptext">{{ row.recent_event.created_at|date:"Y-m-d H:i" }}</div>
+                    {% else %}
+                      <span class="muted">No campaign or event activity</span>
+                    {% endif %}
+                  </td>
+                  <td class="nowrap"><a href="{% url 'mailing:audience_detail' audience.id %}">View detail</a></td>
+                </tr>
+              {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
     {% include "mailing/operator/_pagination.html" with page_obj=audiences querystring=pagination_querystring %}
   {% else %}
-    <div class="empty-state">No audiences found.</div>
+    <div class="empty-state">
+      <strong>No audiences yet</strong>
+      <p>Create an audience before importing contacts, assigning tags, or drafting a campaign.</p>
+      <a class="button secondary" href="{% url 'mailing:audience_create' %}">Create audience</a>
+    </div>
   {% endif %}
 {% endblock %}

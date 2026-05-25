@@ -131,6 +131,9 @@ class ContactExplorerFilters:
 @dataclass(frozen=True)
 class ContactResultRow:
     contact: Contact
+    verification_badge: "Badge"
+    validation_badge: "Badge"
+    subscription_badge: "Badge"
     subscription_summary: str
     tag_summary: str
     last_sent_at: object | None
@@ -160,6 +163,18 @@ class CampaignListRow:
     badge: Badge
     timing_label: str
     timing_value: object | None
+
+
+@dataclass(frozen=True)
+class AudienceListRow:
+    audience: Audience
+    member_count: int
+    subscribed_count: int
+    inactive_count: int
+    suppressed_count: int
+    campaign_count: int
+    recent_campaign: Campaign | None
+    recent_event: EmailEvent | None
 
 
 @dataclass(frozen=True)
@@ -640,16 +655,21 @@ def transactional_click_queryset(filters: ContactExplorerFilters):
     return TransactionalMessage.objects.filter(**transactional_scope_filter(filters), first_clicked_at__isnull=False)
 
 
-def contact_result_rows(contacts) -> list[ContactResultRow]:
+def contact_result_rows(contacts, *, audience: Audience | None = None) -> list[ContactResultRow]:
     rows = []
     contact_ids = [contact.id for contact in contacts]
-    recent_issues = recent_contact_issues(contact_ids)
+    recent_issues = recent_contact_issues(contact_ids, audience=audience)
     for contact in contacts:
+        subscriptions = scoped_subscriptions(contact.subscriptions.all(), audience)
+        contact_tags = scoped_contact_tags(contact.contact_tags.all(), audience)
         rows.append(
             ContactResultRow(
                 contact=contact,
-                subscription_summary=subscription_summary(contact.subscriptions.all()),
-                tag_summary=tag_summary(contact.contact_tags.all()),
+                verification_badge=verification_badge(contact),
+                validation_badge=validation_badge(contact),
+                subscription_badge=subscription_badge(contact, subscriptions),
+                subscription_summary=subscription_summary(subscriptions),
+                tag_summary=tag_summary(contact_tags),
                 last_sent_at=max_date(contact.last_campaign_sent_at, contact.last_transactional_sent_at),
                 last_opened_at=max_date(contact.last_campaign_opened_at, contact.last_transactional_opened_at),
                 last_clicked_at=max_date(contact.last_campaign_clicked_at, contact.last_transactional_clicked_at),
@@ -657,6 +677,18 @@ def contact_result_rows(contacts) -> list[ContactResultRow]:
             )
         )
     return rows
+
+
+def scoped_subscriptions(subscriptions, audience: Audience | None):
+    if audience is None:
+        return subscriptions
+    return [subscription for subscription in subscriptions if subscription.audience_id == audience.id]
+
+
+def scoped_contact_tags(contact_tags, audience: Audience | None):
+    if audience is None:
+        return contact_tags
+    return [membership for membership in contact_tags if membership.tag.audience_id == audience.id]
 
 
 def max_date(*values):
@@ -677,7 +709,7 @@ def tag_summary(contact_tags) -> str:
     return ", ".join(labels) or "-"
 
 
-def recent_contact_issues(contact_ids) -> dict[int, str]:
+def recent_contact_issues(contact_ids, *, audience: Audience | None = None) -> dict[int, str]:
     if not contact_ids:
         return {}
     issue_statuses = [
@@ -687,11 +719,10 @@ def recent_contact_issues(contact_ids) -> dict[int, str]:
         CampaignRecipientStatus.COMPLAINED,
         CampaignRecipientStatus.UNSUBSCRIBED,
     ]
-    issues = (
-        CampaignRecipient.objects.filter(contact_id__in=contact_ids, status__in=issue_statuses)
-        .select_related("campaign")
-        .order_by("contact_id", "-created_at", "-id")
-    )
+    issues = CampaignRecipient.objects.filter(contact_id__in=contact_ids, status__in=issue_statuses)
+    if audience is not None:
+        issues = issues.filter(campaign__audience=audience)
+    issues = issues.select_related("campaign").order_by("contact_id", "-created_at", "-id")
     result = {}
     for recipient in issues:
         if recipient.contact_id in result:
@@ -1021,6 +1052,11 @@ def audience_queryset() -> QuerySet[Audience]:
             subscription_count=Count("subscriptions", distinct=True),
             contact_count=Count("subscriptions__contact", distinct=True),
             campaign_count=Count("campaigns", distinct=True),
+            subscribed_count=Count(
+                "subscriptions",
+                filter=Q(subscriptions__status=SubscriptionStatus.SUBSCRIBED),
+                distinct=True,
+            ),
         )
         .order_by("organization__slug", "slug")
     )
@@ -1030,8 +1066,56 @@ def audience_detail_queryset() -> QuerySet[Audience]:
     return Audience.objects.select_related("organization")
 
 
+def audience_list_rows(audiences) -> list[AudienceListRow]:
+    return [
+        AudienceListRow(
+            audience=audience,
+            member_count=audience.contact_count,
+            subscribed_count=audience.subscribed_count,
+            inactive_count=audience_inactive_count(audience),
+            suppressed_count=audience_suppressed_count(audience),
+            campaign_count=audience.campaign_count,
+            recent_campaign=Campaign.objects.filter(audience=audience).select_related("client").order_by("-updated_at", "-id").first(),
+            recent_event=EmailEvent.objects.filter(audience=audience).order_by("-created_at", "-id").first(),
+        )
+        for audience in audiences
+    ]
+
+
+def audience_contacts(audience: Audience) -> QuerySet[Contact]:
+    return Contact.objects.filter(subscriptions__audience=audience).distinct()
+
+
+def audience_inactive_count(audience: Audience) -> int:
+    contacts = audience_contacts(audience)
+    sent_contacts = contacts.filter(
+        Q(campaign_recipients__campaign__audience=audience, campaign_recipients__sent_at__isnull=False)
+        | Q(campaign_recipients__campaign__audience=audience, campaign_recipients__status=CampaignRecipientStatus.SENT)
+    )
+    engaged_contacts = contacts.filter(
+        Q(campaign_recipients__campaign__audience=audience, campaign_recipients__first_opened_at__isnull=False)
+        | Q(campaign_recipients__campaign__audience=audience, campaign_recipients__first_clicked_at__isnull=False)
+        | Q(email_events__audience=audience, email_events__event_type__in=[EmailEventType.OPEN, EmailEventType.CLICK])
+    )
+    return sent_contacts.exclude(pk__in=engaged_contacts.values("pk")).distinct().count()
+
+
+def audience_suppressed_count(audience: Audience) -> int:
+    return (
+        audience_contacts(audience)
+        .filter(
+            Q(global_unsubscribed_at__isnull=False)
+            | Q(hard_bounced_at__isnull=False)
+            | Q(complained_at__isnull=False)
+            | Q(subscriptions__audience=audience, subscriptions__status=SubscriptionStatus.UNSUBSCRIBED)
+        )
+        .distinct()
+        .count()
+    )
+
+
 def audience_summary(audience: Audience) -> list[Stat]:
-    contacts = Contact.objects.filter(subscriptions__audience=audience).distinct()
+    contacts = audience_contacts(audience)
     return [
         Stat("members", "Members", contacts.count()),
         Stat("subscribed", "Subscribed", Subscription.objects.filter(audience=audience, status=SubscriptionStatus.SUBSCRIBED).count()),
@@ -1043,6 +1127,7 @@ def audience_summary(audience: Audience) -> list[Stat]:
         ),
         Stat("verified", "Verified", contacts.filter(verified_at__isnull=False).count()),
         Stat("unverified", "Unverified", contacts.filter(verified_at__isnull=True).count()),
+        Stat("inactive", "Inactive", audience_inactive_count(audience)),
         Stat("global_unsubscribed", "Global unsubscribed", contacts.filter(global_unsubscribed_at__isnull=False).count()),
         Stat("hard_bounced", "Hard bounced", contacts.filter(hard_bounced_at__isnull=False).count()),
         Stat("complained", "Complained", contacts.filter(complained_at__isnull=False).count()),
@@ -1077,7 +1162,7 @@ def count_by_field(queryset, field, *, choices=None):
 
 
 def audience_breakdowns(audience: Audience):
-    contacts = Contact.objects.filter(subscriptions__audience=audience).distinct()
+    contacts = audience_contacts(audience)
     return {
         "validation": count_by_field(contacts, "email_validation_status", choices=EmailValidationStatus.choices),
         "tags": Tag.objects.filter(audience=audience)

@@ -3,21 +3,40 @@
 {% block title %}{{ audience.name }} | Datamailer{% endblock %}
 
 {% block content %}
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{% url 'mailing:audience_list' %}">Audiences</a>
+    <span>/</span>
+    <span>{{ audience.name }}</span>
+  </nav>
+
   <div class="page-header">
     <div>
       <h1>{{ audience.name }}</h1>
       <p>{{ audience.organization.name }} / {{ audience.slug }}</p>
+      <div class="badge-row" aria-label="Audience state">
+        {% for stat in summary %}
+          {% if stat.key == "members" %}<span class="badge neutral">{{ stat.value }} members</span>{% endif %}
+          {% if stat.key == "subscribed" %}<span class="badge success">{{ stat.value }} subscribed</span>{% endif %}
+          {% if stat.key == "inactive" %}<span class="badge neutral">{{ stat.value }} inactive</span>{% endif %}
+          {% if stat.key == "hard_bounced" and stat.value %}<span class="badge danger">{{ stat.value }} hard bounced</span>{% endif %}
+          {% if stat.key == "complained" and stat.value %}<span class="badge danger">{{ stat.value }} complained</span>{% endif %}
+        {% endfor %}
+      </div>
     </div>
     <div class="actions">
-      <a class="button secondary" href="{% url 'mailing:audience_edit' audience.id %}">Edit audience</a>
-      <a class="button secondary" href="{% url 'mailing:tag_create' audience.id %}">Create tag</a>
-      <a class="button secondary" href="{% url 'mailing:audience_list' %}">All audiences</a>
       <a class="button secondary" href="{% url 'mailing:contact_search' %}?audience={{ audience.id }}">Open in explorer</a>
+      <a class="button secondary" href="{% url 'mailing:tag_create' audience.id %}">Create tag</a>
+      <a class="button secondary" href="{% url 'mailing:audience_edit' audience.id %}">Edit audience</a>
     </div>
   </div>
 
-  <section aria-labelledby="audience-summary">
-    <h2 id="audience-summary">Summary</h2>
+  <section class="section audience-summary" aria-labelledby="audience-summary">
+    <div class="section-header">
+      <div>
+        <h2 id="audience-summary">Summary</h2>
+        <p class="muted">Membership health, sendability signals, and engagement at a glance.</p>
+      </div>
+    </div>
     <div class="stats-grid">
       {% for stat in summary %}
         <div class="stat">
@@ -28,30 +47,52 @@
     </div>
   </section>
 
-  <section aria-labelledby="audience-breakdowns">
-    <h2 id="audience-breakdowns">Breakdowns</h2>
+  <section class="section" aria-labelledby="audience-segmentation">
+    <div class="section-header">
+      <div>
+        <h2 id="audience-segmentation">Segmentation</h2>
+        <p class="muted">Tags, validation health, campaign recipient states, and skip reasons.</p>
+      </div>
+    </div>
     <div class="meta-grid">
       <div class="meta-item">
         <span class="meta-label">Validation</span>
-        {% for label, count in breakdowns.validation %}<div>{{ label }}: {{ count }}</div>{% endfor %}
+        <div class="badge-row">
+          {% for label, count in breakdowns.validation %}<span class="badge neutral">{{ label }}: {{ count }}</span>{% endfor %}
+        </div>
       </div>
       <div class="meta-item">
         <span class="meta-label">Tags</span>
-        {% for tag in breakdowns.tags %}<div><a href="{% url 'mailing:tag_detail' tag.id %}">{{ tag.slug }}</a>: {{ tag.count }}</div>{% empty %}<div>-</div>{% endfor %}
+        <div class="tag-cloud">
+          {% for tag in breakdowns.tags %}
+            <a class="badge neutral" href="{% url 'mailing:tag_detail' tag.id %}">{{ tag.slug }}: {{ tag.count }}</a>
+          {% empty %}
+            <span class="badge neutral">No tags</span>
+          {% endfor %}
+        </div>
       </div>
       <div class="meta-item">
         <span class="meta-label">Campaign statuses</span>
-        {% for label, count in breakdowns.campaign_statuses %}<div>{{ label }}: {{ count }}</div>{% endfor %}
+        <div class="badge-row">
+          {% for label, count in breakdowns.campaign_statuses %}<span class="badge neutral">{{ label }}: {{ count }}</span>{% endfor %}
+        </div>
       </div>
       <div class="meta-item">
         <span class="meta-label">Skip reasons</span>
-        {% for label, count in breakdowns.skip_reasons %}<div>{{ label }}: {{ count }}</div>{% endfor %}
+        <div class="badge-row">
+          {% for label, count in breakdowns.skip_reasons %}<span class="badge warning">{{ label }}: {{ count }}</span>{% empty %}<span class="badge success">No skips</span>{% endfor %}
+        </div>
       </div>
     </div>
   </section>
 
-  <section aria-labelledby="audience-members">
-    <h2 id="audience-members">Membership</h2>
+  <section class="section" aria-labelledby="audience-members">
+    <div class="section-header">
+      <div>
+        <h2 id="audience-members">Membership</h2>
+        <p class="muted">Audience-scoped contact exploration with the same filter language as Contact Explorer.</p>
+      </div>
+    </div>
     <form method="get">
       <div class="filter-grid">
         <div>
@@ -135,6 +176,28 @@
           <input id="inactive_since" name="inactive_since" type="date" value="{{ filters.inactive_since|date:'Y-m-d' }}">
         </div>
       </div>
+      <div class="filter-grid">
+        <div>
+          <label>Include tags</label>
+          <div class="checkbox-list">
+            {% for tag in breakdowns.tags %}
+              <label><input type="checkbox" name="include_tags" value="{{ tag.slug }}"{% if tag.slug in filters.include_tags %} checked{% endif %}>{{ tag.slug }}</label>
+            {% empty %}
+              <span class="muted">No tags</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <label>Exclude tags</label>
+          <div class="checkbox-list">
+            {% for tag in breakdowns.tags %}
+              <label><input type="checkbox" name="exclude_tags" value="{{ tag.slug }}"{% if tag.slug in filters.exclude_tags %} checked{% endif %}>{{ tag.slug }}</label>
+            {% empty %}
+              <span class="muted">No tags</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
       <div class="toolbar">
         <button type="submit">Apply filters</button>
         <a class="button secondary" href="{% url 'mailing:audience_detail' audience.id %}">Clear</a>
@@ -142,34 +205,44 @@
     </form>
 
     {% if member_rows %}
-      <div class="table-wrap">
+      <div class="table-wrap audience-member-table">
         <table>
           <thead>
             <tr>
               <th scope="col">Email</th>
-              <th scope="col">Validation</th>
+              <th scope="col">Sendability</th>
               <th scope="col">Subscriptions</th>
               <th scope="col">Tags</th>
-              <th scope="col">Last sent</th>
-              <th scope="col">Last opened</th>
-              <th scope="col">Last clicked</th>
+              <th scope="col">Engagement</th>
               <th scope="col">Recent issue</th>
             </tr>
           </thead>
           <tbody>
             {% for row in member_rows %}
               <tr>
-                <td>
-                  <a href="{% url 'mailing:contact_detail' row.contact.normalized_email %}">{{ row.contact.email }}</a>
-                  <div class="muted">{{ row.contact.normalized_email }}</div>
+                <td class="email-cell">
+                  <a class="data-truncate" href="{% url 'mailing:contact_detail' row.contact.normalized_email %}" title="{{ row.contact.email }}">{{ row.contact.email }}</a>
+                  <div class="helptext">{{ row.contact.normalized_email }}</div>
                 </td>
-                <td><span class="badge">{{ row.contact.get_email_validation_status_display }}</span></td>
-                <td class="truncate">{{ row.subscription_summary }}</td>
-                <td class="truncate">{{ row.tag_summary }}</td>
-                <td class="nowrap">{{ row.last_sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="nowrap">{{ row.last_opened_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="nowrap">{{ row.last_clicked_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                <td class="truncate">{{ row.recent_issue|default:"-" }}</td>
+                <td>
+                  <div class="badge-row">
+                    <span class="badge {{ row.subscription_badge.tone }}">{{ row.subscription_badge.label }}</span>
+                    <span class="badge {{ row.validation_badge.tone }}">{{ row.validation_badge.label }}</span>
+                    <span class="badge {{ row.verification_badge.tone }}">{{ row.verification_badge.label }}</span>
+                  </div>
+                  {% if row.contact.global_unsubscribed_at %}<div><span class="badge danger">Global unsubscribe</span></div>{% endif %}
+                  {% if row.contact.hard_bounced_at %}<div><span class="badge danger">Hard bounce</span></div>{% endif %}
+                  {% if row.contact.complained_at %}<div><span class="badge danger">Complaint</span></div>{% endif %}
+                  {% if row.contact.email_validation_reason %}<div class="helptext truncate">{{ row.contact.email_validation_reason }}</div>{% endif %}
+                </td>
+                <td><span class="data-truncate" title="{{ row.subscription_summary }}">{{ row.subscription_summary }}</span></td>
+                <td><span class="data-truncate" title="{{ row.tag_summary }}">{{ row.tag_summary }}</span></td>
+                <td>
+                  <div class="nowrap">Sent: {{ row.last_sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                  <div class="nowrap">Opened: {{ row.last_opened_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                  <div class="nowrap">Clicked: {{ row.last_clicked_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                </td>
+                <td><span class="data-truncate" title="{{ row.recent_issue|default:'-' }}">{{ row.recent_issue|default:"-" }}</span></td>
               </tr>
             {% endfor %}
           </tbody>
@@ -181,8 +254,13 @@
     {% endif %}
   </section>
 
-  <section aria-labelledby="audience-campaigns">
-    <h2 id="audience-campaigns">Campaign History</h2>
+  <section class="section" aria-labelledby="audience-campaigns">
+    <div class="section-header">
+      <div>
+        <h2 id="audience-campaigns">Campaign History</h2>
+        <p class="muted">Recent broadcasts using this audience and their delivery/engagement totals.</p>
+      </div>
+    </div>
     {% if campaigns.object_list %}
       <div class="table-wrap">
         <table>
@@ -200,7 +278,10 @@
           <tbody>
             {% for campaign in campaigns %}
               <tr>
-                <td class="truncate"><a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a></td>
+                <td class="truncate">
+                  <a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a>
+                  <div class="helptext">{{ campaign.updated_at|date:"Y-m-d H:i" }}</div>
+                </td>
                 <td>{{ campaign.client.name }}</td>
                 <td><span class="badge">{{ campaign.get_status_display }}</span></td>
                 <td>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</td>
@@ -218,8 +299,13 @@
     {% endif %}
   </section>
 
-  <section aria-labelledby="audience-events">
-    <h2 id="audience-events">Recent Events</h2>
+  <section class="detail-section secondary-section" aria-labelledby="audience-events">
+    <div class="section-header">
+      <div>
+        <h2 id="audience-events">Recent Events</h2>
+        <p class="muted">Latest delivery, engagement, and unsubscribe events tied to this audience.</p>
+      </div>
+    </div>
     <form class="toolbar" method="get">
       <div>
         <label for="event_type">Event type</label>
@@ -253,8 +339,8 @@
     {% endif %}
   </section>
 
-  <section aria-labelledby="audit">
-    <h2 id="audit">Audit</h2>
+  <details class="detail-section secondary-section">
+    <summary>Audit</summary>
     {% include "mailing/operator/_audit.html" with audit_rows=audit_rows %}
-  </section>
+  </details>
 {% endblock %}

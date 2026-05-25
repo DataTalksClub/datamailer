@@ -759,6 +759,17 @@ def test_campaign_list_empty_state_is_actionable(client, operator):
     assert f'href="{reverse("mailing:campaign_create")}"'.encode() in response.content
 
 
+def test_audience_list_empty_state_is_actionable(client, operator):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:audience_list"))
+
+    assert response.status_code == 200
+    assert b"No audiences yet" in response.content
+    assert b"Create audience" in response.content
+    assert f'href="{reverse("mailing:audience_create")}"'.encode() in response.content
+
+
 def test_audience_list_and_detail_render_summaries_members_history_and_events(
     client,
     operator,
@@ -780,8 +791,10 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
         email_validation_status=EmailValidationStatus.NO_MX,
         hard_bounced_at=timezone.now(),
     )
+    inactive = create_subscribed_contact("inactive@example.com", audience, client_record)
     tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
     ContactTag.objects.create(contact=valid, tag=tag)
+    ContactTag.objects.create(contact=inactive, tag=tag)
     CampaignRecipient.objects.create(
         campaign=campaign,
         contact=valid,
@@ -796,6 +809,13 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
         email=invalid.email,
         status=CampaignRecipientStatus.SKIPPED,
         skip_reason=CampaignRecipientSkipReason.INVALID_EMAIL,
+    )
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=inactive,
+        email=inactive.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=timezone.now(),
     )
     EmailEvent.objects.create(
         contact=valid,
@@ -813,20 +833,97 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
         {"email_validation_status": EmailValidationStatus.NO_MX},
     )
 
-    assert summary["members"] == 2
-    assert summary["subscribed"] == 2
+    assert summary["members"] == 3
+    assert summary["subscribed"] == 3
+    assert summary["inactive"] == 1
     assert summary["hard_bounced"] == 1
     assert list_response.status_code == 200
-    assert b"DataTalksClub" in list_response.content
+    list_html = list_response.content.decode()
+    assert "Audience Health" in list_html
+    assert "3 members" in list_html
+    assert "3 subscribed" in list_html
+    assert "1 inactive" in list_html
+    assert "1 suppressed" in list_html
+    assert "Weekly update" in list_html
+    assert f'href="{reverse("mailing:audience_detail", args=[audience.id])}"' in list_html
     assert detail_response.status_code == 200
-    assert b"Breakdowns" in detail_response.content
-    assert b"No MX" in detail_response.content
-    assert b"invalid@example.com" in detail_response.content
-    assert b'href="/contacts/invalid@example.com/"' in detail_response.content
-    assert b'href="/contacts/valid@example.com/"' in detail_response.content
-    assert b"Campaign History" in detail_response.content
-    assert b"Recent Events" in detail_response.content
-    assert b"reason: tracking" in detail_response.content
+    detail_html = detail_response.content.decode()
+    assert "Segmentation" in detail_html
+    assert "Membership" in detail_html
+    assert "Inactive since" in detail_html
+    assert 'name="include_tags" value="newsletter"' in detail_html
+    assert 'class="table-wrap audience-member-table"' in detail_html
+    assert "No MX" in detail_html
+    assert "Hard bounced" in detail_html
+    assert "invalid@example.com" in detail_html
+    assert 'href="/contacts/invalid@example.com/"' in detail_html
+    assert "/operator/" not in detail_html
+    assert "Campaign History" in detail_html
+    assert "Recent Events" in detail_html
+    assert "reason: tracking" in detail_html
+
+
+def test_audience_detail_membership_summaries_are_scoped_to_current_audience(
+    client,
+    operator,
+    organization,
+    audience,
+    client_record,
+    campaign,
+):
+    client.force_login(operator)
+    other_organization = Organization.objects.create(name="AI Shipping Labs", slug="ai-shipping-labs")
+    other_audience = Audience.objects.create(
+        organization=other_organization,
+        name="AI Shipping Labs",
+        slug="ai-shipping-labs",
+    )
+    other_client = Client.objects.create(
+        organization=other_organization,
+        name="ASL Platform",
+        slug="asl-platform",
+    )
+    contact = create_subscribed_contact("multi@example.com", audience, client_record)
+    Subscription.objects.create(
+        contact=contact,
+        audience=other_audience,
+        client=other_client,
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
+    current_tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+    other_tag = Tag.objects.create(audience=other_audience, name="Founder", slug="founder")
+    ContactTag.objects.create(contact=contact, tag=current_tag)
+    ContactTag.objects.create(contact=contact, tag=other_tag)
+    other_campaign = Campaign.objects.create(
+        audience=other_audience,
+        client=other_client,
+        subject="Other audience failure",
+        status="sent",
+    )
+    CampaignRecipient.objects.create(
+        campaign=other_campaign,
+        contact=contact,
+        email=contact.email,
+        status=CampaignRecipientStatus.FAILED,
+    )
+    CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=contact,
+        email=contact.email,
+        status=CampaignRecipientStatus.SENT,
+        sent_at=timezone.now(),
+    )
+
+    response = client.get(reverse("mailing:audience_detail", args=[audience.id]), {"q": "multi@example.com"})
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "multi@example.com" in html
+    assert "datatalks-club/dtc-courses: subscribed" in html
+    assert "datatalks-club/newsletter" in html
+    assert "ai-shipping-labs/asl-platform" not in html
+    assert "ai-shipping-labs/founder" not in html
+    assert "Other audience failure" not in html
 
 
 def test_audience_recent_events_filters_by_type(audience, client_record):
