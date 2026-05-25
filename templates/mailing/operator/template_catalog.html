@@ -26,8 +26,8 @@
     <button type="submit">Filter</button>
   </form>
 
-  {% if templates.object_list %}
-    <div class="table-wrap">
+  {% if template_rows %}
+    <div class="table-wrap template-table">
       <table>
         <thead>
           <tr>
@@ -40,32 +40,42 @@
           </tr>
         </thead>
         <tbody>
-          {% for template in templates.object_list %}
+          {% for row in template_rows %}
             <tr>
               <td>
-                <a href="{% url 'mailing:template_detail' template.id %}"><code>{{ template.key }}</code></a>
-                <div class="muted">{{ template.name }}</div>
+                <a href="{% url 'mailing:template_detail' row.template.id %}"><code>{{ row.template.key }}</code></a>
+                <div class="muted">{{ row.template.name }}</div>
               </td>
-              <td>{{ template.client.name }}<div class="muted">{{ template.client.slug }}</div></td>
+              <td>{{ row.template.client.name }}<div class="muted">{{ row.template.client.slug }}</div></td>
               <td>
-                {% if template.is_active %}
+                {% if row.template.is_active %}
                   <span class="badge success">Active</span>
                 {% else %}
                   <span class="badge danger">Inactive</span>
                 {% endif %}
               </td>
               <td>
-                {% if template.required_context %}
-                  <code>{{ template.required_context }}</code>
+                {% if row.requirements %}
+                  <div class="code-list" aria-label="Required context">
+                    {% for requirement in row.requirements %}
+                      <code title="{{ requirement.description|default:'Required by this template.' }}">{{ requirement.name }}</code>
+                    {% endfor %}
+                    {% if row.hidden_requirement_count %}
+                      <span class="badge neutral">+{{ row.hidden_requirement_count }}</span>
+                    {% endif %}
+                  </div>
                 {% else %}
                   <span class="muted">None</span>
                 {% endif %}
               </td>
               <td>
-                {{ template.total_message_count }}
-                <div class="muted">queued {{ template.queued_count }} / sent {{ template.sent_count }} / skipped {{ template.skipped_count }} / failed {{ template.failed_count }}</div>
+                {{ row.template.total_message_count }}
+                <div class="metric-stack">
+                  <span>Queued {{ row.template.queued_count }}</span>
+                  <span>Sent {{ row.template.sent_count }} / Skipped {{ row.template.skipped_count }} / Failed {{ row.template.failed_count }}</span>
+                </div>
               </td>
-              <td class="nowrap">{{ template.updated_at|date:"Y-m-d H:i" }}</td>
+              <td class="nowrap">{{ row.template.updated_at|date:"Y-m-d H:i" }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -73,6 +83,9 @@
     </div>
     {% include "mailing/operator/_pagination.html" with page_obj=templates querystring=pagination_querystring %}
   {% else %}
-    <div class="empty-state">No transactional templates found.</div>
+    <div class="empty-state">
+      <strong>No transactional templates found.</strong>
+      <div class="muted">Adjust the client filter or seed a transactional template for this client.</div>
+    </div>
   {% endif %}
 {% endblock %}

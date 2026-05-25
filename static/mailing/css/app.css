@@ -772,6 +772,38 @@ tr:last-child td {
   width: 24%;
 }
 
+.template-table table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.template-table th:first-child,
+.template-table td:first-child {
+  width: 24%;
+}
+
+.template-table th:nth-child(2),
+.template-table td:nth-child(2) {
+  width: 18%;
+}
+
+.template-table th:nth-child(4),
+.template-table td:nth-child(4) {
+  width: 24%;
+}
+
+.code-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dm-space-2);
+  min-width: 0;
+}
+
+.code-list code,
+.template-preview-subject {
+  overflow-wrap: anywhere;
+}
+
 .api-key-table table {
   min-width: 1040px;
   table-layout: fixed;

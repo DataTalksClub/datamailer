@@ -1682,6 +1682,69 @@ def test_transactional_template_catalog_is_staff_only(client, operator, client_r
     assert b"https://client.example/verify/placeholder" in detail_response.content
     assert b"Verify at https://client.example/verify/placeholder" in detail_response.content
     assert b'href="/contacts/person@example.com/"' in detail_response.content
+    assert b'<span class="badge success">Sent</span>' in detail_response.content
+
+
+def test_transactional_template_catalog_filters_paginates_and_summarizes_context(client, operator, organization):
+    client.force_login(operator)
+    selected_client = Client.objects.create(organization=organization, name="Selected Client", slug="selected-client")
+    other_client = Client.objects.create(organization=organization, name="Other Client", slug="other-client")
+    for index in range(26):
+        EmailTemplate.objects.create(
+            client=selected_client,
+            key=f"selected-template-{index:02d}",
+            name=f"Selected Template {index:02d}",
+            subject="Subject",
+            required_context=[
+                {"name": "first_name", "description": "Recipient first name."},
+                {"name": "verification_url", "description": "Verification URL."},
+                {"name": "product_name", "description": "Product name."},
+                {"name": "support_email", "description": "Support address."},
+            ],
+        )
+    EmailTemplate.objects.create(
+        client=other_client,
+        key="other-template",
+        name="Other Template",
+        subject="Subject",
+    )
+
+    response = client.get(reverse("mailing:template_catalog"), {"client": selected_client.id})
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "selected-template-00" in html
+    assert "other-template" not in html
+    assert "first_name" in html
+    assert "verification_url" in html
+    assert "+1" in html
+    assert "{&#x27;name&#x27;" not in html
+    assert f"?client={selected_client.id}&amp;page=2" in html
+
+
+def test_transactional_template_pages_show_operational_empty_states(client, operator, client_record):
+    client.force_login(operator)
+    template = EmailTemplate.objects.create(
+        client=client_record,
+        key="empty-context",
+        name="Empty Context",
+        subject="",
+        text_body="",
+        html_body="",
+        required_context=[],
+        example_context={},
+    )
+
+    filtered_empty = client.get(reverse("mailing:template_catalog"), {"client": client_record.id + 1000})
+    detail_response = client.get(reverse("mailing:template_detail", args=[template.id]))
+
+    assert filtered_empty.status_code == 200
+    assert b"Adjust the client filter" in filtered_empty.content
+    assert detail_response.status_code == 200
+    assert b"This template can render without caller-supplied context." in detail_response.content
+    assert b"Preview rendering will use an empty context." in detail_response.content
+    assert b"Add a subject, text body, or HTML body before using this template." in detail_response.content
+    assert b"Messages sent with this template will appear here for debugging." in detail_response.content
 
 
 def test_contact_detail_paginates_events(client, operator, campaign, client_record, audience):

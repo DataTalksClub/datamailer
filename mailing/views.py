@@ -100,6 +100,8 @@ from mailing.services.transactional import TransactionalSendRejected, send_trans
 from mailing.services.transactional_catalog import (
     catalog_context,
     filter_transactional_templates,
+    recent_message_rows,
+    template_catalog_rows,
     transactional_template_queryset,
 )
 
@@ -161,6 +163,7 @@ def template_catalog(request):
         "mailing/operator/template_catalog.html",
         {
             "templates": templates,
+            "template_rows": template_catalog_rows(templates.object_list),
             "clients": clients,
             "active_client_id": int(client_id) if client_id.isdigit() else "",
             "pagination_querystring": pagination_querystring(request),
@@ -175,7 +178,7 @@ def template_detail(request, template_id):
     return render(
         request,
         "mailing/operator/template_detail.html",
-        catalog_context(template) | {"recent_messages": recent_messages},
+        catalog_context(template) | {"recent_message_rows": recent_message_rows(recent_messages)},
     )
 
 

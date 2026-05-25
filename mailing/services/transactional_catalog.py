@@ -4,6 +4,7 @@ from django.db.models import Count, Q
 
 from mailing.models import EmailTemplate, TransactionalMessageStatus
 from mailing.services.api import ApiValidationError
+from mailing.services.operator_ui import Badge, delivery_tone
 from mailing.services.transactional_rendering import render_template_string
 
 
@@ -11,6 +12,19 @@ from mailing.services.transactional_rendering import render_template_string
 class ContextRequirement:
     name: str
     description: str = ""
+
+
+@dataclass(frozen=True)
+class TemplateCatalogRow:
+    template: EmailTemplate
+    requirements: tuple[ContextRequirement, ...]
+    hidden_requirement_count: int
+
+
+@dataclass(frozen=True)
+class RecentMessageRow:
+    message: object
+    badge: Badge
 
 
 def normalize_required_context(value):
@@ -77,6 +91,30 @@ def filter_transactional_templates(queryset, client_id):
     if str(client_id).isdigit():
         return queryset.filter(client_id=client_id)
     return queryset
+
+
+def template_catalog_rows(templates, *, visible_requirements=3):
+    rows = []
+    for template in templates:
+        requirements = normalize_required_context(template.required_context)
+        rows.append(
+            TemplateCatalogRow(
+                template=template,
+                requirements=requirements[:visible_requirements],
+                hidden_requirement_count=max(len(requirements) - visible_requirements, 0),
+            )
+        )
+    return rows
+
+
+def recent_message_rows(messages):
+    return tuple(
+        RecentMessageRow(
+            message=message,
+            badge=Badge(message.get_status_display(), delivery_tone(message.status)),
+        )
+        for message in messages
+    )
 
 
 def catalog_context(template):
