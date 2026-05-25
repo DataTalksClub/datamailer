@@ -5,13 +5,72 @@
 {% block content %}
   <div class="page-header">
     <div>
+      <div class="breadcrumbs">
+        <a href="{% url 'mailing:audience_list' %}">Audiences</a>
+        <span>/</span>
+        <a href="{% url 'mailing:audience_detail' audience.id %}">{{ audience.name }}</a>
+      </div>
       <h1>{% if mode == "create" %}Create tag{% else %}Edit tag{% endif %}</h1>
-      <p>{{ audience.name }} / {{ audience.slug }}</p>
+      <p>{% if mode == "create" %}Add a reusable segment tag to this audience.{% else %}Update this tag without moving it to another audience.{% endif %}</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:audience_detail' audience.id %}">Audience</a>
+    <a class="button secondary" href="{% url 'mailing:audience_detail' audience.id %}">Cancel</a>
   </div>
-  <form method="post">
-    {% include "mailing/operator/_form_fields.html" with form=form %}
-    <div class="toolbar"><button type="submit">Save tag</button></div>
+
+  <form class="form-page" method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <section class="form-section" aria-labelledby="tag-scope-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="tag-scope-heading">Parent audience</h2>
+          <p>This tag belongs to exactly one audience. Its slug only needs to be unique within that audience.</p>
+        </div>
+      </div>
+      <dl class="meta-grid">
+        <div class="meta-item">
+          <dt class="meta-label">Audience</dt>
+          <dd>{{ audience.name }}</dd>
+        </div>
+        <div class="meta-item">
+          <dt class="meta-label">Audience slug</dt>
+          <dd>{{ audience.slug }}</dd>
+        </div>
+        <div class="meta-item">
+          <dt class="meta-label">Organization</dt>
+          <dd>{{ audience.organization.name }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="form-section" aria-labelledby="tag-identity-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="tag-identity-heading">Tag identity</h2>
+          <p>Name is shown to operators. Slug is the stable segment identifier inside {{ audience.name }}.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.name.label_tag }}
+          {{ form.name }}
+          {% if form.name.help_text %}<div class="helptext">{{ form.name.help_text }}</div>{% endif %}
+          {% if form.name.errors %}<div class="field-errors">{{ form.name.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.slug.label_tag }}
+          {{ form.slug }}
+          {% if form.slug.help_text %}<div class="helptext">{{ form.slug.help_text }}</div>{% endif %}
+          {% if form.slug.errors %}<div class="field-errors">{{ form.slug.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="action-row">
+      <a class="button secondary" href="{% url 'mailing:audience_detail' audience.id %}">Cancel</a>
+      <button type="submit">{% if mode == "create" %}Create tag{% else %}Save tag{% endif %}</button>
+    </div>
   </form>
 {% endblock %}

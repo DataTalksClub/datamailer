@@ -5,13 +5,62 @@
 {% block content %}
   <div class="page-header">
     <div>
+      <div class="breadcrumbs"><a href="{% url 'mailing:audience_list' %}">Audiences</a></div>
       <h1>{% if mode == "create" %}Create audience{% else %}Edit audience{% endif %}</h1>
-      <p>Audience slugs are unique within each organization.</p>
+      <p>{% if mode == "create" %}Define a new organization-scoped audience for contacts and campaigns.{% else %}Update this audience without changing memberships or campaign history.{% endif %}</p>
     </div>
-    <a class="button secondary" href="{% url 'mailing:audience_list' %}">All audiences</a>
+    <a class="button secondary" href="{% url 'mailing:audience_list' %}">Cancel</a>
   </div>
-  <form method="post">
-    {% include "mailing/operator/_form_fields.html" with form=form %}
-    <div class="toolbar"><button type="submit">Save audience</button></div>
+
+  <form class="form-page" method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <section class="form-section" aria-labelledby="audience-scope-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="audience-scope-heading">Organization scope</h2>
+          <p>An audience belongs to one organization. The same slug can exist in another organization, but not in this one.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full">
+          {{ form.organization.label_tag }}
+          {{ form.organization }}
+          {% if form.organization.help_text %}<div class="helptext">{{ form.organization.help_text }}</div>{% endif %}
+          {% if form.organization.errors %}<div class="field-errors">{{ form.organization.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section" aria-labelledby="audience-identity-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="audience-identity-heading">Audience identity</h2>
+          <p>Name is operator-facing. Slug is the stable identifier inside the selected organization.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.name.label_tag }}
+          {{ form.name }}
+          {% if form.name.help_text %}<div class="helptext">{{ form.name.help_text }}</div>{% endif %}
+          {% if form.name.errors %}<div class="field-errors">{{ form.name.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.slug.label_tag }}
+          {{ form.slug }}
+          {% if form.slug.help_text %}<div class="helptext">{{ form.slug.help_text }}</div>{% endif %}
+          {% if form.slug.errors %}<div class="field-errors">{{ form.slug.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="action-row">
+      <a class="button secondary" href="{% url 'mailing:audience_list' %}">Cancel</a>
+      <button type="submit">{% if mode == "create" %}Create audience{% else %}Save audience{% endif %}</button>
+    </div>
   </form>
 {% endblock %}

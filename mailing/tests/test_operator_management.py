@@ -53,11 +53,14 @@ def create_contact(email="person@example.com", **kwargs):
 
 
 def test_management_views_require_staff(client, nonstaff, audience, client_record):
+    tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
     routes = [
         reverse("mailing:client_list"),
         reverse("mailing:client_detail", args=[client_record.id]),
         reverse("mailing:audience_create"),
+        reverse("mailing:audience_edit", args=[audience.id]),
         reverse("mailing:tag_create", args=[audience.id]),
+        reverse("mailing:tag_edit", args=[tag.id]),
     ]
 
     for route in routes:
@@ -179,16 +182,54 @@ def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organ
         reverse("mailing:audience_create"),
         {"organization": organization.id, "name": "Duplicate", "slug": audience.slug},
     )
+    duplicate_audience_html = duplicate_audience.content.decode()
     assert duplicate_audience.status_code == 200
     assert b"Audience slug must be unique" in duplicate_audience.content
+    assert '<div class="field-errors"><ul class="errorlist" id="id_slug_error">' in duplicate_audience_html
 
     Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
     duplicate_tag = client.post(
         reverse("mailing:tag_create", args=[audience.id]),
         {"name": "Newsletter again", "slug": "newsletter"},
     )
+    duplicate_tag_html = duplicate_tag.content.decode()
     assert duplicate_tag.status_code == 200
     assert b"Tag slug must be unique" in duplicate_tag.content
+    assert '<div class="field-errors"><ul class="errorlist" id="id_slug_error">' in duplicate_tag_html
+
+
+def test_audience_and_tag_form_success_redirects_are_preserved(client, operator, organization, audience):
+    client.force_login(operator)
+
+    created_audience_response = client.post(
+        reverse("mailing:audience_create"),
+        {"organization": organization.id, "name": "Course Alumni", "slug": "course-alumni"},
+    )
+    created_audience = Audience.objects.get(slug="course-alumni")
+    assert created_audience_response.status_code == 302
+    assert created_audience_response["Location"] == reverse("mailing:audience_detail", args=[created_audience.id])
+
+    edit_audience_response = client.post(
+        reverse("mailing:audience_edit", args=[created_audience.id]),
+        {"organization": organization.id, "name": "Course Alumni Updated", "slug": "course-alumni"},
+    )
+    assert edit_audience_response.status_code == 302
+    assert edit_audience_response["Location"] == reverse("mailing:audience_detail", args=[created_audience.id])
+
+    created_tag_response = client.post(
+        reverse("mailing:tag_create", args=[audience.id]),
+        {"name": "Newsletter", "slug": "newsletter"},
+    )
+    created_tag = Tag.objects.get(audience=audience, slug="newsletter")
+    assert created_tag_response.status_code == 302
+    assert created_tag_response["Location"] == reverse("mailing:tag_detail", args=[created_tag.id])
+
+    edit_tag_response = client.post(
+        reverse("mailing:tag_edit", args=[created_tag.id]),
+        {"name": "Newsletter Updated", "slug": "newsletter"},
+    )
+    assert edit_tag_response.status_code == 302
+    assert edit_tag_response["Location"] == reverse("mailing:tag_detail", args=[created_tag.id])
 
 
 def test_client_create_edit_validation_and_audit(client, operator, organization):

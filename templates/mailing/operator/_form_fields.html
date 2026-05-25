@@ -7,6 +7,7 @@
     <div class="form-field{% if field.field.widget.input_type == 'textarea' %} full{% endif %}">
       {{ field.label_tag }}
       {{ field }}
+      {% if field.help_text %}<div class="helptext">{{ field.help_text }}</div>{% endif %}
       {% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
     </div>
   {% endfor %}

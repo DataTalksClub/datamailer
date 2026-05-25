@@ -770,6 +770,56 @@ def test_audience_list_empty_state_is_actionable(client, operator):
     assert f'href="{reverse("mailing:audience_create")}"'.encode() in response.content
 
 
+def test_audience_create_and_edit_forms_use_operational_layout(client, operator, audience):
+    client.force_login(operator)
+
+    create_response = client.get(reverse("mailing:audience_create"))
+    edit_response = client.get(reverse("mailing:audience_edit", args=[audience.id]))
+
+    assert create_response.status_code == 200
+    assert edit_response.status_code == 200
+    for html in (create_response.content.decode(), edit_response.content.decode()):
+        assert '<form class="form-page" method="post" novalidate>' in html
+        assert "Organization scope" in html
+        assert "Audience identity" in html
+        assert "The selected organization scopes this audience and its slug." in html
+        assert "Lowercase identifier; must be unique within the selected organization." in html
+        assert "Audience name" in html
+        assert "Audience slug" in html
+        assert f'href="{reverse("mailing:audience_list")}"' in html
+        assert 'class="action-row"' in html
+        assert 'class="button secondary"' in html
+    assert "Create audience" in create_response.content.decode()
+    assert "Save audience" in edit_response.content.decode()
+
+
+def test_tag_create_and_edit_forms_show_parent_scope_and_actions(client, operator, audience):
+    client.force_login(operator)
+    tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
+
+    create_response = client.get(reverse("mailing:tag_create", args=[audience.id]))
+    edit_response = client.get(reverse("mailing:tag_edit", args=[tag.id]))
+
+    assert create_response.status_code == 200
+    assert edit_response.status_code == 200
+    for html in (create_response.content.decode(), edit_response.content.decode()):
+        assert '<form class="form-page" method="post" novalidate>' in html
+        assert "Parent audience" in html
+        assert "This tag belongs to exactly one audience." in html
+        assert "Tag identity" in html
+        assert "Lowercase identifier; must be unique within this audience." in html
+        assert "Tag name" in html
+        assert "Tag slug" in html
+        assert audience.name in html
+        assert audience.slug in html
+        assert audience.organization.name in html
+        assert f'href="{reverse("mailing:audience_detail", args=[audience.id])}"' in html
+        assert 'class="action-row"' in html
+        assert 'class="button secondary"' in html
+    assert "Create tag" in create_response.content.decode()
+    assert "Save tag" in edit_response.content.decode()
+
+
 def test_audience_list_and_detail_render_summaries_members_history_and_events(
     client,
     operator,

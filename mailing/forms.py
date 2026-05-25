@@ -127,6 +127,15 @@ class AudienceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("slug")
+        self.fields["organization"].help_text = (
+            "The selected organization scopes this audience and its slug."
+        )
+        self.fields["name"].label = "Audience name"
+        self.fields["name"].help_text = "Operator-facing name shown in lists and campaign setup."
+        self.fields["slug"].label = "Audience slug"
+        self.fields["slug"].help_text = (
+            "Lowercase identifier; must be unique within the selected organization."
+        )
 
     def clean_slug(self):
         slug = slugify(self.cleaned_data["slug"])
@@ -206,6 +215,10 @@ class TagForm(forms.ModelForm):
     def __init__(self, *args, audience=None, **kwargs):
         self.audience = audience or getattr(kwargs.get("instance"), "audience", None)
         super().__init__(*args, **kwargs)
+        self.fields["name"].label = "Tag name"
+        self.fields["name"].help_text = "Operator-facing segment name inside this audience."
+        self.fields["slug"].label = "Tag slug"
+        self.fields["slug"].help_text = "Lowercase identifier; must be unique within this audience."
 
     def clean_slug(self):
         slug = slugify(self.cleaned_data["slug"] or self.cleaned_data.get("name", ""))

@@ -216,6 +216,12 @@ textarea:focus-visible,
   font-size: var(--dm-font-size-sm);
 }
 
+.meta-item dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -449,6 +455,24 @@ a.compact-row:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--dm-space-4);
+}
+
+.form-page {
+  max-width: 760px;
+}
+
+.form-section {
+  padding: var(--dm-space-5) 0;
+  border-top: 1px solid var(--dm-color-border);
+}
+
+.form-section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.form-section .section-header {
+  margin: 0 0 var(--dm-space-3);
 }
 
 .form-field.full {
