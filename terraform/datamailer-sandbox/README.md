@@ -127,6 +127,24 @@ Use this for inbox-style tests:
 2. Wait for SES receiving to write a raw MIME object under the configured `raw/` prefix.
 3. Inspect the S3 object to verify headers, body, unsubscribe links, and tracking links.
 
+Fixture-first inspection does not require AWS credentials:
+
+```bash
+uv run python scripts/inspect_inbound_mail.py \
+  --fixture tests/fixtures/inbound/sample.eml \
+  --expect-to datamailer@dtcdev.click \
+  --expect-subject "inbound smoke" \
+  --expect-unsubscribe-link \
+  --expect-tracking-substring track.example.com
+```
+
+After inbound S3 is receiving real mail, inspect the latest object from Terraform output, or fetch an exact key:
+
+```bash
+uv run python scripts/inspect_inbound_mail.py --terraform-dir terraform/datamailer-sandbox --latest
+uv run python scripts/inspect_inbound_mail.py --terraform-dir terraform/datamailer-sandbox --s3-key raw/example-message
+```
+
 ## Placement
 
 Keep this Terraform in Datamailer for now. It is intentionally self-contained so it can later be moved to a shared DataTalksClub/AI Shipping Labs infrastructure repository if we decide to centralize email infrastructure.

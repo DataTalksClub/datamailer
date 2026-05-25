@@ -1,0 +1,31 @@
+From: Datamailer <sender@example.com>
+To: datamailer@dtcdev.click
+Subject: Datamailer inbound smoke
+Date: Mon, 25 May 2026 10:00:00 +0000
+Message-ID: <sample-inbound@example.com>
+List-Unsubscribe: <https://mail.example.com/unsubscribe/sample>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset="utf-8"
+
+Hello Datamailer,
+
+This fixture validates inbound MIME inspection.
+Unsubscribe: https://mail.example.com/unsubscribe/sample
+Open: https://track.example.com/open/sample
+
+--alt
+Content-Type: text/html; charset="utf-8"
+
+<!doctype html>
+<html>
+  <body>
+    <p>Hello Datamailer, this fixture validates inbound MIME inspection.</p>
+    <a href="https://mail.example.com/unsubscribe/sample">Unsubscribe</a>
+    <a href="https://track.example.com/click/sample">Read more</a>
+  </body>
+</html>
+
+--alt--
