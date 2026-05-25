@@ -54,3 +54,13 @@ Lambda workers should expose pure Python handlers that accept AWS event dictiona
 - Tests that call AWS-compatible endpoints must pass `endpoint_url`.
 - Real AWS credentials are reserved for staging smoke tests.
 - Standard SQS is at-least-once, so worker tests must cover idempotency as sender logic is added.
+
+## Sandbox SES Event Smoke
+
+Run the SES mailbox simulator event path only against an applied sandbox:
+
+```bash
+make smoke-sandbox-ses-events
+```
+
+The command preflights the configured SES sender identity before sending. If no verified email sender is available, it prints a warning and skips the live simulator sends without requiring SES production access.

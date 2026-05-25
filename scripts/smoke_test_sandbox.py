@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib
 import json
 import os
 import subprocess
@@ -18,6 +19,16 @@ ENV_QUEUE_URLS = {
     "campaign-email": "SQS_CAMPAIGN_EMAIL_QUEUE_URL",
     "ses-webhooks": "SQS_SES_WEBHOOKS_QUEUE_URL",
     "email-events": "SQS_EMAIL_EVENTS_QUEUE_URL",
+}
+SIMULATOR_RECIPIENTS = {
+    "delivery": "success@simulator.amazonses.com",
+    "bounce": "bounce@simulator.amazonses.com",
+    "complaint": "complaint@simulator.amazonses.com",
+}
+EXPECTED_EVENT_TYPES = {
+    "delivery": "delivered",
+    "bounce": "bounce",
+    "complaint": "complaint",
 }
 
 
@@ -92,6 +103,7 @@ def config_from_sources(args):
     topic_arn = (
         args.ses_events_topic_arn or os.environ.get("SES_EVENTS_TOPIC_ARN") or outputs.get("ses_events_topic_arn") or ""
     )
+    sender = args.sender or os.environ.get("DEFAULT_FROM_EMAIL") or ""
 
     return {
         "region": region,
@@ -104,6 +116,7 @@ def config_from_sources(args):
         "inbound_bucket": inbound_bucket,
         "inbound_prefix": inbound_prefix,
         "inbound_domain": inbound_domain,
+        "sender": sender,
     }
 
 
@@ -235,6 +248,253 @@ def check_ses_identities(sesv2, identities):
             results.append(pass_(f"SES identity {identity}", detail))
         else:
             results.append(warn(f"SES identity {identity}", f"{detail}; mailbox/domain action may be pending"))
+    return results
+
+
+def ses_identity_is_verified(sesv2, identity):
+    try:
+        response = sesv2.get_email_identity(EmailIdentity=identity)
+    except ClientError:
+        return False
+    return response.get("VerifiedForSendingStatus", False) or response.get("VerificationStatus") == "SUCCESS"
+
+
+def select_verified_sender(sesv2, sender, identities):
+    candidates = []
+    if sender:
+        candidates.append(sender)
+        if "@" in sender:
+            candidates.append(sender.rsplit("@", 1)[1])
+    candidates.extend(identities)
+
+    verified_identities = []
+    seen = set()
+    for identity in candidates:
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        if ses_identity_is_verified(sesv2, identity):
+            verified_identities.append(identity)
+
+    if sender and (sender in verified_identities or ("@" in sender and sender.rsplit("@", 1)[1] in verified_identities)):
+        return pass_("SES event sender preflight", f"sender={sender} verified_identity={verified_identities[0]}"), sender
+
+    for identity in verified_identities:
+        if "@" in identity:
+            return pass_("SES event sender preflight", f"sender={identity} verified_identity={identity}"), identity
+
+    detail = "no verified email sender identity found; skipping SES simulator sends"
+    if sender:
+        detail = f"sender={sender} is not verified and no verified email identity fallback was found; skipping SES simulator sends"
+    return warn("SES event sender preflight", detail), ""
+
+
+def send_simulator_email(ses, *, source, to_email, configuration_set, smoke_id):
+    return ses.send_email(
+        Source=source,
+        Destination={"ToAddresses": [to_email]},
+        Message={
+            "Subject": {"Charset": "UTF-8", "Data": f"Datamailer SES event smoke {smoke_id}"},
+            "Body": {
+                "Text": {
+                    "Charset": "UTF-8",
+                    "Data": f"Datamailer SES event smoke {smoke_id}. This message targets the SES mailbox simulator.",
+                }
+            },
+        },
+        ConfigurationSetName=configuration_set,
+    )["MessageId"]
+
+
+def create_smoke_transactional_message(*, label, to_email, ses_message_id, smoke_id):
+    timezone = importlib.import_module("django.utils.timezone")
+    models = importlib.import_module("mailing.models")
+
+    organization, _created = models.Organization.objects.get_or_create(
+        slug="datamailer-smoke",
+        defaults={"name": "Datamailer Smoke"},
+    )
+    client, _created = models.Client.objects.get_or_create(
+        organization=organization,
+        slug="ses-event-smoke",
+        defaults={"name": "SES Event Smoke"},
+    )
+    template, _created = models.EmailTemplate.objects.get_or_create(
+        client=client,
+        key="ses-event-smoke",
+        defaults={
+            "name": "SES Event Smoke",
+            "subject": "SES event smoke",
+            "is_transactional": True,
+        },
+    )
+    local_part, domain = to_email.split("@", 1)
+    contact_email = f"datamailer-smoke+{smoke_id}-{label}-{local_part}@{domain}"
+    contact = models.Contact.objects.create(email=contact_email, verified_at=timezone.now())
+    return models.TransactionalMessage.objects.create(
+        client=client,
+        contact=contact,
+        email=to_email,
+        template=template,
+        template_key=template.key,
+        status=models.TransactionalMessageStatus.SENT,
+        idempotency_key=f"ses-event-smoke-{smoke_id}-{label}",
+        subject="SES event smoke",
+        text_body="SES event smoke",
+        ses_message_id=ses_message_id,
+        sent_at=timezone.now(),
+        metadata={"smoke_id": smoke_id, "simulator_recipient": to_email},
+    )
+
+
+def receive_ses_webhook_messages(sqs, queue_url, *, wait_seconds, batch_size=10, expected_count=None):
+    deadline = time.monotonic() + wait_seconds
+    messages = []
+    while time.monotonic() < deadline:
+        response = sqs.receive_message(
+            QueueUrl=queue_url,
+            MaxNumberOfMessages=batch_size,
+            WaitTimeSeconds=min(5, max(1, int(deadline - time.monotonic()))),
+            VisibilityTimeout=30,
+        )
+        batch = response.get("Messages", [])
+        if batch:
+            messages.extend(batch)
+            if expected_count is not None and len(messages) >= expected_count:
+                break
+        else:
+            time.sleep(1)
+    return messages
+
+
+def process_ses_webhook_messages(sqs, queue_url, messages):
+    records_from_messages = importlib.import_module("mailing.sqs").records_from_messages
+    ses_webhooks_handler = importlib.import_module("mailing.workers").ses_webhooks_handler
+
+    if not messages:
+        return {}
+    response = ses_webhooks_handler(records_from_messages(messages), None)
+    failed_ids = {item["itemIdentifier"] for item in response.get("batchItemFailures", [])}
+    for message in messages:
+        if message["MessageId"] not in failed_ids:
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"])
+    return response
+
+
+def verify_smoke_database_effects(messages_by_label):
+    models = importlib.import_module("mailing.models")
+
+    expected_statuses = {
+        "delivery": models.TransactionalMessageStatus.SENT,
+        "bounce": models.TransactionalMessageStatus.BOUNCED,
+        "complaint": models.TransactionalMessageStatus.COMPLAINED,
+    }
+    expected_event_types = {
+        "delivery": models.EmailEventType.DELIVERED,
+        "bounce": models.EmailEventType.BOUNCE,
+        "complaint": models.EmailEventType.COMPLAINT,
+    }
+
+    results = []
+    for label, message in messages_by_label.items():
+        message.refresh_from_db()
+        event_exists = models.EmailEvent.objects.filter(
+            transactional_message=message,
+            event_type=expected_event_types[label],
+        ).exists()
+        if not event_exists:
+            results.append(fail(f"SES event {label}", f"missing {EXPECTED_EVENT_TYPES[label]} event"))
+            continue
+        if message.status != expected_statuses[label]:
+            results.append(fail(f"SES event {label}", f"status={message.status} expected={expected_statuses[label]}"))
+            continue
+        if label == "delivery" and message.delivered_at is None:
+            results.append(fail("SES event delivery", "delivery event recorded but delivered_at is empty"))
+            continue
+        if label == "bounce" and message.contact.hard_bounced_at is None:
+            message.contact.refresh_from_db()
+            if message.contact.hard_bounced_at is None:
+                results.append(fail("SES event bounce", "bounce event recorded but contact was not hard-bounced"))
+                continue
+        if label == "complaint" and message.contact.complained_at is None:
+            message.contact.refresh_from_db()
+            if message.contact.complained_at is None:
+                results.append(fail("SES event complaint", "complaint event recorded but contact was not complained"))
+                continue
+        results.append(pass_(f"SES event {label}", f"ses_message_id={message.ses_message_id}"))
+    return results
+
+
+def run_ses_event_smoke(config, session, args):
+    sesv2 = session.client("sesv2", region_name=config["region"])
+    ses = session.client("ses", region_name=config["region"])
+    sqs = session.client("sqs", region_name=config["region"])
+
+    results = []
+    configuration_set = config["ses_configuration_set"]
+    if not configuration_set:
+        return [fail("SES event configuration", "missing AWS_SES_CONFIGURATION_SET")]
+    results.extend(check_ses_configuration_set(sesv2, configuration_set))
+    preflight, sender = select_verified_sender(sesv2, config["sender"], config["ses_identities"])
+    results.append(preflight)
+    if not sender:
+        return results
+
+    queue_url = config["queue_urls"].get("ses-webhooks", "")
+    if not queue_url:
+        results.append(fail("SES event queue", "missing ses-webhooks queue URL"))
+        return results
+
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "datamailer.settings")
+    importlib.import_module("django").setup()
+
+    smoke_id = f"{int(time.time())}-{uuid.uuid4().hex[:12]}"
+    messages_by_label = {}
+    for label, recipient in SIMULATOR_RECIPIENTS.items():
+        try:
+            ses_message_id = send_simulator_email(
+                ses,
+                source=sender,
+                to_email=recipient,
+                configuration_set=configuration_set,
+                smoke_id=smoke_id,
+            )
+        except ClientError as exc:
+            results.append(fail(f"SES simulator send {label}", f"{client_error_code(exc)} for {recipient}"))
+            continue
+        messages_by_label[label] = create_smoke_transactional_message(
+            label=label,
+            to_email=recipient,
+            ses_message_id=ses_message_id,
+            smoke_id=smoke_id,
+        )
+        results.append(pass_(f"SES simulator send {label}", f"recipient={recipient} ses_message_id={ses_message_id}"))
+
+    if set(messages_by_label) != set(SIMULATOR_RECIPIENTS):
+        return results
+
+    raw_messages = receive_ses_webhook_messages(
+        sqs,
+        queue_url,
+        wait_seconds=args.ses_event_timeout,
+        expected_count=len(messages_by_label),
+    )
+    worker_response = process_ses_webhook_messages(sqs, queue_url, raw_messages)
+    failed = worker_response.get("batchItemFailures", [])
+    if failed:
+        results.append(fail("SES webhook worker", f"failed_batch_items={failed}"))
+    elif raw_messages:
+        results.append(pass_("SES webhook worker", f"processed_messages={len(raw_messages)}"))
+    else:
+        results.append(fail("SES webhook worker", f"no messages observed within {args.ses_event_timeout}s"))
+
+    results.extend(verify_smoke_database_effects(messages_by_label))
+    for queue_name in REQUIRED_QUEUES:
+        dlq_url = config["dlq_urls"].get(queue_name, "")
+        if dlq_url:
+            results.append(check_dlq(sqs, queue_name, dlq_url))
+        else:
+            results.append(warn(f"SQS DLQ {queue_name}", "missing DLQ URL; set dlq_urls from Terraform output to inspect it"))
     return results
 
 
@@ -370,6 +630,7 @@ def build_parser():
     )
     parser.add_argument("--ses-configuration-set", default="", help="SES configuration set name.")
     parser.add_argument("--ses-identity", action="append", default=[], help="SES identity to report; may be repeated.")
+    parser.add_argument("--sender", default="", help="Sender email for SES simulator sends. Defaults to DEFAULT_FROM_EMAIL.")
     parser.add_argument("--ses-events-topic-arn", default="", help="SNS topic ARN receiving SES events.")
     parser.add_argument("--inbound-bucket", default="", help="Inbound mail S3 bucket.")
     parser.add_argument("--inbound-prefix", default="", help="Inbound mail S3 prefix.")
@@ -381,6 +642,17 @@ def build_parser():
     parser.add_argument(
         "--round-trip-all-queues", action="store_true", help="Send/delete smoke messages on all active queues."
     )
+    parser.add_argument(
+        "--ses-event-smoke",
+        action="store_true",
+        help="Run SES mailbox simulator send -> SNS/SQS -> worker/database smoke.",
+    )
+    parser.add_argument(
+        "--ses-event-timeout",
+        type=int,
+        default=120,
+        help="Seconds to wait for SES webhook SQS messages in --ses-event-smoke mode.",
+    )
     return parser
 
 
@@ -389,7 +661,7 @@ def main(argv=None, session=None):
     args = parser.parse_args(argv)
     session = session or boto3.Session(region_name=args.region or os.environ.get("AWS_REGION") or None)
     config = config_from_sources(args)
-    results = run_checks(config, session, args)
+    results = run_ses_event_smoke(config, session, args) if args.ses_event_smoke else run_checks(config, session, args)
 
     failed = False
     for result in results:
