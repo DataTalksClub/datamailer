@@ -638,7 +638,9 @@ def run_checks(config, session, args):
     results.extend(
         check_inbound_s3(s3, config["inbound_bucket"], config["inbound_prefix"], args.require_inbound_s3_read)
     )
-    results.extend(check_route53(route53, config["inbound_dns_zone_name"], config["inbound_dns_zone_id"]))
+    route53_domain = config.get("inbound_dns_zone_name") or config.get("inbound_domain", "")
+    route53_zone_id = config.get("inbound_dns_zone_id", "")
+    results.extend(check_route53(route53, route53_domain, route53_zone_id))
     results.append(warn("SES production access", "manual gate; not required for this sandbox smoke check"))
     results.append(
         warn(
