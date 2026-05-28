@@ -1,11 +1,10 @@
 import json
 from copy import deepcopy
 
+from django.conf import settings
 from django.urls import reverse
 
 from mailing.models import EmailValidationStatus, SubscriptionStatus
-
-DOCS_BASE_URL = "http://127.0.0.1:8002"
 
 DEMO_API_KEYS = [
     {
@@ -60,6 +59,10 @@ def code_json(value):
     return json.dumps(value, indent=2)
 
 
+def docs_base_url():
+    return settings.API_DOCS_BASE_URL.rstrip("/")
+
+
 def contact_response(*, contact_id=101, email="learner@example.com", audience="dtc-courses", client="dtc-courses", tags=None):
     tags = tags or ["course-ml-zoomcamp"]
     return {
@@ -110,7 +113,8 @@ def validation_error(fields):
     return {"error": {"code": "validation_error", "fields": fields}}
 
 
-def workflow_examples():
+def workflow_examples(base_url=None):
+    base_url = (base_url or docs_base_url()).rstrip("/")
     return [
         {
             "section": "Setup and Authentication",
@@ -123,7 +127,7 @@ def workflow_examples():
                     "key": "Course platform transactional",
                     "summary": "Seeded local data creates named keys per client. Staff users can create and revoke additional purpose-specific keys from Clients.",
                     "request": "",
-                    "curl": """export DATAMAILER_URL="${DATAMAILER_URL:-http://127.0.0.1:8002}"
+                    "curl": f"""export DATAMAILER_URL="${{DATAMAILER_URL:-{base_url}}}"
 export DATAMAILER_API_KEY="dm_dtccourses_demo_transactional_email_key"
 
 curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=dtc-courses&client=dtc-courses" \\
@@ -131,7 +135,7 @@ curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&au
                     "python": """import os
 import requests
 
-base_url = os.getenv("DATAMAILER_URL", "http://127.0.0.1:8002")
+base_url = os.getenv("DATAMAILER_URL", "__BASE_URL__")
 headers = {"Authorization": f"Bearer {os.environ['DATAMAILER_API_KEY']}"}
 
 response = requests.get(
@@ -144,7 +148,7 @@ response = requests.get(
     },
     timeout=10,
 )
-response.raise_for_status()""",
+response.raise_for_status()""".replace("__BASE_URL__", base_url),
                     "success": code_json(status_response()),
                     "error": code_json({"error": {"code": "invalid_api_key", "message": "Authentication credentials were not accepted."}}),
                 },

@@ -3,6 +3,7 @@ import re
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import resolve, reverse
 
 from mailing.services.api_docs import API_DOC_PATHS, build_openapi_spec, route_path_map, workflow_examples
@@ -179,6 +180,21 @@ def test_api_docs_page_renders_runnable_workflow_examples(client, staff_user):
     assert "LocalStack" in page
     assert "Endpoint Reference" in page
     assert "/api/v1" not in page
+
+
+@override_settings(API_DOCS_BASE_URL="https://mail.example.com")
+def test_api_docs_base_url_is_configurable(client, staff_user):
+    client.force_login(staff_user)
+    response = client.get(reverse("mailing:api_docs"))
+    page = response.content.decode()
+    examples = workflow_examples()
+    setup = examples[0]["items"][0]
+
+    assert response.status_code == 200
+    assert "https://mail.example.com" in page
+    assert 'export DATAMAILER_URL="${DATAMAILER_URL:-https://mail.example.com}"' in setup["curl"]
+    assert 'base_url = os.getenv("DATAMAILER_URL", "https://mail.example.com")' in setup["python"]
+    assert "http://127.0.0.1:8002" not in page
 
 
 def test_api_docs_curl_examples_do_not_hard_code_contact_ids():

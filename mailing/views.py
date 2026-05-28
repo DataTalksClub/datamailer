@@ -37,8 +37,8 @@ from mailing.services.api import (
 )
 from mailing.services.api_docs import (
     DEMO_API_KEYS,
-    DOCS_BASE_URL,
     build_openapi_spec,
+    docs_base_url,
     endpoint_groups,
     workflow_examples,
 )
@@ -128,14 +128,15 @@ def pagination_querystring(request):
 
 @staff_member_required
 def api_docs(request):
+    base_url = docs_base_url()
     return render(
         request,
         "mailing/operator/api_docs.html",
         {
             "endpoint_groups": endpoint_groups(),
-            "workflow_examples": workflow_examples(),
+            "workflow_examples": workflow_examples(base_url),
             "demo_api_keys": DEMO_API_KEYS,
-            "docs_base_url": DOCS_BASE_URL,
+            "docs_base_url": base_url,
             "openapi_json_url": "mailing:api_docs_json",
         },
     )

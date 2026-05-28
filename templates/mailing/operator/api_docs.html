@@ -7,7 +7,7 @@
     <div>
       <p class="breadcrumbs"><a href="{% url 'mailing:dashboard' %}">Dashboard</a> / API Docs</p>
       <h1>API Docs</h1>
-      <p>Runnable Datamailer API workflows for staff and client developers. Examples use local seeded demo keys, final <code>/api/...</code> paths, and a default base URL of <code>{{ docs_base_url }}</code>.</p>
+      <p>Runnable Datamailer API workflows for staff and client developers. Examples use seeded demo keys, final <code>/api/...</code> paths, and a configurable default base URL of <code>{{ docs_base_url }}</code>.</p>
     </div>
     <div class="actions">
       <a class="button" href="{% url openapi_json_url %}">OpenAPI JSON</a>
@@ -38,7 +38,7 @@
         <div class="meta-grid">
           <div class="meta-item">
             <span class="meta-label">Base URL</span>
-            <code>$DATAMAILER_URL</code>, locally <code>{{ docs_base_url }}</code>
+            <code>$DATAMAILER_URL</code>, default <code>{{ docs_base_url }}</code>
           </div>
           <div class="meta-item">
             <span class="meta-label">Header</span>

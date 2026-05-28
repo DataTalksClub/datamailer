@@ -20,10 +20,10 @@ Local demo data creates stable named keys for examples:
 - `dtc-newsletter` / `Newsletter import/export`: `dm_dtcnews_demo_newsletter_import_export_key`
 - `asl-platform` / `ASL platform transactional`: `dm_aslplatform_demo_transactional_email_key`
 
-Use a local default base URL when running examples:
+The in-app examples default to `DATAMAILER_API_DOCS_BASE_URL`, falling back to `PUBLIC_BASE_URL`. Override `DATAMAILER_URL` when running an example against a different environment:
 
 ```bash
-export DATAMAILER_URL="${DATAMAILER_URL:-http://127.0.0.1:8002}"
+export DATAMAILER_URL="${DATAMAILER_URL:-https://datamailer.example.com}"
 export DATAMAILER_API_KEY="dm_dtccourses_demo_transactional_email_key"
 ```
 
