@@ -68,6 +68,10 @@
     "ParameterValue": "datamailer-production"
   },
   {
+    "ParameterKey": "SESSendRatePerSecond",
+    "ParameterValue": "6"
+  },
+  {
     "ParameterKey": "DefaultFromEmail",
     "ParameterValue": "no-reply@datamailer.example.com"
   },

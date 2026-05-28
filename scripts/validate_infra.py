@@ -239,6 +239,7 @@ def validate_template(template):
         "LambdaLogRetentionDays",
         "OperatorAlarmTopicArn",
         "SESSenderIdentity",
+        "SESSendRatePerSecond",
         "DefaultFromEmail",
         "PublicBaseUrl",
     ]:
@@ -272,6 +273,18 @@ def validate_template(template):
         require(props.get("Architectures") == ["arm64"], f"{name} must run on arm64", errors)
         require(props.get("ReservedConcurrentExecutions", 0) <= 4, f"{name} concurrency must start conservatively", errors)
         require(props.get("Timeout", 0) < 900, f"{name} timeout must remain below SQS visibility timeout", errors)
+        if config["can_send_email"]:
+            variables = props.get("Environment", {}).get("Variables", {})
+            require(
+                props.get("ReservedConcurrentExecutions") == 1,
+                f"{name} must keep sender reserved concurrency at 1 for SES rate control",
+                errors,
+            )
+            require(
+                variables.get("DATAMAILER_SES_MAX_SEND_RATE") == {"Ref": "SESSendRatePerSecond"},
+                f"{name} must use SESSendRatePerSecond",
+                errors,
+            )
 
     validate_worker_iam_and_logs(resources, errors)
 
@@ -280,6 +293,12 @@ def validate_template(template):
         props = mapping.get("Properties", {})
         require(props.get("FunctionResponseTypes") == ["ReportBatchItemFailures"], f"{name} must enable partial batch failures", errors)
         require("ScalingConfig" in props, f"{name} must set maximum event-source concurrency", errors)
+        if name in {"TransactionalEmailEventSourceMapping", "CampaignEmailEventSourceMapping"}:
+            require(
+                props.get("ScalingConfig", {}).get("MaximumConcurrency") == 1,
+                f"{name} must keep sender event-source concurrency at 1 for SES rate control",
+                errors,
+            )
 
     ses_webhook_mapping = resources.get("SesWebhooksEventSourceMapping", {}).get("Properties", {})
     require(

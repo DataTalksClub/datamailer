@@ -12,6 +12,9 @@ Datamailer is a standalone Django mailing service for shared audiences, campaign
 - API for client apps to check whether an email is verified/subscribed
 - Postgres source of truth, SQS queues, Lambda workers, and SES delivery
 
+Infrastructure Terraform is kept in the private `DataTalksClub/datamailer-infra` repository. This public
+repo keeps app code, tests, CloudFormation skeletons, and smoke scripts.
+
 ## Design Docs
 
 - [Architecture](docs/architecture.md)

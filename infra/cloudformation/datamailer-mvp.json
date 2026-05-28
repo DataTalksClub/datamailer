@@ -118,6 +118,13 @@
       "Type": "String",
       "Default": "datamailer"
     },
+    "SESSendRatePerSecond": {
+      "Type": "Number",
+      "Default": 6,
+      "MinValue": 1,
+      "MaxValue": 14,
+      "Description": "Per sender-worker process SES send-rate cap. Keep below account quota because transactional and campaign workers can both send."
+    },
     "DefaultFromEmail": {
       "Type": "String"
     },
@@ -515,7 +522,7 @@
         ],
         "UserData": {
           "Fn::Base64": {
-            "Fn::Sub": "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p /etc/datamailer\ncat >/etc/datamailer/environment <<ENV\nDJANGO_SETTINGS_MODULE=datamailer.settings\nDEBUG=False\nAWS_REGION=${AWS::Region}\nAWS_SES_CONFIGURATION_SET=${SESConfigurationSetName}\nDEFAULT_FROM_EMAIL=${DefaultFromEmail}\nPUBLIC_BASE_URL=${PublicBaseUrl}\nALLOWED_HOSTS=${WebDomainName}\nCSRF_TRUSTED_ORIGINS=https://${WebDomainName}\nTRANSACTIONAL_EMAIL_QUEUE_NAME=${EnvironmentName}-transactional-email\nCAMPAIGN_EMAIL_QUEUE_NAME=${EnvironmentName}-campaign-email\nSES_WEBHOOKS_QUEUE_NAME=${EnvironmentName}-ses-webhooks\nEMAIL_EVENTS_QUEUE_NAME=${EnvironmentName}-email-events\nSQS_TRANSACTIONAL_EMAIL_QUEUE_URL=${TransactionalEmailQueue}\nSQS_CAMPAIGN_EMAIL_QUEUE_URL=${CampaignEmailQueue}\nSQS_SES_WEBHOOKS_QUEUE_URL=${SesWebhooksQueue}\nSQS_EMAIL_EVENTS_QUEUE_URL=${EmailEventsQueue}\nENV\nsystemctl restart datamailer || true\nsystemctl restart caddy || true\n"
+            "Fn::Sub": "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p /etc/datamailer\ncat >/etc/datamailer/environment <<ENV\nDJANGO_SETTINGS_MODULE=datamailer.settings\nDEBUG=False\nAWS_REGION=${AWS::Region}\nAWS_SES_CONFIGURATION_SET=${SESConfigurationSetName}\nDATAMAILER_SES_MAX_SEND_RATE=${SESSendRatePerSecond}\nDEFAULT_FROM_EMAIL=${DefaultFromEmail}\nPUBLIC_BASE_URL=${PublicBaseUrl}\nALLOWED_HOSTS=${WebDomainName}\nCSRF_TRUSTED_ORIGINS=https://${WebDomainName}\nTRANSACTIONAL_EMAIL_QUEUE_NAME=${EnvironmentName}-transactional-email\nCAMPAIGN_EMAIL_QUEUE_NAME=${EnvironmentName}-campaign-email\nSES_WEBHOOKS_QUEUE_NAME=${EnvironmentName}-ses-webhooks\nEMAIL_EVENTS_QUEUE_NAME=${EnvironmentName}-email-events\nSQS_TRANSACTIONAL_EMAIL_QUEUE_URL=${TransactionalEmailQueue}\nSQS_CAMPAIGN_EMAIL_QUEUE_URL=${CampaignEmailQueue}\nSQS_SES_WEBHOOKS_QUEUE_URL=${SesWebhooksQueue}\nSQS_EMAIL_EVENTS_QUEUE_URL=${EmailEventsQueue}\nENV\nsystemctl restart datamailer || true\nsystemctl restart caddy || true\n"
           }
         },
         "Tags": [
@@ -1323,7 +1330,7 @@
         },
         "MemorySize": 512,
         "Timeout": 60,
-        "ReservedConcurrentExecutions": 4,
+        "ReservedConcurrentExecutions": 1,
         "Environment": {
           "Variables": {
             "DJANGO_SETTINGS_MODULE": "datamailer.settings",
@@ -1333,6 +1340,9 @@
             },
             "AWS_SES_CONFIGURATION_SET": {
               "Ref": "SESConfigurationSetName"
+            },
+            "DATAMAILER_SES_MAX_SEND_RATE": {
+              "Ref": "SESSendRatePerSecond"
             },
             "DEFAULT_FROM_EMAIL": {
               "Ref": "DefaultFromEmail"
@@ -1412,7 +1422,7 @@
         },
         "MemorySize": 1024,
         "Timeout": 300,
-        "ReservedConcurrentExecutions": 2,
+        "ReservedConcurrentExecutions": 1,
         "Environment": {
           "Variables": {
             "DJANGO_SETTINGS_MODULE": "datamailer.settings",
@@ -1422,6 +1432,9 @@
             },
             "AWS_SES_CONFIGURATION_SET": {
               "Ref": "SESConfigurationSetName"
+            },
+            "DATAMAILER_SES_MAX_SEND_RATE": {
+              "Ref": "SESSendRatePerSecond"
             },
             "DEFAULT_FROM_EMAIL": {
               "Ref": "DefaultFromEmail"
@@ -1625,7 +1638,7 @@
           "ReportBatchItemFailures"
         ],
         "ScalingConfig": {
-          "MaximumConcurrency": 4
+          "MaximumConcurrency": 1
         }
       }
     },
@@ -1647,7 +1660,7 @@
           "ReportBatchItemFailures"
         ],
         "ScalingConfig": {
-          "MaximumConcurrency": 2
+          "MaximumConcurrency": 1
         }
       }
     },

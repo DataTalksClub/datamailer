@@ -26,6 +26,13 @@ def bool_env(name, *, default):
     return value.strip().lower() in {"1", "true", "yes"}
 
 
+def float_env(name, *, default):
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    return float(value)
+
+
 DEBUG = bool_env("DEBUG", default=True)
 TESTING = "test" in sys.argv or "pytest" in sys.argv[0]
 
@@ -124,6 +131,7 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL", "")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 AWS_SES_CONFIGURATION_SET = os.environ.get("AWS_SES_CONFIGURATION_SET", "")
+SES_MAX_SEND_RATE_PER_SECOND = float_env("DATAMAILER_SES_MAX_SEND_RATE", default=10.0)
 SQS_TRANSACTIONAL_EMAIL_QUEUE_URL = os.environ.get("SQS_TRANSACTIONAL_EMAIL_QUEUE_URL", "")
 SQS_CAMPAIGN_EMAIL_QUEUE_URL = os.environ.get("SQS_CAMPAIGN_EMAIL_QUEUE_URL", "")
 SQS_EMAIL_EVENTS_QUEUE_URL = os.environ.get("SQS_EMAIL_EVENTS_QUEUE_URL", "")

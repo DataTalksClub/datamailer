@@ -68,6 +68,10 @@
     "ParameterValue": "datamailer-staging"
   },
   {
+    "ParameterKey": "SESSendRatePerSecond",
+    "ParameterValue": "6"
+  },
+  {
     "ParameterKey": "DefaultFromEmail",
     "ParameterValue": "no-reply@staging.datamailer.example.com"
   },

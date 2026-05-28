@@ -1,6 +1,0 @@
-aws_region      = "us-east-1"
-project         = "datamailer"
-environment     = "sandbox"
-
-# Optional. Must be globally unique if set.
-# state_bucket_name = "datamailer-sandbox-123456789012-us-east-1-tfstate"

@@ -102,6 +102,23 @@ def test_lambda_workers_have_distinct_scoped_roles():
         )
 
 
+def test_ses_sender_workers_have_stack_level_rate_controls():
+    template = load_json(TEMPLATE)
+    parameters = template["Parameters"]
+    resources = template["Resources"]
+    assert parameters["SESSendRatePerSecond"]["Default"] == 6
+    assert parameters["SESSendRatePerSecond"]["MaxValue"] == 14
+
+    sender_workers = ["TransactionalEmailWorker", "CampaignEmailWorker"]
+    for worker in sender_workers:
+        props = resources[worker]["Properties"]
+        assert props["ReservedConcurrentExecutions"] == 1
+        assert props["Environment"]["Variables"]["DATAMAILER_SES_MAX_SEND_RATE"] == {"Ref": "SESSendRatePerSecond"}
+
+    assert resources["TransactionalEmailEventSourceMapping"]["Properties"]["ScalingConfig"]["MaximumConcurrency"] == 1
+    assert resources["CampaignEmailEventSourceMapping"]["Properties"]["ScalingConfig"]["MaximumConcurrency"] == 1
+
+
 def test_lambda_log_groups_have_retention_and_scoped_role_permissions():
     resources = load_json(TEMPLATE)["Resources"]
     expected = {

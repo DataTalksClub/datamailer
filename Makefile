@@ -1,3 +1,5 @@
+TERRAFORM_SANDBOX_DIR ?= ../datamailer-infra/datamailer-sandbox
+
 .PHONY: setup migrate run localstack test test-aws-local lint validate-infra smoke-sandbox smoke-sandbox-ses-events format
 
 setup:
@@ -28,10 +30,10 @@ validate-infra:
 	uv run python scripts/validate_infra.py
 
 smoke-sandbox:
-	uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer-sandbox
+	uv run python scripts/smoke_test_sandbox.py --terraform-dir $(TERRAFORM_SANDBOX_DIR)
 
 smoke-sandbox-ses-events:
-	uv run python scripts/smoke_test_sandbox.py --terraform-dir terraform/datamailer-sandbox --ses-event-smoke
+	uv run python scripts/smoke_test_sandbox.py --terraform-dir $(TERRAFORM_SANDBOX_DIR) --ses-event-smoke
 
 format:
 	uv run ruff format .
