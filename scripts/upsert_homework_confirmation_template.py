@@ -13,20 +13,44 @@ TEMPLATE_PAYLOAD = {
     "description": "Confirm that the course platform saved a homework submission.",
     "subject": "Homework submission received: {{ homework_title }}",
     "html_body": (
-        "<p>Your homework submission for <strong>{{ homework_title }}</strong> "
-        "in {{ course_title }} was saved.</p>"
-        "<p>You can update it until the homework closes.</p>"
+        "<p>{{ intro_text|default:'Your homework submission was saved.' }}</p>"
+        "<p>You can update it while the homework is open: "
+        "<a href=\"{{ update_url }}\">{{ update_url }}</a></p>"
+        "{% if submission_fields %}"
+        "<h2>Submitted details</h2>"
+        "<ul>"
+        "{% for field in submission_fields %}"
+        "<li><strong>{{ field.label }}:</strong> "
+        "{% if field.value %}{{ field.value|linebreaksbr }}{% else %}Not submitted{% endif %}</li>"
+        "{% endfor %}"
+        "</ul>"
+        "{% endif %}"
+        "{% if submitted_answers %}"
+        "<h2>Submitted answers</h2>"
+        "<ol>"
+        "{% for answer in submitted_answers %}"
+        "<li><strong>{{ answer.question }}:</strong> "
+        "{% if answer.answer %}{{ answer.answer|linebreaksbr }}{% else %}Not submitted{% endif %}</li>"
+        "{% endfor %}"
+        "</ol>"
+        "{% endif %}"
     ),
     "text_body": (
-        "Your homework submission for {{ homework_title }} in "
-        "{{ course_title }} was saved.\n\n"
-        "You can update it until the homework closes."
+        "{{ intro_text|default:'Your homework submission was saved.' }}\n\n"
+        "Update your submission: {{ update_url }}\n\n"
+        "{% if submitted_fields_text %}"
+        "Submitted details:\n{{ submitted_fields_text }}\n\n"
+        "{% endif %}"
+        "{% if submitted_answers_text %}"
+        "Submitted answers:\n{{ submitted_answers_text }}\n"
+        "{% endif %}"
     ),
     "required_context": [
         {"name": "course_title", "description": "Course title."},
         {"name": "homework_title", "description": "Homework title."},
         {"name": "submission_id", "description": "Course platform submission id."},
         {"name": "submitted_at", "description": "Submission timestamp."},
+        {"name": "update_url", "description": "Absolute URL where the learner can update the submission."},
     ],
     "example_context": {
         "course_slug": "ml-zoomcamp",
@@ -35,6 +59,32 @@ TEMPLATE_PAYLOAD = {
         "homework_title": "Homework 1",
         "submission_id": 123,
         "submitted_at": "2026-06-16T12:00:00+00:00",
+        "update_url": "https://courses.datatalks.club/ml-zoomcamp/homework/homework-1",
+        "intro_text": "Your homework submission for Homework 1 in ML Zoomcamp was saved.",
+        "submission_fields": [
+            {
+                "key": "homework_url",
+                "label": "Homework URL",
+                "value": "https://github.com/example/homework",
+            },
+            {
+                "key": "time_spent_homework",
+                "label": "Time spent on homework",
+                "value": "4 hours",
+            },
+        ],
+        "submitted_answers": [
+            {
+                "question_id": 1,
+                "question": "Pick one option",
+                "question_type": "MC",
+                "answer": "2. Second option",
+                "raw_answer": "2",
+                "selected_options": [{"index": 2, "value": "Second option"}],
+            }
+        ],
+        "submitted_fields_text": "Homework URL: https://github.com/example/homework\nTime spent on homework: 4 hours",
+        "submitted_answers_text": "Pick one option: 2. Second option",
     },
     "is_active": True,
 }
