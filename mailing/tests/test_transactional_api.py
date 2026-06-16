@@ -85,6 +85,137 @@ def post_transactional(django_client, payload, raw_key=API_KEY):
     )
 
 
+def put_transactional_template(django_client, template_key, payload, raw_key=API_KEY):
+    return django_client.put(
+        reverse("mailing:api_transactional_template", args=[template_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def test_transactional_template_api_upserts_and_returns_client_template(
+    client,
+    api_client_record,
+):
+    payload = {
+        "name": "Homework Submission Confirmation",
+        "description": "Confirm that a homework submission was saved.",
+        "subject": "Homework submission received: {{ homework_title }}",
+        "html_body": "<p>{{ homework_title }} was saved.</p>",
+        "text_body": "{{ homework_title }} was saved.",
+        "required_context": [{"name": "homework_title", "description": "Homework title."}],
+        "example_context": {"homework_title": "Homework 1"},
+    }
+
+    response = put_transactional_template(
+        client,
+        "homework-submission-confirmation",
+        payload,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created"] is True
+    assert body["template"]["key"] == "homework-submission-confirmation"
+    assert body["template"]["client"] == api_client_record.slug
+    assert body["template"]["subject"] == "Homework submission received: {{ homework_title }}"
+    assert body["template"]["required_context"] == payload["required_context"]
+    assert body["template"]["example_context"] == payload["example_context"]
+    assert body["template"]["is_transactional"] is True
+    assert body["template"]["is_active"] is True
+
+    template = EmailTemplate.objects.get()
+    assert template.client == api_client_record
+    assert template.key == "homework-submission-confirmation"
+
+    get_response = client.get(
+        reverse("mailing:api_transactional_template", args=[template.key]),
+        **auth_headers(),
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.json()["key"] == template.key
+    assert get_response.json()["name"] == payload["name"]
+
+
+def test_transactional_template_api_updates_existing_template(client, template):
+    response = put_transactional_template(
+        client,
+        template.key,
+        {
+            "name": "Updated Email Verification",
+            "subject": "Updated {{ product }}",
+            "html_body": "<p>Updated</p>",
+            "text_body": "Updated",
+            "required_context": [{"name": "product"}],
+            "example_context": {"product": "Datamailer"},
+            "is_active": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["created"] is False
+
+    template.refresh_from_db()
+    assert template.name == "Updated Email Verification"
+    assert template.subject == "Updated {{ product }}"
+    assert template.is_active is False
+
+
+def test_transactional_template_api_is_scoped_to_authenticated_client(
+    client,
+    template,
+    other_client,
+):
+    response = client.get(
+        reverse("mailing:api_transactional_template", args=[template.key]),
+        **auth_headers("other-key"),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["fields"] == {"template_key": "not_found"}
+
+    put_response = put_transactional_template(
+        client,
+        template.key,
+        {
+            "name": "Other Client Template",
+            "subject": "Other",
+            "text_body": "Other",
+        },
+        raw_key="other-key",
+    )
+
+    assert put_response.status_code == 200
+    assert put_response.json()["created"] is True
+    assert EmailTemplate.objects.filter(key=template.key).count() == 2
+
+
+def test_transactional_template_api_validates_payload(client, api_client_record):
+    response = put_transactional_template(
+        client,
+        "homework-submission-confirmation",
+        {
+            "name": "",
+            "subject": "",
+            "required_context": {},
+            "example_context": [],
+            "is_active": "yes",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {
+        "name": "required",
+        "subject": "required",
+        "required_context": "must_be_list",
+        "example_context": "must_be_object",
+        "is_active": "must_be_boolean",
+    }
+    assert EmailTemplate.objects.count() == 0
+
+
 def test_transactional_send_creates_message_event_and_contract_queue_payload(
     client,
     template,

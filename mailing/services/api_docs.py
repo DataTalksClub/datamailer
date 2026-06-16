@@ -47,6 +47,7 @@ API_DOC_PATHS = {
     "mailing:api_contact_history": "/api/contacts/{contact_id}/history",
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
+    "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
     "mailing:tracking_open": "/t/o/{tracking_token}.gif",
@@ -700,6 +701,8 @@ def endpoint_groups():
             "endpoints": [
                 ("POST", "/api/contacts/imports", "Bulk JSON import/upsert."),
                 ("POST", "/api/contacts/imports/csv", "CSV upload/import."),
+                ("PUT", "/api/transactional/templates/{template_key}", "Create or update a transactional template."),
+                ("GET", "/api/transactional/templates/{template_key}", "Get one transactional template."),
                 ("POST", "/api/transactional/send", "Queue one transactional email."),
                 ("GET", "/api/transactional/messages/{message_id}", "Get transactional message status."),
             ],
@@ -738,6 +741,10 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_contact_history"]: reverse("mailing:api_contact_history", args=[123]),
         API_DOC_PATHS["mailing:api_subscribe"]: reverse("mailing:api_subscribe"),
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
+        API_DOC_PATHS["mailing:api_transactional_template"]: reverse(
+            "mailing:api_transactional_template",
+            args=["homework-submission-confirmation"],
+        ),
         API_DOC_PATHS["mailing:api_transactional_send"]: reverse("mailing:api_transactional_send"),
         API_DOC_PATHS["mailing:api_transactional_message_status"]: reverse(
             "mailing:api_transactional_message_status",
@@ -816,7 +823,7 @@ OPENAPI_SPEC = {
     "info": {
         "title": "Datamailer Native API",
         "version": "1.0.0",
-        "description": "Local staff reference for implemented Datamailer endpoints. Client API routes use Bearer authentication with named Datamailer client API keys. Transactional templates are planned for catalog management and may be provisioned externally for now.",
+        "description": "Local staff reference for implemented Datamailer endpoints. Client API routes use Bearer authentication with named Datamailer client API keys.",
     },
     "servers": [{"url": "/"}],
     "tags": [
@@ -995,6 +1002,43 @@ OPENAPI_SPEC = {
                 )
                 | {"409": json_response("Contact suppressed", "#/components/schemas/TransactionalSendResponse")},
             }
+        },
+        "/api/transactional/templates/{template_key}": {
+            "get": {
+                "tags": ["Transactional"],
+                "summary": "Get transactional template",
+                "description": "Returns one active or inactive transactional template scoped to the authenticated client.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "template_key",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+                "responses": bearer_responses(
+                    json_response("Transactional template", "#/components/schemas/TransactionalTemplate")
+                ),
+            },
+            "put": {
+                "tags": ["Transactional"],
+                "summary": "Create or update transactional template",
+                "description": "Creates or updates one transactional template scoped to the authenticated client.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "template_key",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+                "requestBody": json_body("#/components/schemas/TransactionalTemplateUpsertRequest"),
+                "responses": bearer_responses(
+                    json_response("Transactional template", "#/components/schemas/TransactionalTemplateUpsertResponse")
+                ),
+            },
         },
         "/api/transactional/messages/{message_id}": {
             "get": {
@@ -1337,6 +1381,43 @@ OPENAPI_SPEC = {
                     "message": {"type": "object"},
                     "idempotent_replay": {"type": "boolean"},
                     "enqueued": {"type": "boolean"},
+                },
+            },
+            "TransactionalTemplateUpsertRequest": {
+                "type": "object",
+                "required": ["name", "subject"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "html_body": {"type": "string"},
+                    "text_body": {"type": "string"},
+                    "required_context": {"type": "array", "items": {"type": "object"}},
+                    "example_context": {"type": "object"},
+                    "is_active": {"type": "boolean"},
+                },
+            },
+            "TransactionalTemplate": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "client": {"type": "string"},
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "html_body": {"type": "string"},
+                    "text_body": {"type": "string"},
+                    "required_context": {"type": "array", "items": {"type": "object"}},
+                    "example_context": {"type": "object"},
+                    "is_transactional": {"type": "boolean"},
+                    "is_active": {"type": "boolean"},
+                },
+            },
+            "TransactionalTemplateUpsertResponse": {
+                "type": "object",
+                "properties": {
+                    "template": {"$ref": "#/components/schemas/TransactionalTemplate"},
+                    "created": {"type": "boolean"},
                 },
             },
             "TransactionalMessageStatusResponse": {

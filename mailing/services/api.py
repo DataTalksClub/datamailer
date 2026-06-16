@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
+from django.core.validators import validate_email, validate_slug
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -14,6 +14,7 @@ from mailing.models import (
     ContactTag,
     EmailEvent,
     EmailEventType,
+    EmailTemplate,
     EmailValidationStatus,
     Subscription,
     SubscriptionStatus,
@@ -43,6 +44,106 @@ class ScopedRequest:
     email: str
     audience: Audience
     client: object
+
+
+def template_payload(template):
+    return {
+        "key": template.key,
+        "client": template.client.slug,
+        "name": template.name,
+        "description": template.description,
+        "subject": template.subject,
+        "html_body": template.html_body,
+        "text_body": template.text_body,
+        "required_context": template.required_context,
+        "example_context": template.example_context,
+        "is_transactional": template.is_transactional,
+        "is_active": template.is_active,
+        "created_at": isoformat(template.created_at),
+        "updated_at": isoformat(template.updated_at),
+    }
+
+
+def validate_transactional_template_payload(data, template_key):
+    errors = {}
+
+    try:
+        validate_slug(template_key)
+    except ValidationError:
+        errors["template_key"] = "invalid"
+
+    name = data.get("name")
+    if not isinstance(name, str) or not name.strip():
+        errors["name"] = "required"
+
+    subject = data.get("subject")
+    if not isinstance(subject, str) or not subject.strip():
+        errors["subject"] = "required"
+
+    fields = {
+        "description": data.get("description", ""),
+        "html_body": data.get("html_body", ""),
+        "text_body": data.get("text_body", ""),
+    }
+    for field_name, value in fields.items():
+        if not isinstance(value, str):
+            errors[field_name] = "must_be_string"
+
+    required_context = data.get("required_context", [])
+    if required_context in (None, ""):
+        required_context = []
+    elif not isinstance(required_context, list):
+        errors["required_context"] = "must_be_list"
+
+    example_context = data.get("example_context", {})
+    if example_context in (None, ""):
+        example_context = {}
+    elif not isinstance(example_context, dict):
+        errors["example_context"] = "must_be_object"
+
+    is_active = data.get("is_active", True)
+    if not isinstance(is_active, bool):
+        errors["is_active"] = "must_be_boolean"
+
+    if errors:
+        raise ApiValidationError(errors)
+
+    return {
+        "name": name.strip(),
+        "subject": subject.strip(),
+        "description": fields["description"].strip(),
+        "html_body": fields["html_body"],
+        "text_body": fields["text_body"],
+        "required_context": required_context,
+        "example_context": example_context,
+        "is_transactional": True,
+        "is_active": is_active,
+    }
+
+
+def get_transactional_template_for_client(template_key, authenticated_client):
+    template = EmailTemplate.objects.filter(
+        client=authenticated_client,
+        key=template_key,
+        is_transactional=True,
+    ).first()
+    if template is None:
+        raise ApiValidationError({"template_key": "not_found"}, status_code=404)
+    return template_payload(template)
+
+
+@transaction.atomic
+def upsert_transactional_template_for_client(template_key, data, authenticated_client):
+    defaults = validate_transactional_template_payload(data, template_key)
+    template, created = EmailTemplate.objects.update_or_create(
+        client=authenticated_client,
+        key=template_key,
+        defaults=defaults,
+    )
+    return {
+        "template": template_payload(template),
+        "created": created,
+    }
 
 
 def validate_contact_scope(data, authenticated_client, *, require_email=True, require_client=True):

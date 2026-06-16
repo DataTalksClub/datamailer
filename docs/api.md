@@ -108,6 +108,44 @@ JSON and CSV imports are idempotent by normalized email plus audience/client sco
 
 ## Transactional Email API
 
+### Transactional Template Upsert
+
+```text
+PUT /api/transactional/templates/{template_key}
+GET /api/transactional/templates/{template_key}
+```
+
+Templates are scoped to the authenticated client. Use `PUT` to create or update a transactional template, and `GET` to verify the current configuration.
+
+```json
+{
+  "name": "Homework Submission Confirmation",
+  "description": "Confirm that the course platform saved a homework submission.",
+  "subject": "Homework submission received: {{ homework_title }}",
+  "html_body": "<p>Your homework submission for <strong>{{ homework_title }}</strong> in {{ course_title }} was saved.</p>",
+  "text_body": "Your homework submission for {{ homework_title }} in {{ course_title }} was saved.",
+  "required_context": [
+    {"name": "course_title", "description": "Course title."},
+    {"name": "homework_title", "description": "Homework title."}
+  ],
+  "example_context": {
+    "course_title": "ML Zoomcamp",
+    "homework_title": "Homework 1"
+  },
+  "is_active": true
+}
+```
+
+The CMP homework confirmation template can be provisioned through the API with:
+
+```bash
+DATAMAILER_URL="https://datamailer.example.com" \
+DATAMAILER_API_KEY="<client-api-key>" \
+python scripts/upsert_homework_confirmation_template.py
+```
+
+### Send Transactional Email
+
 ```text
 POST /api/transactional/send
 ```

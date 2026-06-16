@@ -27,6 +27,7 @@ from mailing.services.api import (
     get_contact_history_for_client,
     get_contact_status_for_client,
     get_transactional_message_status_for_client,
+    get_transactional_template_for_client,
     remove_contact_tag_for_client,
     replace_contact_tags_for_client,
     subscribe_for_client,
@@ -35,6 +36,7 @@ from mailing.services.api import (
     update_contact_validation_for_client,
     update_contact_verification_for_client,
     upsert_contact_for_client,
+    upsert_transactional_template_for_client,
 )
 from mailing.services.api_docs import (
     DEMO_API_KEYS,
@@ -1012,6 +1014,30 @@ def api_transactional_message_status(request, message_id):
             message_id,
             client,
         )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_transactional_template(request, template_key):
+    if request.method not in {"GET", "PUT"}:
+        return method_not_allowed_response(["GET", "PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = get_transactional_template_for_client(template_key, client)
+        else:
+            payload = upsert_transactional_template_for_client(
+                template_key,
+                json_request_body(request),
+                client,
+            )
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

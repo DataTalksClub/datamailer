@@ -76,6 +76,11 @@ urlpatterns = [
     path("api/contacts/<int:contact_id>/history", views.api_contact_history, name="api_contact_history"),
     path("api/subscriptions/subscribe", views.api_subscribe, name="api_subscribe"),
     path("api/subscriptions/unsubscribe", views.api_unsubscribe, name="api_unsubscribe"),
+    path(
+        "api/transactional/templates/<slug:template_key>",
+        views.api_transactional_template,
+        name="api_transactional_template",
+    ),
     path("api/transactional/send", views.api_transactional_send, name="api_transactional_send"),
     path(
         "api/transactional/messages/<int:message_id>",
