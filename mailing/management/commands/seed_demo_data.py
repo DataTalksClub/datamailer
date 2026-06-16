@@ -157,9 +157,9 @@ def upsert_audiences(organizations):
 
 def upsert_clients(organizations):
     clients = {
-        "dtc-newsletter": ("DataTalksClub Newsletter", organizations["datatalksclub"], "newsletter@dtcdev.click"),
-        "dtc-courses": ("DTC Courses", organizations["datatalksclub"], "courses@dtcdev.click"),
-        "asl-platform": ("AI Shipping Labs Platform", organizations["ai-shipping-labs"], "hello@dtcdev.click"),
+        "dtc-newsletter": ("DataTalksClub Newsletter", organizations["datatalksclub"], "newsletter", "newsletter@dtcdev.click"),
+        "dtc-courses": ("DTC Courses", organizations["datatalksclub"], "courses", "courses@dtcdev.click"),
+        "asl-platform": ("AI Shipping Labs Platform", organizations["ai-shipping-labs"], "hello", "hello@dtcdev.click"),
     }
     return {
         slug: upsert_model(
@@ -169,10 +169,12 @@ def upsert_clients(organizations):
                 "name": name,
                 "default_from_email": default_from_email,
                 "allowed_from_emails": [default_from_email],
+                "default_sender_id": sender_id,
+                "sender_emails": [{"id": sender_id, "email": default_from_email}],
                 "is_active": True,
             },
         )
-        for slug, (name, organization, default_from_email) in clients.items()
+        for slug, (name, organization, sender_id, default_from_email) in clients.items()
     }
 
 
@@ -610,6 +612,7 @@ def upsert_transactional_messages(clients, contacts, templates, now):
             {
                 "contact": contact,
                 "email": contact.normalized_email,
+                "from_email_id": client.default_sender_id,
                 "from_email": client.default_from_email,
                 "template": template,
                 "template_key": template.key,

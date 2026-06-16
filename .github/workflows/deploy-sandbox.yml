@@ -65,7 +65,7 @@ jobs:
                 \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer pip install gunicorn\",
                 \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py collectstatic --noinput\",
                 \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py migrate --noinput\",
-                \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py set_client_senders dtc-courses --organization datatalksclub --default-from courses@dtcdev.click --allow courses@dtcdev.click --allow no-reply@dtcdev.click\",
+                \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py set_client_senders dtc-courses --organization datatalksclub --default-sender courses --sender courses=courses@dtcdev.click --sender no-reply=no-reply@dtcdev.click\",
                 \"systemctl restart datamailer\",
                 \"bash /opt/datamailer/scripts/install_sandbox_worker_service.sh\",
                 \"systemctl is-active datamailer\",

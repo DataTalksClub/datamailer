@@ -15,7 +15,7 @@ from mailing.models import (
 from mailing.queue_contracts import CONTRACT_VERSION, TRANSACTIONAL_EMAIL_CONTRACT, validate_transactional_email_message
 from mailing.services.api import ApiValidationError, isoformat
 from mailing.services.contacts import is_transactional_email_allowed, normalize_email, upsert_contact
-from mailing.services.senders import normalize_sender_email, resolve_sender_email
+from mailing.services.senders import normalize_sender_id, resolve_sender_email
 from mailing.services.transactional_catalog import validate_template_context
 from mailing.services.transactional_rendering import render_template_string
 from mailing.sqs import enqueue_transactional_email
@@ -44,7 +44,7 @@ def send_transactional_email_for_client(data, authenticated_client):
     if existing is not None:
         return response_payload(TransactionalSendResult(existing, idempotent_replay=True, enqueued=False))
 
-    from_email = resolve_sender_email(authenticated_client, payload["from_email"])
+    sender = resolve_sender_email(authenticated_client, payload["from_email"])
     validate_template_context(template, payload["context"])
 
     with transaction.atomic():
@@ -55,7 +55,7 @@ def send_transactional_email_for_client(data, authenticated_client):
                 contact=contact,
                 template=template,
                 payload=payload,
-                from_email=from_email,
+                sender=sender,
                 idempotency_key=idempotency_key,
                 status=TransactionalMessageStatus.QUEUED,
             )
@@ -70,7 +70,7 @@ def send_transactional_email_for_client(data, authenticated_client):
             contact=contact,
             template=template,
             payload=payload,
-            from_email=from_email,
+            sender=sender,
             idempotency_key=idempotency_key,
             status=TransactionalMessageStatus.SKIPPED,
             last_error=suppression_reason(contact),
@@ -129,7 +129,7 @@ def validate_transactional_send_payload(data):
     from_email = ""
     if "from_email" in data and data.get("from_email") not in (None, ""):
         try:
-            from_email = normalize_sender_email(data.get("from_email"))
+            from_email = normalize_sender_id(data.get("from_email"))
         except ApiValidationError as exc:
             errors.update(exc.errors)
 
@@ -172,13 +172,14 @@ def build_internal_idempotency_key():
     return f"transactional-message:{uuid4().hex}"
 
 
-def create_transactional_message(*, client, contact, template, payload, from_email, idempotency_key, status, last_error=""):
+def create_transactional_message(*, client, contact, template, payload, sender, idempotency_key, status, last_error=""):
     context = payload["context"]
     return TransactionalMessage.objects.create(
         client=client,
         contact=contact,
         email=normalize_email(payload["email"]),
-        from_email=from_email,
+        from_email_id=sender.sender_id,
+        from_email=sender.email,
         template=template,
         template_key=template.key,
         status=status,
@@ -231,7 +232,8 @@ def response_payload(result):
         "message": {
             "id": message.id,
             "email": message.email,
-            "from_email": message.from_email,
+            "from_email": message.from_email_id,
+            "from_email_address": message.from_email,
             "status": message.status,
             "template_key": message.template_key,
             "idempotency_key": message.idempotency_key,

@@ -504,7 +504,7 @@ curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/suppressi
                     "request": code_json(
                         {
                             "email": "learner@example.com",
-                            "from_email": "courses@dtcdev.click",
+                            "from_email": "courses",
                             "template_key": "registration-welcome",
                             "idempotency_key": "registration-user-123",
                             "context": {"name": "Learner", "course_name": "ML Zoomcamp"},
@@ -516,7 +516,7 @@ curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/suppressi
   -H "Content-Type: application/json" \\
   -d '{
     "email": "learner@example.com",
-    "from_email": "courses@dtcdev.click",
+    "from_email": "courses",
     "template_key": "registration-welcome",
     "idempotency_key": "registration-user-123",
     "context": {"name": "Learner", "course_name": "ML Zoomcamp"},
@@ -527,7 +527,7 @@ curl -sS -X PATCH "$DATAMAILER_URL/api/contacts/$NEWSLETTER_CONTACT_ID/suppressi
     headers=headers,
     json={
         "email": "learner@example.com",
-        "from_email": "courses@dtcdev.click",
+        "from_email": "courses",
         "template_key": "registration-welcome",
         "idempotency_key": "registration-user-123",
         "context": {"name": "Learner", "course_name": "ML Zoomcamp"},
@@ -569,7 +569,8 @@ requests.post(
                             "message": {
                                 "id": 901,
                                 "email": "learner@example.com",
-                                "from_email": "courses@dtcdev.click",
+                                "from_email": "courses",
+                                "from_email_address": "courses@dtcdev.click",
                                 "template_key": "registration-welcome",
                                 "status": "queued",
                             },
@@ -1375,8 +1376,7 @@ OPENAPI_SPEC = {
                     "email": {"type": "string", "format": "email"},
                     "from_email": {
                         "type": "string",
-                        "format": "email",
-                        "description": "Optional. Must match the authenticated client's default sender or allowed sender list. If omitted, Datamailer uses the client's default sender, then DEFAULT_FROM_EMAIL.",
+                        "description": "Optional configured sender ID, such as courses. If omitted, Datamailer uses the client's default sender ID. Raw email addresses are rejected.",
                     },
                     "template_key": {"type": "string"},
                     "idempotency_key": {"type": "string"},

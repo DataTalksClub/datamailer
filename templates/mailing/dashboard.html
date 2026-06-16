@@ -81,6 +81,14 @@
       {% endif %}
     </section>
   {% else %}
+  {% if not active_client.sender_emails or not active_client.default_sender_id %}
+    <div class="message warning">
+      <strong>This client does not have a sender email configured.</strong>
+      <div>Transactional sends will be rejected until a default sender ID and sender address are configured.</div>
+      <a class="button secondary" href="{% url 'mailing:client_edit' active_client.id %}">Edit client</a>
+    </div>
+  {% endif %}
+
   <section class="section" aria-labelledby="dashboard-summary">
     <div class="section-header">
       <div>

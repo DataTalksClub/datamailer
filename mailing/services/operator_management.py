@@ -92,8 +92,8 @@ def create_or_update_client(
     organization,
     name,
     slug,
-    default_from_email,
-    allowed_from_emails,
+    default_sender_id,
+    sender_emails,
     is_active,
 ):
     if client is None:
@@ -101,8 +101,8 @@ def create_or_update_client(
             organization=organization,
             name=name,
             slug=slug,
-            default_from_email=default_from_email,
-            allowed_from_emails=allowed_from_emails,
+            default_sender_id=default_sender_id,
+            sender_emails=sender_emails,
             is_active=is_active,
         )
         audit(
@@ -112,8 +112,8 @@ def create_or_update_client(
             {
                 "organization": organization.slug,
                 "slug": slug,
-                "default_from_email": default_from_email,
-                "allowed_from_emails": allowed_from_emails,
+                "default_sender_id": default_sender_id,
+                "sender_emails": sender_emails,
                 "is_active": is_active,
             },
         )
@@ -122,8 +122,8 @@ def create_or_update_client(
     for field, value in {
         "name": name,
         "slug": slug,
-        "default_from_email": default_from_email,
-        "allowed_from_emails": allowed_from_emails,
+        "default_sender_id": default_sender_id,
+        "sender_emails": sender_emails,
         "is_active": is_active,
     }.items():
         old = getattr(client, field)

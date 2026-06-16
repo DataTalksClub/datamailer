@@ -1,6 +1,6 @@
 from django import forms
 from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
+from django.core.validators import validate_email, validate_slug
 from django.utils.text import slugify
 
 from mailing.models import (
@@ -185,14 +185,14 @@ class AudienceForm(forms.ModelForm):
 
 
 class ClientForm(forms.ModelForm):
-    allowed_from_emails = forms.CharField(
+    sender_emails = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 4}),
     )
 
     class Meta:
         model = Client
-        fields = ["organization", "name", "slug", "default_from_email", "allowed_from_emails", "is_active"]
+        fields = ["organization", "name", "slug", "default_sender_id", "sender_emails", "is_active"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -205,17 +205,18 @@ class ClientForm(forms.ModelForm):
             "Stable identifier used in URLs, support conversations, logs, audit context, and API examples. "
             "It is not a secret or API key."
         )
-        self.fields["default_from_email"].label = "Default sender"
-        self.fields["default_from_email"].help_text = (
-            "Used for transactional sends when the API payload does not specify from_email."
-        )
-        self.fields["allowed_from_emails"].label = "Allowed senders"
-        self.fields["allowed_from_emails"].help_text = (
-            "Optional. One verified sender address per line. Payload from_email values must be listed here "
-            "or match the default sender."
+        self.fields["default_sender_id"].label = "Default sender ID"
+        self.fields["default_sender_id"].help_text = "Used when the API payload does not specify from_email."
+        self.fields["sender_emails"].label = "Configured senders"
+        self.fields["sender_emails"].help_text = (
+            "One sender per line as sender-id=email@example.com. API payload from_email must use a configured sender ID."
         )
         if self.instance and self.instance.pk:
-            self.fields["allowed_from_emails"].initial = "\n".join(self.instance.allowed_from_emails or [])
+            self.fields["sender_emails"].initial = "\n".join(
+                f"{sender.get('id')}={sender.get('email')}"
+                for sender in self.instance.sender_emails or []
+                if isinstance(sender, dict) and sender.get("id") and sender.get("email")
+            )
         self.fields["is_active"].label = "Client is active"
         self.fields["is_active"].help_text = (
             "Inactive clients cannot use their API keys for authenticated API activity or sending."
@@ -227,31 +228,47 @@ class ClientForm(forms.ModelForm):
             raise forms.ValidationError("Enter a valid slug.")
         return slug
 
-    def clean_default_from_email(self):
-        email = (self.cleaned_data.get("default_from_email") or "").strip()
-        if email:
+    def clean_default_sender_id(self):
+        sender_id = (self.cleaned_data.get("default_sender_id") or "").strip()
+        if sender_id:
             try:
-                validate_email(email)
+                validate_slug(sender_id)
             except ValidationError as exc:
-                raise forms.ValidationError("Enter a valid sender email address.") from exc
-        return email
+                raise forms.ValidationError("Enter a valid sender ID using letters, numbers, hyphens, or underscores.") from exc
+        return sender_id
 
-    def clean_allowed_from_emails(self):
-        raw_lines = (self.cleaned_data.get("allowed_from_emails") or "").splitlines()
-        emails = []
-        seen = set()
+    def clean_sender_emails(self):
+        raw_lines = (self.cleaned_data.get("sender_emails") or "").splitlines()
+        senders = []
+        seen_ids = set()
         for line in raw_lines:
-            email = line.strip()
-            if not email:
+            line = line.strip()
+            if not line:
                 continue
+            if "=" in line:
+                sender_id, email = line.split("=", 1)
+            elif "," in line:
+                sender_id, email = line.split(",", 1)
+            else:
+                parts = line.split(None, 1)
+                if len(parts) != 2:
+                    raise forms.ValidationError("Use sender-id=email@example.com, one sender per line.")
+                sender_id, email = parts
+            sender_id = sender_id.strip()
+            email = email.strip()
+            try:
+                validate_slug(sender_id)
+            except ValidationError as exc:
+                raise forms.ValidationError(f"Enter a valid sender ID: {sender_id}") from exc
             try:
                 validate_email(email)
             except ValidationError as exc:
                 raise forms.ValidationError(f"Enter a valid sender email address: {email}") from exc
-            if email.casefold() not in seen:
-                emails.append(email)
-                seen.add(email.casefold())
-        return emails
+            if sender_id in seen_ids:
+                raise forms.ValidationError(f"Sender ID is duplicated: {sender_id}")
+            senders.append({"id": sender_id, "email": email})
+            seen_ids.add(sender_id)
+        return senders
 
     def clean(self):
         cleaned = super().clean()
@@ -263,6 +280,13 @@ class ClientForm(forms.ModelForm):
                 duplicate = duplicate.exclude(pk=self.instance.pk)
             if duplicate.exists():
                 self.add_error("slug", "Client slug must be unique within this organization.")
+        sender_emails = cleaned.get("sender_emails") or []
+        default_sender_id = cleaned.get("default_sender_id")
+        sender_ids = {sender["id"] for sender in sender_emails}
+        if sender_emails and not default_sender_id:
+            cleaned["default_sender_id"] = sender_emails[0]["id"]
+        elif default_sender_id and default_sender_id not in sender_ids:
+            self.add_error("default_sender_id", "Default sender ID must be listed in configured senders.")
         return cleaned
 
 

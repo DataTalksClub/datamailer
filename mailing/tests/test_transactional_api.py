@@ -39,6 +39,8 @@ def api_client_record(organization):
         organization=organization,
         name="DTC Courses",
         slug="dtc-courses",
+        default_sender_id="newsletter",
+        sender_emails=[{"id": "newsletter", "email": "newsletter@example.com"}],
     )
     create_client_api_key(client=client, name="Transactional test", raw_api_key=API_KEY)
     return client
@@ -55,6 +57,8 @@ def other_client(organization):
         organization=organization,
         name="DTC Newsletter",
         slug="dtc-newsletter",
+        default_sender_id="newsletter",
+        sender_emails=[{"id": "newsletter", "email": "newsletter@example.com"}],
     )
     create_client_api_key(client=client, name="Other test", raw_api_key="other-key")
     return client
@@ -244,12 +248,14 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
 
     assert response.status_code == 202
     assert response.json()["message"]["id"] == message.id
-    assert response.json()["message"]["from_email"] == "newsletter@example.com"
+    assert response.json()["message"]["from_email"] == "newsletter"
+    assert response.json()["message"]["from_email_address"] == "newsletter@example.com"
     assert response.json()["message"]["status"] == TransactionalMessageStatus.QUEUED
     assert response.json()["idempotent_replay"] is False
     assert response.json()["enqueued"] is True
     assert contact.normalized_email == "person@example.com"
     assert message.email == "person@example.com"
+    assert message.from_email_id == "newsletter"
     assert message.from_email == "newsletter@example.com"
     assert message.template == template
     assert message.template_key == template.key
@@ -272,9 +278,12 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
 
 
 def test_transactional_send_uses_client_default_sender(client, api_client_record, template, monkeypatch):
-    api_client_record.default_from_email = "courses@dtcdev.click"
-    api_client_record.allowed_from_emails = ["courses@dtcdev.click", "no-reply@dtcdev.click"]
-    api_client_record.save(update_fields=["default_from_email", "allowed_from_emails", "updated_at"])
+    api_client_record.default_sender_id = "courses"
+    api_client_record.sender_emails = [
+        {"id": "courses", "email": "courses@dtcdev.click"},
+        {"id": "no-reply", "email": "no-reply@dtcdev.click"},
+    ]
+    api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
     enqueued = []
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
 
@@ -289,36 +298,44 @@ def test_transactional_send_uses_client_default_sender(client, api_client_record
 
     assert response.status_code == 202
     message = TransactionalMessage.objects.get()
+    assert message.from_email_id == "courses"
     assert message.from_email == "courses@dtcdev.click"
-    assert response.json()["message"]["from_email"] == "courses@dtcdev.click"
+    assert response.json()["message"]["from_email"] == "courses"
+    assert response.json()["message"]["from_email_address"] == "courses@dtcdev.click"
     assert len(enqueued) == 1
 
 
 def test_transactional_send_accepts_allowed_payload_sender(client, api_client_record, template, monkeypatch):
-    api_client_record.default_from_email = "courses@dtcdev.click"
-    api_client_record.allowed_from_emails = ["courses@dtcdev.click", "no-reply@dtcdev.click"]
-    api_client_record.save(update_fields=["default_from_email", "allowed_from_emails", "updated_at"])
+    api_client_record.default_sender_id = "courses"
+    api_client_record.sender_emails = [
+        {"id": "courses", "email": "courses@dtcdev.click"},
+        {"id": "no-reply", "email": "no-reply@dtcdev.click"},
+    ]
+    api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", lambda payload: None)
 
     response = post_transactional(
         client,
         {
             "email": "person@example.com",
-            "from_email": "no-reply@dtcdev.click",
+            "from_email": "no-reply",
             "template_key": template.key,
             "context": {"product": "Datamailer"},
         },
     )
 
     assert response.status_code == 202
-    assert TransactionalMessage.objects.get().from_email == "no-reply@dtcdev.click"
-    assert response.json()["message"]["from_email"] == "no-reply@dtcdev.click"
+    message = TransactionalMessage.objects.get()
+    assert message.from_email_id == "no-reply"
+    assert message.from_email == "no-reply@dtcdev.click"
+    assert response.json()["message"]["from_email"] == "no-reply"
+    assert response.json()["message"]["from_email_address"] == "no-reply@dtcdev.click"
 
 
 def test_transactional_send_rejects_unconfigured_payload_sender(client, api_client_record, template, monkeypatch):
-    api_client_record.default_from_email = "courses@dtcdev.click"
-    api_client_record.allowed_from_emails = ["courses@dtcdev.click"]
-    api_client_record.save(update_fields=["default_from_email", "allowed_from_emails", "updated_at"])
+    api_client_record.default_sender_id = "courses"
+    api_client_record.sender_emails = [{"id": "courses", "email": "courses@dtcdev.click"}]
+    api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
     enqueued = []
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
 
@@ -326,14 +343,56 @@ def test_transactional_send_rejects_unconfigured_payload_sender(client, api_clie
         client,
         {
             "email": "person@example.com",
-            "from_email": "other@dtcdev.click",
+            "from_email": "other",
             "template_key": template.key,
             "context": {"product": "Datamailer"},
         },
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["fields"] == {"from_email": "not_allowed"}
+    assert response.json()["error"]["fields"] == {"from_email": "not_configured"}
+    assert TransactionalMessage.objects.count() == 0
+    assert enqueued == []
+
+
+def test_transactional_send_rejects_raw_payload_sender_email(client, api_client_record, template, monkeypatch):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "from_email": "courses@dtcdev.click",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"from_email": "invalid"}
+    assert TransactionalMessage.objects.count() == 0
+    assert enqueued == []
+
+
+def test_transactional_send_rejects_when_client_has_no_sender_config(client, api_client_record, template, monkeypatch):
+    api_client_record.default_sender_id = ""
+    api_client_record.sender_emails = []
+    api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"from_email": "not_configured"}
     assert TransactionalMessage.objects.count() == 0
     assert enqueued == []
 
@@ -365,7 +424,8 @@ def test_transactional_message_status_returns_message_and_events(
     body = response.json()
     assert body["message"]["id"] == message_id
     assert body["message"]["email"] == "person@example.com"
-    assert body["message"]["from_email"] == "newsletter@example.com"
+    assert body["message"]["from_email"] == "newsletter"
+    assert body["message"]["from_email_address"] == "newsletter@example.com"
     assert body["message"]["status"] == TransactionalMessageStatus.QUEUED
     assert body["message"]["template_key"] == template.key
     assert body["message"]["idempotency_key"] == "verify-123"

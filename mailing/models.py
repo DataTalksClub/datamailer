@@ -46,6 +46,8 @@ class Client(TimeStampedModel):
     slug = models.SlugField(max_length=120)
     default_from_email = models.EmailField(max_length=320, blank=True)
     allowed_from_emails = models.JSONField(default=list, blank=True)
+    default_sender_id = models.SlugField(max_length=80, blank=True)
+    sender_emails = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -416,6 +418,7 @@ class TransactionalMessage(TimeStampedModel):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="transactional_messages")
     contact = models.ForeignKey(Contact, on_delete=models.PROTECT, related_name="transactional_messages")
     email = models.EmailField(max_length=320)
+    from_email_id = models.CharField(max_length=80, blank=True)
     from_email = models.EmailField(max_length=320, blank=True)
     template = models.ForeignKey(EmailTemplate, on_delete=models.PROTECT, related_name="transactional_messages")
     template_key = models.CharField(max_length=120)

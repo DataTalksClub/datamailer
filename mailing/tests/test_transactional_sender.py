@@ -57,6 +57,7 @@ def transactional_message(api_client_record, contact, template):
         client=api_client_record,
         contact=contact,
         email=contact.normalized_email,
+        from_email_id="courses",
         from_email="courses@dtcdev.click",
         template=template,
         template_key=template.key,
