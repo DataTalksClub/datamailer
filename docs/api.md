@@ -133,6 +133,14 @@ Local transactional send examples require the Datamailer server to be started wi
 
 Transactional sends do not require marketing subscription, but they are blocked for hard bounces and complaints.
 
+### Transactional Message Status
+
+```text
+GET /api/transactional/messages/{message_id}
+```
+
+Returns the current status for a transactional message created by the authenticated client, plus its event timeline. Use the `message.id` returned by `POST /api/transactional/send`.
+
 ## Contact History
 
 ```text

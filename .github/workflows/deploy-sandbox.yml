@@ -1,0 +1,93 @@
+name: Deploy Sandbox
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+
+concurrency:
+  group: datamailer-sandbox
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  SANDBOX_INSTANCE_ID: ${{ vars.DATAMAILER_SANDBOX_INSTANCE_ID || 'i-044716a7d6b053eef' }}
+  SANDBOX_HEALTH_URL: ${{ vars.DATAMAILER_SANDBOX_HEALTH_URL || 'https://datamailer.dtcdev.click/health/' }}
+  SANDBOX_DEPLOY_ROLE_ARN: ${{ vars.DATAMAILER_SANDBOX_DEPLOY_ROLE_ARN || 'arn:aws:iam::817685572750:role/datamailer-sandbox-github-deploy' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run lint
+        run: uv run ruff check .
+      - name: Run tests
+        run: uv run pytest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.SANDBOX_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy sandbox host
+        id: deploy
+        run: |
+          set -euo pipefail
+
+          COMMAND_ID=$(
+            aws ssm send-command \
+              --region "$AWS_REGION" \
+              --instance-ids "$SANDBOX_INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Deploy Datamailer sandbox ${GITHUB_SHA}" \
+              --parameters commands="[
+                \"set -euxo pipefail\",
+                \"sudo -u ubuntu git -C /opt/datamailer fetch origin main\",
+                \"sudo -u ubuntu git -C /opt/datamailer checkout --force ${GITHUB_SHA}\",
+                \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer sync --frozen\",
+                \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer pip install gunicorn\",
+                \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py collectstatic --noinput\",
+                \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py migrate --noinput\",
+                \"systemctl restart datamailer\",
+                \"systemctl is-active datamailer\",
+                \"sudo -u ubuntu git -C /opt/datamailer rev-parse --short HEAD\"
+              ]" \
+              --query 'Command.CommandId' \
+              --output text
+          )
+
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$SANDBOX_INSTANCE_ID"
+
+      - name: Show deployment output
+        if: always()
+        run: |
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "${{ steps.deploy.outputs.command_id }}" \
+            --instance-id "$SANDBOX_INSTANCE_ID" \
+            --query '{Status:Status,ResponseCode:ResponseCode,Stdout:StandardOutputContent,Stderr:StandardErrorContent}'
+
+      - name: Verify sandbox health
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-delay 3 "$SANDBOX_HEALTH_URL"

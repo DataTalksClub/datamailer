@@ -45,7 +45,7 @@ class Migration(migrations.Migration):
             options={
                 'db_table': 'client_api_keys',
                 'ordering': ['client__organization__slug', 'client__slug', 'revoked_at', 'name'],
-                'indexes': [models.Index(fields=['public_id'], name='client_api_keys_public_id_idx'), models.Index(fields=['client', 'revoked_at'], name='client_api_keys_client_state_idx')],
+                'indexes': [models.Index(fields=['public_id'], name='client_api_keys_public_id_idx'), models.Index(fields=['client', 'revoked_at'], name='client_keys_state_idx')],
                 'constraints': [models.UniqueConstraint(condition=models.Q(('revoked_at__isnull', True)), fields=('client', 'name'), name='unique_active_api_key_name_per_client')],
             },
         ),

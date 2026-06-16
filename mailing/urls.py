@@ -77,4 +77,9 @@ urlpatterns = [
     path("api/subscriptions/subscribe", views.api_subscribe, name="api_subscribe"),
     path("api/subscriptions/unsubscribe", views.api_unsubscribe, name="api_unsubscribe"),
     path("api/transactional/send", views.api_transactional_send, name="api_transactional_send"),
+    path(
+        "api/transactional/messages/<int:message_id>",
+        views.api_transactional_message_status,
+        name="api_transactional_message_status",
+    ),
 ]

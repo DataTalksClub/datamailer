@@ -26,6 +26,7 @@ from mailing.services.api import (
     add_contact_tag_for_client,
     get_contact_history_for_client,
     get_contact_status_for_client,
+    get_transactional_message_status_for_client,
     remove_contact_tag_for_client,
     replace_contact_tags_for_client,
     subscribe_for_client,
@@ -992,6 +993,25 @@ def api_contact_history(request, contact_id):
 
     try:
         payload = get_contact_history_for_client(contact_id, request.GET, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_transactional_message_status(request, message_id):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_transactional_message_status_for_client(
+            message_id,
+            client,
+        )
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

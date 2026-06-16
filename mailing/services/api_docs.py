@@ -48,6 +48,7 @@ API_DOC_PATHS = {
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
     "mailing:api_transactional_send": "/api/transactional/send",
+    "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
     "mailing:tracking_open": "/t/o/{tracking_token}.gif",
     "mailing:tracking_click": "/t/c/{tracking_token}",
     "mailing:public_unsubscribe": "/unsubscribe/{unsubscribe_token}",
@@ -700,6 +701,7 @@ def endpoint_groups():
                 ("POST", "/api/contacts/imports", "Bulk JSON import/upsert."),
                 ("POST", "/api/contacts/imports/csv", "CSV upload/import."),
                 ("POST", "/api/transactional/send", "Queue one transactional email."),
+                ("GET", "/api/transactional/messages/{message_id}", "Get transactional message status."),
             ],
         },
         {
@@ -737,6 +739,10 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_subscribe"]: reverse("mailing:api_subscribe"),
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
         API_DOC_PATHS["mailing:api_transactional_send"]: reverse("mailing:api_transactional_send"),
+        API_DOC_PATHS["mailing:api_transactional_message_status"]: reverse(
+            "mailing:api_transactional_message_status",
+            args=[123],
+        ),
         API_DOC_PATHS["mailing:tracking_open"]: reverse("mailing:tracking_open", args=["tracking"]),
         API_DOC_PATHS["mailing:tracking_click"]: reverse("mailing:tracking_click", args=["tracking"]),
         API_DOC_PATHS["mailing:public_unsubscribe"]: reverse("mailing:public_unsubscribe", args=["unsubscribe"]),
@@ -988,6 +994,29 @@ OPENAPI_SPEC = {
                     accepted=True,
                 )
                 | {"409": json_response("Contact suppressed", "#/components/schemas/TransactionalSendResponse")},
+            }
+        },
+        "/api/transactional/messages/{message_id}": {
+            "get": {
+                "tags": ["Transactional"],
+                "summary": "Get transactional message status",
+                "description": "Returns the current status and event timeline for a transactional message created by the authenticated client.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "message_id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "integer", "minimum": 1},
+                    }
+                ],
+                "responses": bearer_responses(
+                    json_response(
+                        "Transactional message status",
+                        "#/components/schemas/TransactionalMessageStatusResponse",
+                    )
+                )
+                | {"404": {"$ref": "#/components/responses/ValidationError"}},
             }
         },
         "/t/o/{tracking_token}.gif": {
@@ -1308,6 +1337,13 @@ OPENAPI_SPEC = {
                     "message": {"type": "object"},
                     "idempotent_replay": {"type": "boolean"},
                     "enqueued": {"type": "boolean"},
+                },
+            },
+            "TransactionalMessageStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "object"},
+                    "events": {"type": "array", "items": {"type": "object"}},
                 },
             },
         },

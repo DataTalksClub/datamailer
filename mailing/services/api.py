@@ -612,6 +612,15 @@ def transactional_history_item(message):
     }
 
 
+def transactional_message_status_item(message):
+    return transactional_history_item(message) | {
+        "contact_id": message.contact_id,
+        "idempotency_key": message.idempotency_key,
+        "ses_message_id": message.ses_message_id,
+        "updated_at": isoformat(message.updated_at),
+    }
+
+
 def event_history_item(event):
     return {
         "type": "email_event",
@@ -624,6 +633,29 @@ def event_history_item(event):
         "campaign_recipient_id": event.campaign_recipient_id,
         "transactional_message_id": event.transactional_message_id,
         "metadata": safe_metadata(event.metadata),
+    }
+
+
+def get_transactional_message_status_for_client(message_id, authenticated_client):
+    message = (
+        TransactionalMessage.objects.select_related("client", "contact")
+        .filter(id=message_id, client=authenticated_client)
+        .first()
+    )
+    if message is None:
+        raise ApiValidationError({"message_id": "not_found"}, status_code=404)
+
+    event_items = [
+        event_history_item(event)
+        for event in EmailEvent.objects.filter(transactional_message=message)
+        .filter(Q(client=authenticated_client) | Q(client__isnull=True))
+        .select_related("client", "audience")
+        .order_by("-id")
+    ]
+
+    return {
+        "message": transactional_message_status_item(message),
+        "events": event_items,
     }
 
 

@@ -85,7 +85,7 @@ class ClientApiKey(TimeStampedModel):
         ]
         indexes = [
             models.Index(fields=["public_id"], name="client_api_keys_public_id_idx"),
-            models.Index(fields=["client", "revoked_at"], name="client_api_keys_client_state_idx"),
+            models.Index(fields=["client", "revoked_at"], name="client_keys_state_idx"),
         ]
 
     @property

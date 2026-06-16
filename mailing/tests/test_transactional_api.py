@@ -138,6 +138,70 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["idempotency_key"] == "verify-123"
 
 
+def test_transactional_message_status_returns_message_and_events(
+    client,
+    template,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    send_response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "idempotency_key": "verify-123",
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    message_id = send_response.json()["message"]["id"]
+    response = client.get(
+        reverse("mailing:api_transactional_message_status", args=[message_id]),
+        **auth_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"]["id"] == message_id
+    assert body["message"]["email"] == "person@example.com"
+    assert body["message"]["status"] == TransactionalMessageStatus.QUEUED
+    assert body["message"]["template_key"] == template.key
+    assert body["message"]["idempotency_key"] == "verify-123"
+    assert body["message"]["contact_id"] == Contact.objects.get().id
+    assert body["events"][0]["event_type"] == EmailEventType.QUEUED
+    assert body["events"][0]["transactional_message_id"] == message_id
+
+
+def test_transactional_message_status_is_scoped_to_authenticated_client(
+    client,
+    template,
+    other_client,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    send_response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    response = client.get(
+        reverse(
+            "mailing:api_transactional_message_status",
+            args=[send_response.json()["message"]["id"]],
+        ),
+        **auth_headers("other-key"),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["fields"] == {"message_id": "not_found"}
+
+
 def test_transactional_idempotency_reuses_existing_message_without_enqueue(client, template, monkeypatch):
     enqueued = []
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
