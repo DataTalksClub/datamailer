@@ -15,13 +15,14 @@ This is the issue #13 MVP deployment path. It is intentionally practical without
 
 The current low-cost sandbox runs the Django web app on a single EC2 host with SQLite. Until the sandbox moves to shared Postgres/RDS, SQS workers must run on the same host as the web app so they can read the same database file. Deploying Lambda workers before that database move would let Lambda consume SQS messages but not load the corresponding Django rows.
 
-For this intermediate step, the sandbox deploy installs a `datamailer-transactional-worker.service` systemd unit on the EC2 host. It runs:
+For this intermediate step, the sandbox deploy installs these systemd units on the EC2 host:
 
 ```bash
 /opt/datamailer/.venv/bin/python manage.py process_sqs_worker transactional --batch-size 10 --wait-time 20
+/opt/datamailer/.venv/bin/python manage.py process_sqs_worker ses-webhooks --batch-size 10 --wait-time 20
 ```
 
-The command long-polls the transactional SQS queue, calls the same handler used by the future Lambda worker, deletes only successfully processed records, and leaves failed records for SQS retry/DLQ behavior. This is intentionally a sandbox bridge, not the final production architecture.
+The commands long-poll their SQS queues, call the same handlers used by the future Lambda workers, delete only successfully processed records, and leave failed records for SQS retry/DLQ behavior. This is intentionally a sandbox bridge, not the final production architecture.
 
 ## Files
 
