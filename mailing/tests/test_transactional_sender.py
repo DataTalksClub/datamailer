@@ -57,6 +57,7 @@ def transactional_message(api_client_record, contact, template):
         client=api_client_record,
         contact=contact,
         email=contact.normalized_email,
+        from_email="courses@dtcdev.click",
         template=template,
         template_key=template.key,
         status=TransactionalMessageStatus.QUEUED,
@@ -80,7 +81,7 @@ def test_transactional_handler_sends_persisted_message_and_records_sent_event(tr
             "send_email",
             {"MessageId": "ses-message-123"},
             {
-                "Source": "sender@example.com",
+                "Source": "courses@dtcdev.click",
                 "Destination": {"ToAddresses": ["person@example.com"]},
                 "Message": {
                     "Subject": {"Charset": "UTF-8", "Data": "Persisted subject"},

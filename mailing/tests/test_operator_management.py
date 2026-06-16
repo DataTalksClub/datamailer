@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
+from mailing.context_processors import ACTIVE_CLIENT_SESSION_KEY
 from mailing.models import (
     Audience,
     Campaign,
@@ -21,6 +22,12 @@ from mailing.services.auth import authenticate_bearer_token, check_api_key, crea
 from mailing.services.campaigns import estimate_campaign_recipients, snapshot_campaign_recipients
 
 pytestmark = pytest.mark.django_db
+
+
+def select_active_client(django_client, client_record):
+    session = django_client.session
+    session[ACTIVE_CLIENT_SESSION_KEY] = client_record.id
+    session.save()
 
 
 @pytest.fixture
@@ -118,8 +125,10 @@ def test_client_list_key_counts_do_not_bleed_between_clients(client, operator, c
     response = client.get(reverse("mailing:client_list"))
     page = response.content.decode()
 
-    own_row = page[page.index("DTC") : page.index("Other")]
-    other_row = page[page.index("Other") :]
+    own_row = page[page.index(f'href="{reverse("mailing:client_detail", args=[client_record.id])}"') :]
+    own_row = own_row[: own_row.index("</tr>")]
+    other_row = page[page.index(f'href="{reverse("mailing:client_detail", args=[other_client.id])}"') :]
+    other_row = other_row[: other_row.index("</tr>")]
     assert '<span class="badge success">1 active</span>' in own_row
     assert '<span class="badge success">2 active</span>' in other_row
 
@@ -235,7 +244,7 @@ def test_inactive_client_rejects_otherwise_valid_key(client, operator, client_re
     assert authenticate_bearer_token(f"Bearer {raw_key}").error == "inactive_client"
 
 
-def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organization, audience):
+def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organization, audience, client_record):
     client.force_login(operator)
     duplicate_audience = client.post(
         reverse("mailing:audience_create"),
@@ -257,7 +266,7 @@ def test_audience_and_tag_forms_validate_duplicate_slugs(client, operator, organ
     assert '<div class="field-errors"><ul class="errorlist" id="id_slug_error">' in duplicate_tag_html
 
 
-def test_audience_and_tag_form_success_redirects_are_preserved(client, operator, organization, audience):
+def test_audience_and_tag_form_success_redirects_are_preserved(client, operator, organization, audience, client_record):
     client.force_login(operator)
 
     created_audience_response = client.post(
@@ -373,7 +382,7 @@ def test_contact_tag_mutations_are_idempotent_and_feed_campaign_segmentation(cli
     assert OperatorAudit.objects.filter(action="contact.tag.remove", target_id=contact.id).count() == 1
 
 
-def test_contact_tag_form_rejects_cross_audience_tag(client, operator, organization, audience):
+def test_contact_tag_form_rejects_cross_audience_tag(client, operator, organization, audience, client_record):
     other_audience = Audience.objects.create(organization=organization, name="Other", slug="other")
     tag = Tag.objects.create(audience=other_audience, name="Other tag", slug="other-tag")
     contact = create_contact("person@example.com")

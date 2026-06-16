@@ -26,6 +26,7 @@
     </div>
     <div class="meta-grid">
       <div class="meta-item"><span class="meta-label">Message ID</span>{{ message.id }}</div>
+      <div class="meta-item"><span class="meta-label">From</span>{{ message.from_email|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Created</span>{{ message.created_at|date:"Y-m-d H:i" }}</div>
       <div class="meta-item"><span class="meta-label">Sent</span>{{ message.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Delivered</span>{{ message.delivered_at|date:"Y-m-d H:i"|default:"-" }}</div>

@@ -85,13 +85,47 @@ def create_or_update_tag(*, actor, tag=None, audience, name, slug):
 
 
 @transaction.atomic
-def create_or_update_client(*, actor, client=None, organization, name, slug, is_active):
+def create_or_update_client(
+    *,
+    actor,
+    client=None,
+    organization,
+    name,
+    slug,
+    default_from_email,
+    allowed_from_emails,
+    is_active,
+):
     if client is None:
-        client = Client.objects.create(organization=organization, name=name, slug=slug, is_active=is_active)
-        audit(actor, "client.create", client, {"organization": organization.slug, "slug": slug, "is_active": is_active})
+        client = Client.objects.create(
+            organization=organization,
+            name=name,
+            slug=slug,
+            default_from_email=default_from_email,
+            allowed_from_emails=allowed_from_emails,
+            is_active=is_active,
+        )
+        audit(
+            actor,
+            "client.create",
+            client,
+            {
+                "organization": organization.slug,
+                "slug": slug,
+                "default_from_email": default_from_email,
+                "allowed_from_emails": allowed_from_emails,
+                "is_active": is_active,
+            },
+        )
         return client
     changed = {}
-    for field, value in {"name": name, "slug": slug, "is_active": is_active}.items():
+    for field, value in {
+        "name": name,
+        "slug": slug,
+        "default_from_email": default_from_email,
+        "allowed_from_emails": allowed_from_emails,
+        "is_active": is_active,
+    }.items():
         old = getattr(client, field)
         if old != value:
             changed[field] = [old, value]

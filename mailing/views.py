@@ -23,7 +23,16 @@ from mailing.forms import (
     ContactTagRemoveForm,
     TagForm,
 )
-from mailing.models import Campaign, CampaignStatus, Client, ClientApiKey, EmailEvent, EmailEventType, Tag, TransactionalMessage
+from mailing.models import (
+    Campaign,
+    CampaignStatus,
+    Client,
+    ClientApiKey,
+    EmailEvent,
+    EmailEventType,
+    Tag,
+    TransactionalMessage,
+)
 from mailing.services.api import (
     ApiValidationError,
     add_contact_tag_for_client,
@@ -95,8 +104,8 @@ from mailing.services.operator_ui import (
     contact_explorer_queryset,
     contact_result_rows,
     contact_transactional_history,
-    delivery_tone,
     dashboard_context,
+    delivery_tone,
     event_context,
     metadata_summary,
     parse_contact_explorer_filters,
@@ -406,15 +415,7 @@ def contact_detail(request, contact_email):
     active_client = require_active_client(request)
     if active_client is None:
         return redirect("mailing:dashboard")
-    contact = get_object_or_404(
-        contact_detail_queryset().filter(
-            Q(subscriptions__client=active_client)
-            | Q(campaign_recipients__campaign__client=active_client)
-            | Q(transactional_messages__client=active_client)
-            | Q(email_events__client=active_client)
-        ).distinct(),
-        normalized_email=contact_email.casefold(),
-    )
+    contact = get_object_or_404(contact_detail_queryset(), normalized_email=contact_email.casefold())
     detail_context = contact_detail_context(contact, active_client)
     events = paginate(request, contact_event_timeline(contact, active_client), per_page=50)
     event_rows = [

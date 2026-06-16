@@ -36,7 +36,6 @@ class TransientSendFailure(RuntimeError):
 
 def send_transactional_email_from_queue(payload, *, client=None, source=None):
     message_id = payload["transactional_message_id"]
-    source = source or settings.DEFAULT_FROM_EMAIL
 
     try:
         with transaction.atomic():
@@ -65,6 +64,7 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
                 _record_retryable_error(message.id, f"transactional message status is not sendable: {message.status}")
                 raise TransientSendFailure(f"transactional message status is not sendable: {message.status}")
 
+            source = source or message.from_email or message.client.default_from_email or settings.DEFAULT_FROM_EMAIL
             try:
                 ses_message_id = send_email(
                     ses_client=client or ses_client(),

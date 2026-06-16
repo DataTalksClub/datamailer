@@ -700,6 +700,7 @@ def transactional_history_item(message):
         "created_at": isoformat(message.created_at),
         "client": message.client.slug,
         "email": message.email,
+        "from_email": message.from_email,
         "template_key": message.template_key,
         "status": message.status,
         "subject": message.subject,

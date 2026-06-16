@@ -6,6 +6,7 @@ from django.contrib.staticfiles import finders
 from django.urls import reverse
 from django.utils import timezone
 
+from mailing.context_processors import ACTIVE_CLIENT_SESSION_KEY
 from mailing.models import (
     Audience,
     Campaign,
@@ -45,6 +46,12 @@ from mailing.services.operator_ui import (
 )
 
 pytestmark = pytest.mark.django_db
+
+
+def select_active_client(django_client, client_record):
+    session = django_client.session
+    session[ACTIVE_CLIENT_SESSION_KEY] = client_record.id
+    session.save()
 
 
 @pytest.fixture
@@ -176,7 +183,6 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
     assert "Operational Summary" in html
     assert "Recent Campaign Activity" in html
     assert "Deliverability Attention" in html
-    assert "Integration and API Readiness" in html
     assert "Quick Links" in html
     assert "Weekly update" in html
     assert f'href="{reverse("mailing:campaign_detail", args=[campaign.id])}"' in html
@@ -184,10 +190,8 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
     assert "bounce_type: Permanent" in html
     assert 'href="/contacts/bounced@example.com/"' in html
     assert "DTC Courses" in html
-    assert f'href="{reverse("mailing:client_detail", args=[client_record.id])}"' in html
     assert f'href="{reverse("mailing:audience_list")}"' in html
     assert f'href="{reverse("mailing:contact_search")}"' in html
-    assert f'href="{reverse("mailing:template_catalog")}"' in html
     assert "/operator/" not in html
 
 
@@ -197,10 +201,7 @@ def test_dashboard_empty_states_are_actionable(client, operator):
     response = client.get(reverse("mailing:dashboard"))
 
     assert response.status_code == 200
-    assert b"No campaigns yet" in response.content
-    assert b"No deliverability issues found" in response.content
     assert b"No clients configured" in response.content
-    assert f'href="{reverse("mailing:campaign_create")}"'.encode() in response.content
     assert f'href="{reverse("mailing:client_create")}"'.encode() in response.content
 
 
@@ -554,7 +555,7 @@ def test_operator_contact_views_show_email_validation_status(client, operator, a
     assert b"staff marked bad" in detail_response.content
 
 
-def test_contact_detail_uses_normalized_email_url_and_mixed_case_lookup(client, operator):
+def test_contact_detail_uses_normalized_email_url_and_mixed_case_lookup(client, operator, client_record):
     client.force_login(operator)
     contact = create_contact(" Person@Example.COM ")
 
@@ -614,7 +615,7 @@ def test_contact_mutation_routes_redirect_to_normalized_email(client, operator, 
     assert [response["Location"] for response in responses] == [expected_location] * 4
 
 
-def test_contact_email_url_unknown_and_numeric_ids_return_404(client, operator):
+def test_contact_email_url_unknown_and_numeric_ids_return_404(client, operator, client_record):
     client.force_login(operator)
     contact = create_contact("person@example.com")
 
@@ -694,7 +695,7 @@ def test_operator_contact_explorer_renders_redesigned_filter_groups_and_result_h
     html = response.content.decode()
 
     assert response.status_code == 200
-    assert "Scope" in html
+    assert "Filters" in html
     assert "State" in html
     assert "Activity" in html
     assert "Tags" in html
@@ -704,12 +705,9 @@ def test_operator_contact_explorer_renders_redesigned_filter_groups_and_result_h
     assert "Validation: Valid" in html
     assert "Includes tag: very-long-newsletter-segment-for-returning-learners" in html
     assert 'class="table-wrap contact-explorer-table"' in html
-    assert "Sendability" in html
-    assert "Audience and subscription" in html
-    assert "Engagement" in html
     assert "Last activity" in html
-    assert "Opens:" in html
-    assert "Clicks:" in html
+    assert "Opened" in html
+    assert "Clicked" in html
     assert 'class="data-truncate" href="/contacts/reachable.person.with.long.address@example.com/"' in html
     assert "Subscribed" in html
     assert "Verified" in html
@@ -747,11 +745,12 @@ def test_operator_contact_explorer_badges_suppressed_unverified_and_no_activity_
     assert "Manually invalid" in html
     assert "Unverified" in html
     assert "manual block" in html
-    assert "No activity" in html
-    assert 'class="data-truncate">datatalks-club/dtc-courses: unsubscribed' in html
+    assert "Sent never" in html
+    assert "Opened never / Clicked never" in html
+    assert "datatalks-club/dtc-courses: unsubscribed" in html
 
 
-def test_operator_contact_explorer_empty_state(client, operator):
+def test_operator_contact_explorer_empty_state(client, operator, client_record):
     client.force_login(operator)
 
     response = client.get(reverse("mailing:contact_search"), {"q": "missing@example.com"})
@@ -921,7 +920,7 @@ def test_contact_detail_summary_shows_blocked_reasons_and_secondary_raw_details(
     assert html.index("bounce_type: Permanent") > html.index("Full event timeline and audit details")
 
 
-def test_contact_detail_no_membership_explains_not_subscribed_and_no_activity(client, operator):
+def test_contact_detail_no_membership_explains_not_subscribed_and_no_activity(client, operator, client_record):
     client.force_login(operator)
     contact = create_contact("quiet@example.com", email_validation_status=EmailValidationStatus.UNKNOWN)
 
@@ -973,7 +972,7 @@ def test_campaign_list_renders_recent_campaigns(client, operator, campaign):
     assert "Create campaign" in html
 
 
-def test_campaign_list_empty_state_is_actionable(client, operator):
+def test_campaign_list_empty_state_is_actionable(client, operator, client_record):
     client.force_login(operator)
 
     response = client.get(reverse("mailing:campaign_list"))
@@ -984,7 +983,7 @@ def test_campaign_list_empty_state_is_actionable(client, operator):
     assert f'href="{reverse("mailing:campaign_create")}"'.encode() in response.content
 
 
-def test_audience_list_empty_state_is_actionable(client, operator):
+def test_audience_list_empty_state_is_actionable(client, operator, client_record):
     client.force_login(operator)
 
     response = client.get(reverse("mailing:audience_list"))
@@ -995,7 +994,7 @@ def test_audience_list_empty_state_is_actionable(client, operator):
     assert f'href="{reverse("mailing:audience_create")}"'.encode() in response.content
 
 
-def test_audience_create_and_edit_forms_use_operational_layout(client, operator, audience):
+def test_audience_create_and_edit_forms_use_operational_layout(client, operator, audience, client_record):
     client.force_login(operator)
 
     create_response = client.get(reverse("mailing:audience_create"))
@@ -1018,7 +1017,7 @@ def test_audience_create_and_edit_forms_use_operational_layout(client, operator,
     assert "Save audience" in edit_response.content.decode()
 
 
-def test_tag_create_and_edit_forms_show_parent_scope_and_actions(client, operator, audience):
+def test_tag_create_and_edit_forms_show_parent_scope_and_actions(client, operator, audience, client_record):
     client.force_login(operator)
     tag = Tag.objects.create(audience=audience, name="Newsletter", slug="newsletter")
 
@@ -1158,6 +1157,7 @@ def test_audience_detail_membership_summaries_are_scoped_to_current_audience(
         name="ASL Platform",
         slug="asl-platform",
     )
+    select_active_client(client, client_record)
     contact = create_subscribed_contact("multi@example.com", audience, client_record)
     Subscription.objects.create(
         contact=contact,
@@ -1364,16 +1364,13 @@ def test_campaign_create_validation_rejects_same_tag_in_include_and_exclude(clie
     assert b"A tag cannot be both included and excluded" in response.content
 
 
-def test_campaign_create_validation_rejects_missing_final_bodies_and_cross_org_client(client, operator, audience):
+def test_campaign_create_validation_rejects_missing_final_bodies(client, operator, audience, client_record):
     client.force_login(operator)
-    other_org = Organization.objects.create(name="Other", slug="other")
-    other_client = Client.objects.create(organization=other_org, name="Other Client", slug="other-client")
 
     response = client.post(
         reverse("mailing:campaign_create"),
         {
             "audience": audience.id,
-            "client": other_client.id,
             "subject": "Incomplete",
             "html_body": "",
             "text_body": "",
@@ -1382,7 +1379,6 @@ def test_campaign_create_validation_rejects_missing_final_bodies_and_cross_org_c
 
     assert response.status_code == 200
     assert Campaign.objects.count() == 0
-    assert b"Client must belong to the selected audience organization" in response.content
     assert b"Paste the final HTML body before saving" in response.content
     assert b"Paste the final text body before saving" in response.content
 
@@ -1689,6 +1685,7 @@ def test_transactional_template_catalog_filters_paginates_and_summarizes_context
     client.force_login(operator)
     selected_client = Client.objects.create(organization=organization, name="Selected Client", slug="selected-client")
     other_client = Client.objects.create(organization=organization, name="Other Client", slug="other-client")
+    select_active_client(client, selected_client)
     for index in range(26):
         EmailTemplate.objects.create(
             client=selected_client,
@@ -1709,7 +1706,7 @@ def test_transactional_template_catalog_filters_paginates_and_summarizes_context
         subject="Subject",
     )
 
-    response = client.get(reverse("mailing:template_catalog"), {"client": selected_client.id})
+    response = client.get(reverse("mailing:template_catalog"))
 
     assert response.status_code == 200
     html = response.content.decode()
@@ -1719,11 +1716,16 @@ def test_transactional_template_catalog_filters_paginates_and_summarizes_context
     assert "verification_url" in html
     assert "+1" in html
     assert "{&#x27;name&#x27;" not in html
-    assert f"?client={selected_client.id}&amp;page=2" in html
+    assert "?page=2" in html
 
 
 def test_transactional_template_pages_show_operational_empty_states(client, operator, client_record):
     client.force_login(operator)
+    empty_client = Client.objects.create(
+        organization=client_record.organization,
+        name="Empty Client",
+        slug="empty-client",
+    )
     template = EmailTemplate.objects.create(
         client=client_record,
         key="empty-context",
@@ -1735,7 +1737,9 @@ def test_transactional_template_pages_show_operational_empty_states(client, oper
         example_context={},
     )
 
-    filtered_empty = client.get(reverse("mailing:template_catalog"), {"client": client_record.id + 1000})
+    select_active_client(client, empty_client)
+    filtered_empty = client.get(reverse("mailing:template_catalog"))
+    select_active_client(client, client_record)
     detail_response = client.get(reverse("mailing:template_detail", args=[template.id]))
 
     assert filtered_empty.status_code == 200

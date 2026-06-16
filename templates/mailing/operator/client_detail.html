@@ -76,6 +76,8 @@
     <div class="detail-grid">
       <div class="meta-item"><span class="meta-label">Organization</span>{{ client.organization.name }}</div>
       <div class="meta-item"><span class="meta-label">Slug</span><code>{{ client.slug }}</code></div>
+      <div class="meta-item"><span class="meta-label">Default sender</span>{{ client.default_from_email|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Allowed senders</span>{% if client.allowed_from_emails %}{{ client.allowed_from_emails|join:", " }}{% else %}-{% endif %}</div>
       <div class="meta-item"><span class="meta-label">Created</span>{{ client.created_at|date:"Y-m-d H:i" }}</div>
       <div class="meta-item"><span class="meta-label">Updated</span>{{ client.updated_at|date:"Y-m-d H:i" }}</div>
     </div>

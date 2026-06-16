@@ -1,4 +1,6 @@
 from django import forms
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.utils.text import slugify
 
 from mailing.models import (
@@ -183,9 +185,14 @@ class AudienceForm(forms.ModelForm):
 
 
 class ClientForm(forms.ModelForm):
+    allowed_from_emails = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+
     class Meta:
         model = Client
-        fields = ["organization", "name", "slug", "is_active"]
+        fields = ["organization", "name", "slug", "default_from_email", "allowed_from_emails", "is_active"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -198,6 +205,17 @@ class ClientForm(forms.ModelForm):
             "Stable identifier used in URLs, support conversations, logs, audit context, and API examples. "
             "It is not a secret or API key."
         )
+        self.fields["default_from_email"].label = "Default sender"
+        self.fields["default_from_email"].help_text = (
+            "Used for transactional sends when the API payload does not specify from_email."
+        )
+        self.fields["allowed_from_emails"].label = "Allowed senders"
+        self.fields["allowed_from_emails"].help_text = (
+            "Optional. One verified sender address per line. Payload from_email values must be listed here "
+            "or match the default sender."
+        )
+        if self.instance and self.instance.pk:
+            self.fields["allowed_from_emails"].initial = "\n".join(self.instance.allowed_from_emails or [])
         self.fields["is_active"].label = "Client is active"
         self.fields["is_active"].help_text = (
             "Inactive clients cannot use their API keys for authenticated API activity or sending."
@@ -208,6 +226,32 @@ class ClientForm(forms.ModelForm):
         if not slug:
             raise forms.ValidationError("Enter a valid slug.")
         return slug
+
+    def clean_default_from_email(self):
+        email = (self.cleaned_data.get("default_from_email") or "").strip()
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError as exc:
+                raise forms.ValidationError("Enter a valid sender email address.") from exc
+        return email
+
+    def clean_allowed_from_emails(self):
+        raw_lines = (self.cleaned_data.get("allowed_from_emails") or "").splitlines()
+        emails = []
+        seen = set()
+        for line in raw_lines:
+            email = line.strip()
+            if not email:
+                continue
+            try:
+                validate_email(email)
+            except ValidationError as exc:
+                raise forms.ValidationError(f"Enter a valid sender email address: {email}") from exc
+            if email.casefold() not in seen:
+                emails.append(email)
+                seen.add(email.casefold())
+        return emails
 
     def clean(self):
         cleaned = super().clean()

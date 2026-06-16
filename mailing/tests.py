@@ -26,7 +26,8 @@ class DashboardTests(TestCase):
         assert response.status_code == 200
         page = response.content.decode()
         assert "Dashboard" in page
-        assert "Operational Summary" in page
+        assert "Select a client" in page
+        assert "No clients configured" in page
         assert "/operator/" not in page
 
     def test_dashboard_requires_staff(self):

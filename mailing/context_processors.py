@@ -1,6 +1,5 @@
 from mailing.models import Client
 
-
 ACTIVE_CLIENT_SESSION_KEY = "operator_active_client_id"
 
 

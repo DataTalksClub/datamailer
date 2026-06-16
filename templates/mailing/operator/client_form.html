@@ -74,6 +74,29 @@
       </div>
     </section>
 
+    <section class="form-section" aria-labelledby="client-sender-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="client-sender-heading">Sender policy</h2>
+          <p>Configure the sender addresses this integration can use for transactional email.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.default_from_email.label_tag }}
+          {{ form.default_from_email }}
+          {% if form.default_from_email.help_text %}<div class="helptext">{{ form.default_from_email.help_text }}</div>{% endif %}
+          {% if form.default_from_email.errors %}<div class="field-errors">{{ form.default_from_email.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.allowed_from_emails.label_tag }}
+          {{ form.allowed_from_emails }}
+          {% if form.allowed_from_emails.help_text %}<div class="helptext">{{ form.allowed_from_emails.help_text }}</div>{% endif %}
+          {% if form.allowed_from_emails.errors %}<div class="field-errors">{{ form.allowed_from_emails.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
     <section class="form-section" aria-labelledby="client-access-heading">
       <div class="section-header">
         <div>

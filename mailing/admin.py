@@ -39,7 +39,7 @@ class AudienceAdmin(CreatedAtReadOnlyMixin, admin.ModelAdmin):
 @admin.register(Client)
 class ClientAdmin(CreatedAtReadOnlyMixin, admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
-    list_display = ("name", "slug", "organization", "is_active", "created_at")
+    list_display = ("name", "slug", "organization", "default_from_email", "is_active", "created_at")
     list_filter = ("organization", "is_active")
     search_fields = ("name", "slug", "organization__name", "organization__slug")
     prepopulated_fields = {"slug": ("name",)}
@@ -215,10 +215,11 @@ class EmailEventInline(admin.TabularInline):
 @admin.register(TransactionalMessage)
 class TransactionalMessageAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
-    list_display = ("email", "template_key", "client", "status", "idempotency_key", "created_at")
+    list_display = ("email", "from_email", "template_key", "client", "status", "idempotency_key", "created_at")
     list_filter = ("status", "client", "template")
     search_fields = (
         "email",
+        "from_email",
         "contact__email",
         "contact__normalized_email",
         "template_key",

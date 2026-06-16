@@ -244,11 +244,13 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
 
     assert response.status_code == 202
     assert response.json()["message"]["id"] == message.id
+    assert response.json()["message"]["from_email"] == "newsletter@example.com"
     assert response.json()["message"]["status"] == TransactionalMessageStatus.QUEUED
     assert response.json()["idempotent_replay"] is False
     assert response.json()["enqueued"] is True
     assert contact.normalized_email == "person@example.com"
     assert message.email == "person@example.com"
+    assert message.from_email == "newsletter@example.com"
     assert message.template == template
     assert message.template_key == template.key
     assert message.subject == "Verify Datamailer"
@@ -267,6 +269,73 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["template_id"] == template.id
     assert enqueued[0]["template_key"] == template.key
     assert enqueued[0]["idempotency_key"] == "verify-123"
+
+
+def test_transactional_send_uses_client_default_sender(client, api_client_record, template, monkeypatch):
+    api_client_record.default_from_email = "courses@dtcdev.click"
+    api_client_record.allowed_from_emails = ["courses@dtcdev.click", "no-reply@dtcdev.click"]
+    api_client_record.save(update_fields=["default_from_email", "allowed_from_emails", "updated_at"])
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 202
+    message = TransactionalMessage.objects.get()
+    assert message.from_email == "courses@dtcdev.click"
+    assert response.json()["message"]["from_email"] == "courses@dtcdev.click"
+    assert len(enqueued) == 1
+
+
+def test_transactional_send_accepts_allowed_payload_sender(client, api_client_record, template, monkeypatch):
+    api_client_record.default_from_email = "courses@dtcdev.click"
+    api_client_record.allowed_from_emails = ["courses@dtcdev.click", "no-reply@dtcdev.click"]
+    api_client_record.save(update_fields=["default_from_email", "allowed_from_emails", "updated_at"])
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", lambda payload: None)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "from_email": "no-reply@dtcdev.click",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 202
+    assert TransactionalMessage.objects.get().from_email == "no-reply@dtcdev.click"
+    assert response.json()["message"]["from_email"] == "no-reply@dtcdev.click"
+
+
+def test_transactional_send_rejects_unconfigured_payload_sender(client, api_client_record, template, monkeypatch):
+    api_client_record.default_from_email = "courses@dtcdev.click"
+    api_client_record.allowed_from_emails = ["courses@dtcdev.click"]
+    api_client_record.save(update_fields=["default_from_email", "allowed_from_emails", "updated_at"])
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "from_email": "other@dtcdev.click",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"from_email": "not_allowed"}
+    assert TransactionalMessage.objects.count() == 0
+    assert enqueued == []
 
 
 def test_transactional_message_status_returns_message_and_events(
@@ -296,6 +365,7 @@ def test_transactional_message_status_returns_message_and_events(
     body = response.json()
     assert body["message"]["id"] == message_id
     assert body["message"]["email"] == "person@example.com"
+    assert body["message"]["from_email"] == "newsletter@example.com"
     assert body["message"]["status"] == TransactionalMessageStatus.QUEUED
     assert body["message"]["template_key"] == template.key
     assert body["message"]["idempotency_key"] == "verify-123"
@@ -349,6 +419,7 @@ def test_transactional_idempotency_reuses_existing_message_without_enqueue(clien
     assert first.status_code == 202
     assert second.status_code == 202
     assert second.json()["message"]["id"] == first.json()["message"]["id"]
+    assert second.json()["message"]["from_email"] == first.json()["message"]["from_email"]
     assert second.json()["idempotent_replay"] is True
     assert second.json()["enqueued"] is False
     assert TransactionalMessage.objects.count() == 1
