@@ -22,13 +22,14 @@
       <div class="section-header">
         <div>
           <h2 id="audience-scope-heading">Organization scope</h2>
-          <p>An audience belongs to one organization. The same slug can exist in another organization, but not in this one.</p>
+          <p>This audience belongs to {{ active_client.organization.name }} through the active client.</p>
         </div>
       </div>
+      {{ form.organization }}
       <div class="form-grid">
         <div class="form-field full">
-          {{ form.organization.label_tag }}
-          {{ form.organization }}
+          <label>Organization</label>
+          <div class="readonly-field">{{ active_client.organization.name }}</div>
           {% if form.organization.help_text %}<div class="helptext">{{ form.organization.help_text }}</div>{% endif %}
           {% if form.organization.errors %}<div class="field-errors">{{ form.organization.errors }}</div>{% endif %}
         </div>

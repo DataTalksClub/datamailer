@@ -124,10 +124,9 @@
             {% for row in recent_message_rows %}
               <tr>
                 <td>
+                  <a href="{% url 'mailing:transactional_message_detail' row.message.id %}">{{ row.message.email }}</a>
                   {% if row.message.contact %}
-                    <a href="{% url 'mailing:contact_detail' row.message.contact.normalized_email %}">{{ row.message.email }}</a>
-                  {% else %}
-                    {{ row.message.email }}
+                    <div class="helptext"><a href="{% url 'mailing:contact_detail' row.message.contact.normalized_email %}">Contact</a></div>
                   {% endif %}
                 </td>
                 <td><span class="badge {{ row.badge.tone }}">{{ row.badge.label }}</span></td>

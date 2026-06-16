@@ -5,15 +5,82 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Dashboard</h1>
-      <p class="muted">Operational summary for campaigns, audience health, API access, and templates.</p>
+      <h1>{% if active_client %}{{ active_client.name }}{% else %}Select a client{% endif %}</h1>
+      <p class="muted">
+        {% if active_client %}
+          Client dashboard for campaigns, audience health, API access, and templates.
+        {% else %}
+          Choose the active client before working with campaigns, audiences, contacts, or templates.
+        {% endif %}
+      </p>
     </div>
     <div class="actions">
-      <a class="button" href="{% url 'mailing:campaign_create' %}">Create campaign</a>
-      <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
+      {% if active_client %}
+        <a class="button" href="{% url 'mailing:campaign_create' %}">Create campaign</a>
+        <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
+      {% else %}
+        <a class="button" href="{% url 'mailing:client_list' %}">Open clients</a>
+      {% endif %}
     </div>
   </div>
 
+  {% if not active_client %}
+    <section class="section" aria-labelledby="client-selection">
+      <div class="section-header">
+        <div>
+          <h2 id="client-selection">Clients</h2>
+          <p class="muted">Select one client to make it the active company for this operator session.</p>
+        </div>
+        <a class="button secondary" href="{% url 'mailing:client_create' %}">Create client</a>
+      </div>
+      {% if clients %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Organization</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for client in clients %}
+                <tr>
+                  <td>
+                    <strong>{{ client.name }}</strong>
+                    <div class="helptext">{{ client.slug }}</div>
+                  </td>
+                  <td>{{ client.organization.name }}</td>
+                  <td>
+                    {% if client.is_active %}
+                      <span class="badge success">Active</span>
+                    {% else %}
+                      <span class="badge danger">Inactive</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <form method="post" action="{% url 'mailing:client_select' %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="client_id" value="{{ client.id }}">
+                      <input type="hidden" name="next" value="{% url 'mailing:dashboard' %}">
+                      <button type="submit">Use client</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <strong>No clients configured</strong>
+          <p>Create a client before managing campaigns, audiences, contacts, or transactional templates.</p>
+          <a class="button secondary" href="{% url 'mailing:client_create' %}">Create client</a>
+        </div>
+      {% endif %}
+    </section>
+  {% else %}
   <section class="section" aria-labelledby="dashboard-summary">
     <div class="section-header">
       <div>
@@ -112,64 +179,6 @@
     </section>
   </div>
 
-  <section class="section" aria-labelledby="integration-readiness">
-    <div class="section-header">
-      <div>
-        <h2 id="integration-readiness">Integration and API Readiness</h2>
-        <p class="muted">Client access, API keys, and transactional templates available to integrations.</p>
-      </div>
-      <div class="actions">
-        <a class="button secondary" href="{% url 'mailing:client_list' %}">Clients</a>
-        <a class="button secondary" href="{% url 'mailing:template_catalog' %}">Templates</a>
-      </div>
-    </div>
-    <div class="meta-grid">
-      {% for stat in dashboard.integration_stats %}
-        <div class="meta-item">
-          <span class="metric-value">{{ stat.value }}</span>
-          <span class="meta-label">{{ stat.label }}</span>
-          {% if stat.rate %}<span class="helptext">{{ stat.rate }}</span>{% endif %}
-        </div>
-      {% endfor %}
-    </div>
-    {% if dashboard.integration_clients %}
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Client</th>
-              <th>Organization</th>
-              <th>Status</th>
-              <th class="nowrap">Active keys</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in dashboard.integration_clients %}
-              <tr>
-                <td><a href="{% url 'mailing:client_detail' row.client.id %}">{{ row.client.name }}</a></td>
-                <td>{{ row.client.organization.name }}</td>
-                <td>
-                  {% if row.client.is_active %}
-                    <span class="badge success">Active</span>
-                  {% else %}
-                    <span class="badge neutral">Inactive</span>
-                  {% endif %}
-                </td>
-                <td class="nowrap">{{ row.active_api_key_count }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="empty-state">
-        <strong>No clients configured</strong>
-        <p>Create a client before issuing API keys or sending transactional email.</p>
-        <a class="button secondary" href="{% url 'mailing:client_create' %}">Create client</a>
-      </div>
-    {% endif %}
-  </section>
-
   <section class="section" aria-labelledby="quick-links">
     <div class="section-header">
       <div>
@@ -186,14 +195,11 @@
         <strong>Contacts</strong>
         <span class="helptext">Search sendability, subscriptions, and engagement.</span>
       </a>
-      <a class="compact-row" href="{% url 'mailing:client_list' %}">
-        <strong>Clients</strong>
-        <span class="helptext">Integration settings and API key management.</span>
-      </a>
       <a class="compact-row" href="/admin/">
         <strong>Admin</strong>
         <span class="helptext">Django admin for supporting operations.</span>
       </a>
     </div>
   </section>
+  {% endif %}
 {% endblock %}

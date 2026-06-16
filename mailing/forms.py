@@ -51,7 +51,8 @@ class CampaignForm(forms.ModelForm):
             "preview_text": forms.Textarea(attrs={"rows": 2}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, active_client=None, **kwargs):
+        self.active_client = active_client
         super().__init__(*args, **kwargs)
         self.fields["html_body"].label = "HTML body"
         self.fields["html_body"].help_text = "Paste the final HTML email body prepared outside Datamailer."
@@ -66,6 +67,19 @@ class CampaignForm(forms.ModelForm):
         self.fields["client"].queryset = Client.objects.select_related("organization").filter(is_active=True).order_by(
             "organization__slug", "slug"
         )
+        if active_client is not None:
+            self.fields["client"].queryset = Client.objects.filter(pk=active_client.pk)
+            self.fields["client"].initial = active_client
+            self.fields["client"].widget = forms.HiddenInput()
+            self.fields["audience"].queryset = Audience.objects.select_related("organization").filter(
+                organization=active_client.organization
+            ).order_by("slug")
+            self.fields["include_tags"].queryset = Tag.objects.select_related("audience").filter(
+                audience__organization=active_client.organization
+            ).order_by("audience__slug", "slug")
+            self.fields["exclude_tags"].queryset = Tag.objects.select_related("audience").filter(
+                audience__organization=active_client.organization
+            ).order_by("audience__slug", "slug")
         if self.instance and self.instance.pk:
             self.fields["include_tags"].initial = Tag.objects.filter(
                 audience=self.instance.audience,
@@ -90,6 +104,10 @@ class CampaignForm(forms.ModelForm):
 
         if self.instance and self.instance.pk and self.instance.status != CampaignStatus.DRAFT:
             raise forms.ValidationError("Queued or sent campaigns cannot be edited from this form.")
+
+        if self.active_client is not None:
+            cleaned_data["client"] = self.active_client
+            client = self.active_client
 
         if audience and client and audience.organization_id != client.organization_id:
             self.add_error("client", "Client must belong to the selected audience organization.")
@@ -124,7 +142,8 @@ class AudienceForm(forms.ModelForm):
         model = Audience
         fields = ["organization", "name", "slug"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, active_client=None, **kwargs):
+        self.active_client = active_client
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("slug")
         self.fields["organization"].help_text = (
@@ -136,6 +155,10 @@ class AudienceForm(forms.ModelForm):
         self.fields["slug"].help_text = (
             "Lowercase identifier; must be unique within the selected organization."
         )
+        if active_client is not None:
+            self.fields["organization"].queryset = Organization.objects.filter(pk=active_client.organization_id)
+            self.fields["organization"].initial = active_client.organization
+            self.fields["organization"].widget = forms.HiddenInput()
 
     def clean_slug(self):
         slug = slugify(self.cleaned_data["slug"])
@@ -147,6 +170,9 @@ class AudienceForm(forms.ModelForm):
         cleaned = super().clean()
         organization = cleaned.get("organization")
         slug = cleaned.get("slug")
+        if self.active_client is not None:
+            cleaned["organization"] = self.active_client.organization
+            organization = self.active_client.organization
         if organization and slug:
             duplicate = Audience.objects.filter(organization=organization, slug=slug)
             if self.instance.pk:
@@ -272,7 +298,8 @@ class ContactSubscriptionForm(forms.Form):
     verified = forms.BooleanField(required=False)
     unsubscribe_reason = forms.CharField(required=False, max_length=255)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, active_client=None, **kwargs):
+        self.active_client = active_client
         super().__init__(*args, **kwargs)
         self.fields["audience"].queryset = Audience.objects.select_related("organization").order_by(
             "organization__slug", "slug"
@@ -280,11 +307,21 @@ class ContactSubscriptionForm(forms.Form):
         self.fields["client"].queryset = Client.objects.select_related("organization").order_by(
             "organization__slug", "slug"
         )
+        if active_client is not None:
+            self.fields["audience"].queryset = Audience.objects.select_related("organization").filter(
+                organization=active_client.organization
+            ).order_by("slug")
+            self.fields["client"].queryset = Client.objects.filter(pk=active_client.pk)
+            self.fields["client"].initial = active_client
+            self.fields["client"].widget = forms.HiddenInput()
 
     def clean(self):
         cleaned = super().clean()
         audience = cleaned.get("audience")
         client = cleaned.get("client")
+        if self.active_client is not None:
+            cleaned["client"] = self.active_client
+            client = self.active_client
         if audience and client and audience.organization_id != client.organization_id:
             self.add_error("client", "Client must belong to the selected audience organization.")
         return cleaned
@@ -296,10 +333,18 @@ class ContactTagAddForm(forms.Form):
     new_tag_name = forms.CharField(required=False, max_length=120)
     new_tag_slug = forms.SlugField(required=False, max_length=120)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, active_client=None, **kwargs):
+        self.active_client = active_client
         super().__init__(*args, **kwargs)
         self.fields["audience"].queryset = Audience.objects.order_by("slug")
         self.fields["tag"].queryset = Tag.objects.select_related("audience").order_by("audience__slug", "slug")
+        if active_client is not None:
+            self.fields["audience"].queryset = Audience.objects.filter(
+                organization=active_client.organization
+            ).order_by("slug")
+            self.fields["tag"].queryset = Tag.objects.select_related("audience").filter(
+                audience__organization=active_client.organization
+            ).order_by("audience__slug", "slug")
 
     def clean(self):
         cleaned = super().clean()
@@ -316,8 +361,11 @@ class ContactTagAddForm(forms.Form):
 class ContactTagRemoveForm(forms.Form):
     membership = forms.ModelChoiceField(queryset=ContactTag.objects.none())
 
-    def __init__(self, *args, contact=None, **kwargs):
+    def __init__(self, *args, contact=None, active_client=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["membership"].queryset = ContactTag.objects.filter(contact=contact).select_related(
+        queryset = ContactTag.objects.filter(contact=contact).select_related(
             "tag", "tag__audience"
         )
+        if active_client is not None:
+            queryset = queryset.filter(tag__audience__organization=active_client.organization)
+        self.fields["membership"].queryset = queryset

@@ -6,25 +6,12 @@
   <div class="page-header">
     <div>
       <h1>Transactional Templates</h1>
-      <p>Template keys, required context, and recent send state for client transactional emails.</p>
+      <p>Template keys, required context, and recent send state for {{ active_client.name }}.</p>
     </div>
     <div class="actions">
       <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
     </div>
   </div>
-
-  <form class="toolbar" method="get">
-    <div>
-      <label for="client">Client</label>
-      <select id="client" name="client">
-        <option value="">All clients</option>
-        {% for client in clients %}
-          <option value="{{ client.id }}"{% if active_client_id == client.id %} selected{% endif %}>{{ client.name }} / {{ client.slug }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button type="submit">Filter</button>
-  </form>
 
   {% if template_rows %}
     <div class="table-wrap template-table">

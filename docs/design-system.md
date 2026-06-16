@@ -8,9 +8,9 @@ We use our own lightweight CSS system. Do not add Bootstrap, Tailwind, React, a 
 
 Use these references for UI elements and interaction quality:
 
-- Resend: API docs, API keys, developer-facing settings, sparse tables, clean examples.
-- Stripe Dashboard: dense operational tables, filters, status badges, detail pages, timelines, forms, destructive actions.
-- Linear: restraint, spacing rhythm, quiet typography, compact navigation, low visual noise.
+- GitHub Primer: primary reference for product UI foundations, compact navigation, subdued surfaces, tables, forms, labels, focus states, and status treatment.
+- Shopify Polaris: secondary reference for admin workflow discipline, especially promoted filters vs advanced filters and clear page actions.
+- Resend: secondary reference for API docs, API keys, developer-facing settings, sparse examples, and transactional email vocabulary.
 
 Use Postmark only for product concepts, not visual styling:
 
@@ -44,9 +44,9 @@ Core questions by page:
 
 Keep CSS small and explicit:
 
-- design tokens in one place
+- design tokens in one place, under `:root`
 - reusable layout primitives
-- reusable form/table/badge/button patterns
+- reusable form/table/badge/button/disclosure patterns
 - page-specific CSS only when a reusable primitive is not enough
 
 The default implementation should work with plain Django templates and static CSS.
@@ -59,13 +59,109 @@ Preferred file direction:
 
 Current shared primitive hooks:
 
-- shell/navigation: `.app-header`, `.app-nav`, `.app-main`, `aria-current="page"`
-- layout: `.page-header`, `.section-header`, `.section`, `.detail-section`, `.breadcrumbs`, `.meta-grid`, `.stats-grid`, `.detail-grid`
+- shell/navigation: `.app-header`, `.app-nav`, `.app-shell`, `.app-sidebar`, `.sidebar-nav`, `.sidebar-toggle`, `.app-main`, `aria-current="page"`
+- layout: `.page-header`, `.section-header`, `.section`, `.detail-section`, `.breadcrumbs`, `.meta-grid`, `.stats-grid`, `.detail-grid`, `.compact-list`, `.compact-row`
 - actions: `.button`, `.button.secondary`, `.button.danger`, `.actions`, `.action-row`, `.toolbar`
-- forms/filters: `.form-grid`, `.form-field`, `.field-errors`, `.form-errors`, `.helptext`, `.filter-grid`, `.filter-bar`, `.checkbox-list`
+- forms/filters: `.form-grid`, `.form-field`, `.field-errors`, `.form-errors`, `.helptext`, `.filter-grid`, `.promoted-filter-grid`, `.filter-bar`, `.checkbox-list`, `.advanced-panel`
 - operational data: `.table-wrap`, `.nowrap`, `.truncate`, `.pagination`, `.empty-state`
 - state and feedback: `.badge`, `.badge.success`, `.badge.warning`, `.badge.danger`, `.badge.neutral`, `.messages`, `.message`, `.alert`
 - activity/debug: `.timeline`, `.timeline-item`, `.audit-row`, `pre`, `code`
+
+## Tokens
+
+All reusable styling must flow through tokens before page-specific CSS is added. Add a token only when at least two components can use it or when it represents a system-level decision.
+
+### Color Tokens
+
+Core surface and text tokens:
+
+- `--dm-color-text`
+- `--dm-color-muted`
+- `--dm-color-border`
+- `--dm-color-background`
+- `--dm-color-surface`
+- `--dm-color-surface-strong`
+- `--dm-color-focus`
+
+Action tokens:
+
+- `--dm-color-primary`
+- `--dm-color-primary-hover`
+- `--dm-color-on-primary`
+
+State tokens:
+
+- `--dm-color-success`
+- `--dm-color-success-surface`
+- `--dm-color-success-border`
+- `--dm-color-warning`
+- `--dm-color-warning-surface`
+- `--dm-color-warning-border`
+- `--dm-color-danger`
+- `--dm-color-danger-hover`
+- `--dm-color-danger-surface`
+- `--dm-color-danger-border`
+- `--dm-color-neutral`
+- `--dm-color-neutral-surface`
+
+Do not use raw hex values outside `:root` unless there is a documented exception.
+
+### Spacing Tokens
+
+Use the spacing scale for layout and component gaps:
+
+- `--dm-space-1`: 4px
+- `--dm-space-2`: 8px
+- `--dm-space-3`: 12px
+- `--dm-space-4`: 16px
+- `--dm-space-5`: 20px
+- `--dm-space-6`: 24px
+- `--dm-space-8`: 32px
+
+Do not introduce one-off spacing values for page layout. If a repeated spacing need appears, add a token.
+
+### Shape And Type Tokens
+
+- `--dm-radius-sm`: controls, badges, nav items
+- `--dm-radius-md`: panels, empty states, table wrappers
+- `--dm-font-size-sm`: labels, help text, table headers
+- `--dm-font-size-base`: body and form controls
+- `--dm-font-size-lg`: section headings
+- `--dm-font-size-xl`: page headings
+- `--dm-control-height`: inputs and buttons
+- `--dm-content-width`: readable main-column width
+
+Letter spacing stays normal. Font sizes do not scale with viewport width.
+
+## Component Contract
+
+Use these primitives before creating page-specific classes.
+
+### App Shell
+
+- Top header contains global actions: brand, Clients, API Docs, Admin, active client switcher.
+- Left sidebar contains active-client navigation: Dashboard, Campaigns, Audiences, Contacts, Templates, Client settings.
+- Sidebar can be collapsed and must remain keyboard accessible.
+- Do not repeat active client text inside every scoped page unless the user needs it to disambiguate a destructive action.
+
+### Filters
+
+- Use promoted filters for the 2-4 controls most users need first.
+- Put secondary filters in `.advanced-panel`.
+- Active filters appear as badges below the form.
+- Avoid showing large checkbox groups by default.
+
+### Tables
+
+- Default list tables should fit 4-6 meaningful columns.
+- Combine related status details into one cell using badges and muted secondary text.
+- Move raw IDs, provider IDs, metadata, and error payloads into detail pages or disclosures.
+
+### Details And Diagnostics
+
+- Summary sections answer the operational question first.
+- Diagnostics use `<details>` or a secondary section.
+- Raw context, rendered HTML, SES IDs, metadata, and audit rows are diagnostics unless the page is explicitly a debugging page.
 
 ## Layout
 

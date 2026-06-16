@@ -29,6 +29,16 @@
       </div>
     </div>
     <div class="actions">
+      {% if operator_active_client and operator_active_client.id == client.id %}
+        <span class="badge success">Current client</span>
+      {% else %}
+        <form method="post" action="{% url 'mailing:client_select' %}">
+          {% csrf_token %}
+          <input type="hidden" name="client_id" value="{{ client.id }}">
+          <input type="hidden" name="next" value="{% url 'mailing:dashboard' %}">
+          <button type="submit">Use client</button>
+        </form>
+      {% endif %}
       <a class="button secondary" href="{% url 'mailing:client_edit' client.id %}">Edit client</a>
       <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
     </div>

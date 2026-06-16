@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Message {{ message.id }} | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <p class="breadcrumbs">
+        <a href="{% url 'mailing:template_catalog' %}">Templates</a>
+        / <a href="{% url 'mailing:template_detail' message.template_id %}">{{ message.template_key }}</a>
+        / Message {{ message.id }}
+      </p>
+      <h1>{{ message.email }}</h1>
+      <p>{{ message.client.name }} / <code>{{ message.template_key }}</code></p>
+      <span class="badge {{ badge.tone }}">{{ badge.label }}</span>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:template_detail' message.template_id %}">Template</a>
+      <a class="button secondary" href="{% url 'mailing:contact_detail' message.contact.normalized_email %}">Contact</a>
+    </div>
+  </div>
+
+  <section class="detail-section" aria-labelledby="message-summary">
+    <div class="section-header">
+      <h2 id="message-summary">Message Summary</h2>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-item"><span class="meta-label">Message ID</span>{{ message.id }}</div>
+      <div class="meta-item"><span class="meta-label">Created</span>{{ message.created_at|date:"Y-m-d H:i" }}</div>
+      <div class="meta-item"><span class="meta-label">Sent</span>{{ message.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Delivered</span>{{ message.delivered_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Opened</span>{{ message.first_opened_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Clicked</span>{{ message.first_clicked_at|date:"Y-m-d H:i"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">SES message</span>{{ message.ses_message_id|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Idempotency</span>{{ message.idempotency_key|default:"-" }}</div>
+    </div>
+    {% if message.last_error %}
+      <div class="empty-state danger-state">
+        <strong>Last error</strong>
+        <p>{{ message.last_error }}</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="detail-section" aria-labelledby="message-content">
+    <div class="section-header">
+      <h2 id="message-content">Rendered Content</h2>
+    </div>
+    <div class="meta-item template-preview-subject"><span class="meta-label">Subject</span>{{ message.subject|default:"-" }}</div>
+    {% if message.text_body %}
+      <h3>Text</h3>
+      <pre><code>{{ message.text_body }}</code></pre>
+    {% endif %}
+    {% if message.html_body %}
+      <h3>HTML</h3>
+      <pre><code>{{ message.html_body }}</code></pre>
+    {% endif %}
+    {% if not message.text_body and not message.html_body %}
+      <div class="empty-state">
+        <strong>No rendered body stored.</strong>
+        <div class="muted">This message has no text or HTML body persisted.</div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="detail-section" aria-labelledby="message-data">
+    <div class="section-header">
+      <h2 id="message-data">Payload Data</h2>
+    </div>
+    <div class="detail-grid">
+      <div>
+        <h3>Context</h3>
+        <pre><code>{{ message.context }}</code></pre>
+      </div>
+      <div>
+        <h3>Metadata</h3>
+        {% if message.metadata %}
+          <pre><code>{{ message.metadata }}</code></pre>
+          {% if metadata_summary %}<p class="helptext">{{ metadata_summary }}</p>{% endif %}
+        {% else %}
+          <div class="empty-state"><strong>No metadata.</strong></div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="detail-section" aria-labelledby="message-events">
+    <div class="section-header">
+      <h2 id="message-events">Events</h2>
+    </div>
+    {% if event_rows %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Created</th>
+              <th>Context</th>
+              <th>Metadata</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in event_rows %}
+              <tr>
+                <td><span class="badge neutral">{{ row.event.get_event_type_display }}</span></td>
+                <td class="nowrap">{{ row.event.created_at|date:"Y-m-d H:i" }}</td>
+                <td>{{ row.context }}</td>
+                <td class="truncate">{{ row.metadata_summary|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <strong>No events recorded.</strong>
+        <div class="muted">Delivery, bounce, complaint, open, and click events for this message will appear here.</div>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

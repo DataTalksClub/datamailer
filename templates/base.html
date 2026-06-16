@@ -11,24 +11,99 @@
     <header class="app-header">
       <nav class="app-nav" aria-label="Main">
         <a class="brand" href="{% url 'mailing:dashboard' %}" {% if request.resolver_match.url_name == "dashboard" %}aria-current="page"{% endif %}>Datamailer</a>
-        <a href="{% url 'mailing:campaign_list' %}" {% if request.resolver_match.url_name == "campaign_list" or request.resolver_match.url_name == "campaign_create" or request.resolver_match.url_name == "campaign_detail" or request.resolver_match.url_name == "campaign_edit" %}aria-current="page"{% endif %}>Campaigns</a>
-        <a href="{% url 'mailing:audience_list' %}" {% if request.resolver_match.url_name == "audience_list" or request.resolver_match.url_name == "audience_create" or request.resolver_match.url_name == "audience_detail" or request.resolver_match.url_name == "audience_edit" or request.resolver_match.url_name == "tag_create" or request.resolver_match.url_name == "tag_detail" or request.resolver_match.url_name == "tag_edit" %}aria-current="page"{% endif %}>Audiences</a>
-        <a href="{% url 'mailing:client_list' %}" {% if request.resolver_match.url_name == "client_list" or request.resolver_match.url_name == "client_create" or request.resolver_match.url_name == "client_detail" or request.resolver_match.url_name == "client_edit" %}aria-current="page"{% endif %}>Clients</a>
-        <a href="{% url 'mailing:contact_search' %}" {% if request.resolver_match.url_name == "contact_search" or request.resolver_match.url_name == "contact_detail" %}aria-current="page"{% endif %}>Contacts</a>
-        <a href="{% url 'mailing:template_catalog' %}" {% if request.resolver_match.url_name == "template_catalog" or request.resolver_match.url_name == "template_detail" %}aria-current="page"{% endif %}>Templates</a>
-        <a href="{% url 'mailing:api_docs' %}" {% if request.resolver_match.url_name == "api_docs" or request.resolver_match.url_name == "api_docs_json" %}aria-current="page"{% endif %}>API Docs</a>
-        <a href="/admin/">Admin</a>
+        <div class="top-nav-actions">
+          <a href="{% url 'mailing:client_list' %}" {% if request.resolver_match.url_name == "client_list" or request.resolver_match.url_name == "client_create" or request.resolver_match.url_name == "client_detail" or request.resolver_match.url_name == "client_edit" %}aria-current="page"{% endif %}>Clients</a>
+          <a href="{% url 'mailing:api_docs' %}" {% if request.resolver_match.url_name == "api_docs" or request.resolver_match.url_name == "api_docs_json" %}aria-current="page"{% endif %}>API Docs</a>
+          <a href="/admin/">Admin</a>
+        </div>
       </nav>
     </header>
-    <main class="app-main">
-      {% if messages %}
-        <ul class="messages">
-          {% for message in messages %}
-            <li class="message {{ message.tags }}">{{ message }}</li>
-          {% endfor %}
-        </ul>
+    <div class="app-shell" data-sidebar-shell>
+      {% if user.is_authenticated and user.is_staff %}
+        <aside class="app-sidebar" data-sidebar>
+          <div id="client-sidebar" class="sidebar-inner">
+            <div class="sidebar-titlebar">
+              <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-expanded="true" aria-controls="client-sidebar" aria-label="Toggle client navigation">
+                <span class="sidebar-toggle-open">Hide</span>
+                <span class="sidebar-toggle-closed">Open</span>
+              </button>
+            </div>
+            <div class="sidebar-context">
+              {% if operator_clients %}
+                <form class="client-switcher" method="post" action="{% url 'mailing:client_select' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <label for="operator-client">Active client</label>
+                  <select id="operator-client" name="client_id" onchange="this.form.submit()">
+                    <option value="">Select client</option>
+                    {% for client in operator_clients %}
+                      <option value="{{ client.id }}"{% if operator_active_client and operator_active_client.id == client.id %} selected{% endif %}>{{ client.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <noscript><button type="submit">Select</button></noscript>
+                </form>
+              {% else %}
+                <a class="button secondary sidebar-client-action" href="{% url 'mailing:client_create' %}">Create client</a>
+              {% endif %}
+            </div>
+            <nav class="sidebar-nav" aria-label="Client">
+              <div class="sidebar-nav-group">
+                <span class="sidebar-nav-label">Operate</span>
+                <a href="{% url 'mailing:dashboard' %}" {% if request.resolver_match.url_name == "dashboard" %}aria-current="page"{% endif %}>
+                  Dashboard
+                </a>
+                <a href="{% url 'mailing:campaign_list' %}" {% if request.resolver_match.url_name == "campaign_list" or request.resolver_match.url_name == "campaign_create" or request.resolver_match.url_name == "campaign_detail" or request.resolver_match.url_name == "campaign_edit" %}aria-current="page"{% endif %}>
+                  Campaigns
+                </a>
+                <a href="{% url 'mailing:contact_search' %}" {% if request.resolver_match.url_name == "contact_search" or request.resolver_match.url_name == "contact_detail" %}aria-current="page"{% endif %}>
+                  Contacts
+                </a>
+              </div>
+              <div class="sidebar-nav-group">
+                <span class="sidebar-nav-label">Configure</span>
+                <a href="{% url 'mailing:audience_list' %}" {% if request.resolver_match.url_name == "audience_list" or request.resolver_match.url_name == "audience_create" or request.resolver_match.url_name == "audience_detail" or request.resolver_match.url_name == "audience_edit" or request.resolver_match.url_name == "tag_create" or request.resolver_match.url_name == "tag_detail" or request.resolver_match.url_name == "tag_edit" %}aria-current="page"{% endif %}>
+                  Audiences
+                </a>
+                <a href="{% url 'mailing:template_catalog' %}" {% if request.resolver_match.url_name == "template_catalog" or request.resolver_match.url_name == "template_detail" or request.resolver_match.url_name == "transactional_message_detail" %}aria-current="page"{% endif %}>
+                  Templates
+                </a>
+                {% if operator_active_client %}
+                  <a href="{% url 'mailing:client_detail' operator_active_client.id %}" {% if request.resolver_match.url_name == "client_detail" %}aria-current="page"{% endif %}>
+                    Settings
+                  </a>
+                {% endif %}
+              </div>
+            </nav>
+          </div>
+        </aside>
       {% endif %}
-      {% block content %}{% endblock %}
-    </main>
+      <main class="app-main">
+        {% if messages %}
+          <ul class="messages">
+            {% for message in messages %}
+              <li class="message {{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    <script>
+      (function () {
+        const shell = document.querySelector("[data-sidebar-shell]");
+        const toggle = document.querySelector("[data-sidebar-toggle]");
+        if (!shell || !toggle) return;
+        const key = "datamailer.sidebar.collapsed";
+        const setCollapsed = (collapsed) => {
+          shell.classList.toggle("sidebar-collapsed", collapsed);
+          toggle.setAttribute("aria-expanded", String(!collapsed));
+          localStorage.setItem(key, collapsed ? "1" : "0");
+        };
+        setCollapsed(localStorage.getItem(key) === "1");
+        toggle.addEventListener("click", function () {
+          setCollapsed(!shell.classList.contains("sidebar-collapsed"));
+        });
+      })();
+    </script>
   </body>
 </html>

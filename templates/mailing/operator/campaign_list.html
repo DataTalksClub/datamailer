@@ -6,7 +6,7 @@
   <div class="page-header">
     <div>
       <h1>Campaigns</h1>
-      <p>Recent campaign status, schedule, and high-level engagement.</p>
+      <p>Recent campaign status, schedule, and high-level engagement for {{ active_client.name }}.</p>
     </div>
     <div class="actions">
       <a class="button" href="{% url 'mailing:campaign_create' %}">Create campaign</a>
@@ -43,7 +43,7 @@
               <tr>
                 <td class="truncate">
                   <a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a>
-                  <div class="helptext">{{ campaign.client.name }}</div>
+                  <div class="helptext">{{ active_client.name }}</div>
                 </td>
                 <td><span class="badge {{ row.badge.tone }}">{{ row.badge.label }}</span></td>
                 <td class="truncate">

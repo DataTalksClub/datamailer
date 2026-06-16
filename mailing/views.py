@@ -6,9 +6,12 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from mailing.context_processors import ACTIVE_CLIENT_SESSION_KEY
 from mailing.forms import (
     AudienceForm,
     CampaignForm,
@@ -20,7 +23,7 @@ from mailing.forms import (
     ContactTagRemoveForm,
     TagForm,
 )
-from mailing.models import Campaign, CampaignStatus, Client, ClientApiKey, EmailEventType, Tag
+from mailing.models import Campaign, CampaignStatus, Client, ClientApiKey, EmailEvent, EmailEventType, Tag, TransactionalMessage
 from mailing.services.api import (
     ApiValidationError,
     add_contact_tag_for_client,
@@ -68,6 +71,7 @@ from mailing.services.operator_management import (
 )
 from mailing.services.operator_ui import (
     RECIPIENT_FILTER_LABELS,
+    Badge,
     active_contact_filters,
     audience_breakdowns,
     audience_campaign_history,
@@ -91,6 +95,7 @@ from mailing.services.operator_ui import (
     contact_explorer_queryset,
     contact_result_rows,
     contact_transactional_history,
+    delivery_tone,
     dashboard_context,
     event_context,
     metadata_summary,
@@ -113,9 +118,47 @@ def health(request):
     return JsonResponse({"status": "ok"})
 
 
+def active_operator_client(request):
+    client_id = request.session.get(ACTIVE_CLIENT_SESSION_KEY)
+    if not client_id:
+        only_client = Client.objects.select_related("organization").first()
+        if only_client is not None and not Client.objects.exclude(pk=only_client.pk).exists():
+            request.session[ACTIVE_CLIENT_SESSION_KEY] = only_client.id
+            return only_client
+        return None
+    client = Client.objects.select_related("organization").filter(pk=client_id).first()
+    if client is None:
+        request.session.pop(ACTIVE_CLIENT_SESSION_KEY, None)
+    return client
+
+
+def scoped_redirect_url(request):
+    fallback = reverse("mailing:dashboard")
+    next_url = request.POST.get("next") or request.GET.get("next") or fallback
+    if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return next_url
+    return fallback
+
+
+def require_active_client(request):
+    client = active_operator_client(request)
+    if client is None:
+        messages.info(request, "Select an active client before using this section.")
+    return client
+
+
 @staff_member_required
 def dashboard(request):
-    return render(request, "mailing/dashboard.html", {"dashboard": dashboard_context()})
+    active_client = active_operator_client(request)
+    return render(
+        request,
+        "mailing/dashboard.html",
+        {
+            "dashboard": dashboard_context(active_client),
+            "active_client": active_client,
+            "clients": Client.objects.select_related("organization").order_by("organization__slug", "slug"),
+        },
+    )
 
 
 def paginate(request, queryset, *, per_page):
@@ -152,15 +195,13 @@ def api_docs_json(request):
 
 @staff_member_required
 def template_catalog(request):
-    client_id = request.GET.get("client", "")
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
     templates = paginate(
         request,
-        filter_transactional_templates(transactional_template_queryset(), client_id),
+        filter_transactional_templates(transactional_template_queryset(), str(active_client.id)),
         per_page=25,
-    )
-    clients = Client.objects.filter(email_templates__is_transactional=True).distinct().order_by(
-        "organization__slug",
-        "slug",
     )
     return render(
         request,
@@ -168,8 +209,7 @@ def template_catalog(request):
         {
             "templates": templates,
             "template_rows": template_catalog_rows(templates.object_list),
-            "clients": clients,
-            "active_client_id": int(client_id) if client_id.isdigit() else "",
+            "active_client": active_client,
             "pagination_querystring": pagination_querystring(request),
         },
     )
@@ -177,7 +217,10 @@ def template_catalog(request):
 
 @staff_member_required
 def template_detail(request, template_id):
-    template = get_object_or_404(transactional_template_queryset(), pk=template_id)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    template = get_object_or_404(transactional_template_queryset(), pk=template_id, client=active_client)
     recent_messages = template.transactional_messages.select_related("contact").order_by("-created_at", "-id")[:10]
     return render(
         request,
@@ -187,12 +230,47 @@ def template_detail(request, template_id):
 
 
 @staff_member_required
+def transactional_message_detail(request, message_id):
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    message = get_object_or_404(
+        TransactionalMessage.objects.select_related("client", "contact", "template"),
+        pk=message_id,
+        client=active_client,
+    )
+    events = (
+        EmailEvent.objects.filter(transactional_message=message)
+        .select_related("contact", "client", "audience", "campaign")
+        .order_by("-created_at", "-id")
+    )
+    event_rows = [
+        {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
+        for event in events
+    ]
+    return render(
+        request,
+        "mailing/operator/transactional_message_detail.html",
+        {
+            "message": message,
+            "badge": Badge(message.get_status_display(), delivery_tone(message.status)),
+            "event_rows": event_rows,
+            "metadata_summary": metadata_summary(message.metadata),
+        },
+    )
+
+
+@staff_member_required
 def campaign_list(request):
-    campaigns = paginate(request, campaign_queryset(), per_page=25)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    campaigns = paginate(request, campaign_queryset(active_client), per_page=25)
     return render(
         request,
         "mailing/operator/campaign_list.html",
         {
+            "active_client": active_client,
             "campaigns": campaigns,
             "campaign_rows": campaign_list_rows(campaigns.object_list),
             "pagination_querystring": pagination_querystring(request),
@@ -203,7 +281,10 @@ def campaign_list(request):
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def campaign_create(request):
-    form = CampaignForm(request.POST or None)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    form = CampaignForm(request.POST or None, active_client=active_client)
     if request.method == "POST" and form.is_valid():
         campaign = form.save()
         messages.success(request, "Campaign draft created.")
@@ -212,15 +293,18 @@ def campaign_create(request):
     return render(
         request,
         "mailing/operator/campaign_form.html",
-        {"form": form, "mode": "create", "campaign": None},
+        {"form": form, "mode": "create", "campaign": None, "active_client": active_client},
     )
 
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def campaign_edit(request, campaign_id):
-    campaign = get_object_or_404(Campaign.objects.select_related("client", "audience"), pk=campaign_id)
-    form = CampaignForm(request.POST or None, instance=campaign)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    campaign = get_object_or_404(Campaign.objects.select_related("client", "audience"), pk=campaign_id, client=active_client)
+    form = CampaignForm(request.POST or None, instance=campaign, active_client=active_client)
     if request.method == "POST" and form.is_valid():
         campaign = form.save()
         messages.success(request, "Campaign draft updated.")
@@ -229,15 +313,19 @@ def campaign_edit(request, campaign_id):
     return render(
         request,
         "mailing/operator/campaign_form.html",
-        {"form": form, "mode": "edit", "campaign": campaign},
+        {"form": form, "mode": "edit", "campaign": campaign, "active_client": active_client},
     )
 
 
 @staff_member_required
 def campaign_detail(request, campaign_id):
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
     campaign = get_object_or_404(
         Campaign.objects.select_related("client", "audience", "audience__organization"),
         pk=campaign_id,
+        client=active_client,
     )
     active_filter = request.GET.get("filter", "")
     recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
@@ -252,6 +340,7 @@ def campaign_detail(request, campaign_id):
         "mailing/operator/campaign_detail.html",
         {
             "campaign": campaign,
+            "active_client": active_client,
             "campaign_badge": campaign_status_badge(campaign.status),
             "can_edit": campaign.status == CampaignStatus.DRAFT,
             "can_queue": campaign.status == CampaignStatus.DRAFT,
@@ -269,7 +358,10 @@ def campaign_detail(request, campaign_id):
 @staff_member_required
 @require_POST
 def campaign_queue(request, campaign_id):
-    campaign = get_object_or_404(Campaign, pk=campaign_id)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    campaign = get_object_or_404(Campaign, pk=campaign_id, client=active_client)
     result = queue_campaign(campaign)
     if result.queued:
         messages.success(
@@ -284,15 +376,19 @@ def campaign_queue(request, campaign_id):
 
 @staff_member_required
 def contact_search(request):
-    filters = parse_contact_explorer_filters(request.GET)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    filters = parse_contact_explorer_filters(request.GET, forced_client_id=active_client.id)
     contacts = paginate(request, contact_explorer_queryset(filters), per_page=25) if filters.has_filters else None
-    rows = contact_result_rows(contacts.object_list) if contacts is not None else []
+    rows = contact_result_rows(contacts.object_list, client=active_client) if contacts is not None else []
     return render(
         request,
         "mailing/operator/contact_search.html",
         {
+            "active_client": active_client,
             "filters": filters,
-            "options": contact_explorer_options(),
+            "options": contact_explorer_options(active_client),
             "contacts": contacts,
             "contact_rows": rows,
             "active_filters": active_contact_filters(filters),
@@ -307,15 +403,26 @@ def get_contact_by_email_or_404(contact_email):
 
 @staff_member_required
 def contact_detail(request, contact_email):
-    contact = get_contact_by_email_or_404(contact_email)
-    detail_context = contact_detail_context(contact)
-    events = paginate(request, contact_event_timeline(contact), per_page=50)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    contact = get_object_or_404(
+        contact_detail_queryset().filter(
+            Q(subscriptions__client=active_client)
+            | Q(campaign_recipients__campaign__client=active_client)
+            | Q(transactional_messages__client=active_client)
+            | Q(email_events__client=active_client)
+        ).distinct(),
+        normalized_email=contact_email.casefold(),
+    )
+    detail_context = contact_detail_context(contact, active_client)
+    events = paginate(request, contact_event_timeline(contact, active_client), per_page=50)
     event_rows = [
         {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
         for event in events.object_list
     ]
-    campaign_history = paginate(request, contact_campaign_history(contact), per_page=25)
-    transactional_history = paginate(request, contact_transactional_history(contact), per_page=25)
+    campaign_history = paginate(request, contact_campaign_history(contact, active_client), per_page=25)
+    transactional_history = paginate(request, contact_transactional_history(contact, active_client), per_page=25)
     transactional_rows = [
         {"message": message, "metadata_summary": metadata_summary(message.metadata)}
         for message in transactional_history.object_list
@@ -325,6 +432,7 @@ def contact_detail(request, contact_email):
         "mailing/operator/contact_detail.html",
         {
             "contact": contact,
+            "active_client": active_client,
             "eligibility": detail_context.eligibility,
             "subscriptions": detail_context.subscriptions,
             "contact_tags": detail_context.contact_tags,
@@ -350,9 +458,9 @@ def contact_detail(request, contact_email):
                     "complained": contact.complained_at is not None,
                 }
             ),
-            "subscription_form": ContactSubscriptionForm(),
-            "tag_add_form": ContactTagAddForm(),
-            "tag_remove_form": ContactTagRemoveForm(contact=contact),
+            "subscription_form": ContactSubscriptionForm(active_client=active_client),
+            "tag_add_form": ContactTagAddForm(active_client=active_client),
+            "tag_remove_form": ContactTagRemoveForm(contact=contact, active_client=active_client),
             "pagination_querystring": pagination_querystring(request),
         },
     )
@@ -385,8 +493,11 @@ def contact_state_update(request, contact_email):
 @staff_member_required
 @require_POST
 def contact_subscription_update(request, contact_email):
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
     contact = get_contact_by_email_or_404(contact_email)
-    form = ContactSubscriptionForm(request.POST)
+    form = ContactSubscriptionForm(request.POST, active_client=active_client)
     if form.is_valid():
         update_subscription(
             actor=request.user,
@@ -406,8 +517,11 @@ def contact_subscription_update(request, contact_email):
 @staff_member_required
 @require_POST
 def contact_tag_add(request, contact_email):
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
     contact = get_contact_by_email_or_404(contact_email)
-    form = ContactTagAddForm(request.POST)
+    form = ContactTagAddForm(request.POST, active_client=active_client)
     if form.is_valid():
         add_contact_tag(
             actor=request.user,
@@ -426,8 +540,11 @@ def contact_tag_add(request, contact_email):
 @staff_member_required
 @require_POST
 def contact_tag_remove(request, contact_email):
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
     contact = get_contact_by_email_or_404(contact_email)
-    form = ContactTagRemoveForm(request.POST, contact=contact)
+    form = ContactTagRemoveForm(request.POST, contact=contact, active_client=active_client)
     if form.is_valid():
         remove_contact_tag(actor=request.user, contact=contact, tag=form.cleaned_data["membership"].tag)
         messages.success(request, "Tag removed.")
@@ -438,13 +555,17 @@ def contact_tag_remove(request, contact_email):
 
 @staff_member_required
 def audience_list(request):
-    audiences = paginate(request, audience_queryset(), per_page=25)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    audiences = paginate(request, audience_queryset(active_client), per_page=25)
     return render(
         request,
         "mailing/operator/audience_list.html",
         {
+            "active_client": active_client,
             "audiences": audiences,
-            "audience_rows": audience_list_rows(audiences.object_list),
+            "audience_rows": audience_list_rows(audiences.object_list, active_client),
             "pagination_querystring": pagination_querystring(request),
         },
     )
@@ -453,35 +574,48 @@ def audience_list(request):
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def audience_create(request):
-    form = AudienceForm(request.POST or None)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    form = AudienceForm(request.POST or None, active_client=active_client)
     if request.method == "POST" and form.is_valid():
         audience = create_or_update_audience(actor=request.user, **form.cleaned_data)
         messages.success(request, "Audience created.")
         return redirect("mailing:audience_detail", audience_id=audience.id)
-    return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "create"})
+    return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "create", "active_client": active_client})
 
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def audience_edit(request, audience_id):
-    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
-    form = AudienceForm(request.POST or None, instance=audience)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id, organization=active_client.organization)
+    form = AudienceForm(request.POST or None, instance=audience, active_client=active_client)
     if request.method == "POST" and form.is_valid():
         audience = create_or_update_audience(actor=request.user, audience=audience, **form.cleaned_data)
         messages.success(request, "Audience updated.")
         return redirect("mailing:audience_detail", audience_id=audience.id)
-    return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "edit", "audience": audience})
+    return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "edit", "audience": audience, "active_client": active_client})
 
 
 @staff_member_required
 def audience_detail(request, audience_id):
-    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
-    filters = parse_contact_explorer_filters(request.GET, forced_audience_id=audience.id)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id, organization=active_client.organization)
+    filters = parse_contact_explorer_filters(
+        request.GET,
+        forced_audience_id=audience.id,
+        forced_client_id=active_client.id,
+    )
     members = paginate(request, contact_explorer_queryset(filters), per_page=25)
-    member_rows = contact_result_rows(members.object_list, audience=audience)
-    campaigns = paginate(request, audience_campaign_history(audience), per_page=10)
+    member_rows = contact_result_rows(members.object_list, audience=audience, client=active_client)
+    campaigns = paginate(request, audience_campaign_history(audience, active_client), per_page=10)
     event_type = request.GET.get("event_type", "")
-    events = paginate(request, audience_recent_events(audience, event_type), per_page=25)
+    events = paginate(request, audience_recent_events(audience, event_type, active_client), per_page=25)
     event_rows = [
         {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
         for event in events.object_list
@@ -491,10 +625,11 @@ def audience_detail(request, audience_id):
         "mailing/operator/audience_detail.html",
         {
             "audience": audience,
-            "summary": audience_summary(audience),
-            "breakdowns": audience_breakdowns(audience),
+            "active_client": active_client,
+            "summary": audience_summary(audience, active_client),
+            "breakdowns": audience_breakdowns(audience, active_client),
             "filters": filters,
-            "options": contact_explorer_options(),
+            "options": contact_explorer_options(active_client),
             "members": members,
             "member_rows": member_rows,
             "campaigns": campaigns,
@@ -512,7 +647,10 @@ def audience_detail(request, audience_id):
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def tag_create(request, audience_id):
-    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    audience = get_object_or_404(audience_detail_queryset(), pk=audience_id, organization=active_client.organization)
     form = TagForm(request.POST or None, audience=audience)
     if request.method == "POST" and form.is_valid():
         tag = create_or_update_tag(actor=request.user, audience=audience, **form.cleaned_data)
@@ -523,7 +661,14 @@ def tag_create(request, audience_id):
 
 @staff_member_required
 def tag_detail(request, tag_id):
-    tag = get_object_or_404(Tag.objects.select_related("audience", "audience__organization"), pk=tag_id)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    tag = get_object_or_404(
+        Tag.objects.select_related("audience", "audience__organization"),
+        pk=tag_id,
+        audience__organization=active_client.organization,
+    )
     return render(
         request,
         "mailing/operator/tag_detail.html",
@@ -538,7 +683,10 @@ def tag_detail(request, tag_id):
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def tag_edit(request, tag_id):
-    tag = get_object_or_404(Tag.objects.select_related("audience"), pk=tag_id)
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    tag = get_object_or_404(Tag.objects.select_related("audience"), pk=tag_id, audience__organization=active_client.organization)
     form = TagForm(request.POST or None, instance=tag, audience=tag.audience)
     if request.method == "POST" and form.is_valid():
         tag = create_or_update_tag(actor=request.user, tag=tag, audience=tag.audience, **form.cleaned_data)
@@ -568,11 +716,26 @@ def client_list(request):
 
 
 @staff_member_required
+@require_POST
+def client_select(request):
+    client_id = request.POST.get("client_id")
+    if client_id:
+        client = get_object_or_404(Client, pk=client_id)
+        request.session[ACTIVE_CLIENT_SESSION_KEY] = client.id
+        messages.success(request, f"{client.name} is now the active client.")
+    else:
+        request.session.pop(ACTIVE_CLIENT_SESSION_KEY, None)
+        messages.info(request, "Active client cleared.")
+    return redirect(scoped_redirect_url(request))
+
+
+@staff_member_required
 @require_http_methods(["GET", "POST"])
 def client_create(request):
     form = ClientForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         client = create_or_update_client(actor=request.user, **form.cleaned_data)
+        request.session[ACTIVE_CLIENT_SESSION_KEY] = client.id
         messages.success(request, "Client created.")
         return redirect("mailing:client_detail", client_id=client.id)
     return render(request, "mailing/operator/client_form.html", {"form": form, "mode": "create"})

@@ -22,9 +22,10 @@
       <div class="section-header">
         <div>
           <h2 id="campaign-audience-heading">Audience and sender</h2>
-          <p>Choose the audience and active client that will send this campaign.</p>
+          <p>Choose the audience for {{ active_client.name }}.</p>
         </div>
       </div>
+      {{ form.client }}
       <div class="form-grid">
         <div class="form-field">
           {{ form.audience.label_tag }}
@@ -33,9 +34,8 @@
           {% if form.audience.errors %}<div class="field-errors">{{ form.audience.errors }}</div>{% endif %}
         </div>
         <div class="form-field">
-          {{ form.client.label_tag }}
-          {{ form.client }}
-          {% if form.client.help_text %}<div class="helptext">{{ form.client.help_text }}</div>{% endif %}
+          <label>Active client</label>
+          <div class="readonly-field">{{ active_client.name }}</div>
           {% if form.client.errors %}<div class="field-errors">{{ form.client.errors }}</div>{% endif %}
         </div>
       </div>

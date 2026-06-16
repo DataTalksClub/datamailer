@@ -261,51 +261,70 @@ def choices_from_text_choices(text_choices) -> list[Choice]:
     return [Choice(value=value, label=label) for value, label in text_choices.choices]
 
 
-def dashboard_context() -> DashboardContext:
-    active_campaigns = Campaign.objects.filter(
+def dashboard_context(client: Client | None = None) -> DashboardContext:
+    campaign_scope = Campaign.objects.all()
+    subscription_scope = Subscription.objects.all()
+    template_scope = EmailTemplate.objects.all()
+    client_scope = Client.objects.all()
+    audience_scope = Audience.objects.all()
+    scoped_contacts = Contact.objects.all()
+    if client is not None:
+        campaign_scope = campaign_scope.filter(client=client)
+        subscription_scope = subscription_scope.filter(client=client)
+        template_scope = template_scope.filter(client=client)
+        client_scope = client_scope.filter(pk=client.pk)
+        audience_scope = audience_scope.filter(organization=client.organization)
+        scoped_contacts = scoped_contacts.filter(
+            Q(subscriptions__client=client)
+            | Q(campaign_recipients__campaign__client=client)
+            | Q(transactional_messages__client=client)
+            | Q(email_events__client=client)
+        ).distinct()
+
+    active_campaigns = campaign_scope.filter(
         status__in=[
             CampaignStatus.QUEUED,
             CampaignStatus.SNAPSHOTTING,
             CampaignStatus.SENDING,
         ]
     ).count()
-    draft_campaigns = Campaign.objects.filter(status=CampaignStatus.DRAFT).count()
+    draft_campaigns = campaign_scope.filter(status=CampaignStatus.DRAFT).count()
     subscribed_contacts = (
-        Subscription.objects.filter(status=SubscriptionStatus.SUBSCRIBED).values("contact_id").distinct().count()
+        subscription_scope.filter(status=SubscriptionStatus.SUBSCRIBED).values("contact_id").distinct().count()
     )
-    suppressed_contacts = suppressed_contact_queryset().count()
-    hard_bounces = Contact.objects.filter(hard_bounced_at__isnull=False).count()
-    complaints = Contact.objects.filter(complained_at__isnull=False).count()
-    active_clients = Client.objects.filter(is_active=True).count()
-    active_api_keys = ClientApiKey.objects.filter(revoked_at__isnull=True).count()
-    active_templates = EmailTemplate.objects.filter(is_transactional=True, is_active=True).count()
+    suppressed_contacts = suppressed_contact_queryset(client).count()
+    hard_bounces = scoped_contacts.filter(hard_bounced_at__isnull=False).count()
+    complaints = scoped_contacts.filter(complained_at__isnull=False).count()
+    active_clients = client_scope.filter(is_active=True).count()
+    active_api_keys = ClientApiKey.objects.filter(client__in=client_scope, revoked_at__isnull=True).count()
+    active_templates = template_scope.filter(is_transactional=True, is_active=True).count()
 
     recent_campaigns = [
         DashboardCampaign(campaign, campaign_status_badge(campaign.status))
-        for campaign in Campaign.objects.select_related("client", "audience").order_by("-updated_at", "-id")[:5]
+        for campaign in campaign_scope.select_related("client", "audience").order_by("-updated_at", "-id")[:5]
     ]
     integration_clients = [
-        DashboardClient(client, client.active_api_key_count)
-        for client in Client.objects.select_related("organization").order_by("organization__slug", "slug")[:4]
+        DashboardClient(scope_client, scope_client.active_api_key_count)
+        for scope_client in client_scope.select_related("organization").order_by("organization__slug", "slug")[:4]
     ]
 
     return DashboardContext(
         summary_stats=[
-            Stat("campaigns", "Campaigns", Campaign.objects.count(), f"{active_campaigns} active / {draft_campaigns} drafts"),
+            Stat("campaigns", "Campaigns", campaign_scope.count(), f"{active_campaigns} active / {draft_campaigns} drafts"),
             Stat(
                 "contacts",
                 "Contacts",
-                Contact.objects.count(),
-                f"{subscribed_contacts} subscribed / {Audience.objects.count()} audiences",
+                scoped_contacts.count(),
+                f"{subscribed_contacts} subscribed / {audience_scope.count()} audiences",
             ),
             Stat("deliverability", "Deliverability attention", suppressed_contacts, f"{hard_bounces} bounces / {complaints} complaints"),
             Stat("api_access", "API access", active_clients, f"{active_api_keys} active keys"),
             Stat("templates", "Transactional templates", active_templates, "active templates"),
         ],
         recent_campaigns=recent_campaigns,
-        attention_items=dashboard_attention_items(),
+        attention_items=dashboard_attention_items(client),
         integration_stats=[
-            Stat("clients", "Active clients", active_clients, f"{Client.objects.count()} total"),
+            Stat("clients", "Active clients", active_clients, f"{client_scope.count()} total"),
             Stat("api_keys", "Active API keys", active_api_keys),
             Stat("templates", "Active templates", active_templates),
         ],
@@ -313,16 +332,27 @@ def dashboard_context() -> DashboardContext:
     )
 
 
-def suppressed_contact_queryset():
-    return Contact.objects.filter(
+def suppressed_contact_queryset(client: Client | None = None):
+    queryset = Contact.objects.filter(
         Q(global_unsubscribed_at__isnull=False)
         | Q(hard_bounced_at__isnull=False)
         | Q(complained_at__isnull=False)
         | Q(subscriptions__status=SubscriptionStatus.UNSUBSCRIBED)
     ).distinct()
+    if client is not None:
+        queryset = queryset.filter(
+            Q(subscriptions__client=client)
+            | Q(campaign_recipients__campaign__client=client)
+            | Q(transactional_messages__client=client)
+            | Q(email_events__client=client)
+        ).distinct()
+    return queryset
 
 
-def dashboard_attention_items() -> list[DashboardAttentionItem]:
+def dashboard_attention_items(client: Client | None = None) -> list[DashboardAttentionItem]:
+    event_queryset = EmailEvent.objects.select_related("contact", "client", "audience", "campaign")
+    if client is not None:
+        event_queryset = event_queryset.filter(client=client)
     event_items = [
         DashboardAttentionItem(
             event.created_at,
@@ -331,8 +361,7 @@ def dashboard_attention_items() -> list[DashboardAttentionItem]:
             metadata_summary(event.metadata) or event.url or "Email event recorded",
             href=f"/contacts/{event.contact.normalized_email}/" if event.contact_id else "",
         )
-        for event in EmailEvent.objects.select_related("contact", "client", "audience", "campaign")
-        .filter(
+        for event in event_queryset.filter(
             event_type__in=[
                 EmailEventType.BOUNCE,
                 EmailEventType.COMPLAINT,
@@ -359,7 +388,7 @@ def dashboard_attention_items() -> list[DashboardAttentionItem]:
             "Suppressed contact needs review before future sends.",
             href=f"/contacts/{contact.normalized_email}/",
         )
-        for contact in suppressed_contact_queryset().prefetch_related("subscriptions").order_by("-updated_at", "normalized_email")[:5]
+        for contact in suppressed_contact_queryset(client).prefetch_related("subscriptions").order_by("-updated_at", "normalized_email")[:5]
     ]
 
 
@@ -423,8 +452,11 @@ def campaign_stats(campaign: Campaign) -> list[Stat]:
     ]
 
 
-def campaign_queryset() -> QuerySet[Campaign]:
-    return Campaign.objects.select_related("client", "audience", "audience__organization").order_by("-created_at", "-id")
+def campaign_queryset(client: Client | None = None) -> QuerySet[Campaign]:
+    queryset = Campaign.objects.select_related("client", "audience", "audience__organization")
+    if client is not None:
+        queryset = queryset.filter(client=client)
+    return queryset.order_by("-created_at", "-id")
 
 
 def campaign_recent_events(campaign: Campaign) -> QuerySet[EmailEvent]:
@@ -454,11 +486,18 @@ def contact_search_queryset(query: str) -> QuerySet[Contact]:
     return contact_explorer_queryset(filters)
 
 
-def contact_explorer_options():
+def contact_explorer_options(client: Client | None = None):
+    audience_queryset = Audience.objects.select_related("organization")
+    client_queryset = Client.objects.select_related("organization")
+    tag_queryset = Tag.objects.select_related("audience")
+    if client is not None:
+        audience_queryset = audience_queryset.filter(organization=client.organization)
+        client_queryset = client_queryset.filter(pk=client.pk)
+        tag_queryset = tag_queryset.filter(audience__organization=client.organization)
     return {
-        "audiences": Audience.objects.select_related("organization").order_by("organization__slug", "slug"),
-        "clients": Client.objects.select_related("organization").order_by("organization__slug", "slug"),
-        "tags": Tag.objects.select_related("audience").order_by("audience__slug", "slug"),
+        "audiences": audience_queryset.order_by("organization__slug", "slug"),
+        "clients": client_queryset.order_by("organization__slug", "slug"),
+        "tags": tag_queryset.order_by("audience__slug", "slug"),
         "subscription_statuses": choices_from_text_choices(SubscriptionStatus),
         "verified_states": [Choice(value=key, label=label) for key, label in VERIFIED_FILTER_LABELS.items()],
         "email_validation_statuses": choices_from_text_choices(EmailValidationStatus),
@@ -501,7 +540,7 @@ def active_contact_filters(filters: ContactExplorerFilters) -> list[ActiveFilter
     return chips
 
 
-def parse_contact_explorer_filters(params, *, forced_audience_id=None) -> ContactExplorerFilters:
+def parse_contact_explorer_filters(params, *, forced_audience_id=None, forced_client_id=None) -> ContactExplorerFilters:
     inactive_since = parse_date(params.get("inactive_since", ""))
     engagement = params.get("engagement", "")
     if engagement == "inactive_since" and inactive_since is None:
@@ -510,7 +549,7 @@ def parse_contact_explorer_filters(params, *, forced_audience_id=None) -> Contac
     return ContactExplorerFilters(
         query=params.get("q", "").strip(),
         audience_id=forced_audience_id or positive_int(params.get("audience")),
-        client_id=positive_int(params.get("client")),
+        client_id=forced_client_id or positive_int(params.get("client")),
         include_tags=tuple(nonempty_values(params.getlist("include_tags"))),
         exclude_tags=tuple(nonempty_values(params.getlist("exclude_tags"))),
         subscription_status=valid_choice(params.get("subscription_status", ""), SubscriptionStatus),
@@ -568,8 +607,12 @@ def contact_explorer_queryset(filters: ContactExplorerFilters) -> QuerySet[Conta
         queryset = queryset.exclude(Exists(contact_tag_scope_queryset(filters).filter(tag__slug=tag_slug)))
     if filters.campaign_status:
         queryset = queryset.filter(campaign_recipients__status=filters.campaign_status)
+        if filters.client_id:
+            queryset = queryset.filter(campaign_recipients__campaign__client_id=filters.client_id)
     if filters.skip_reason:
         queryset = queryset.filter(campaign_recipients__skip_reason=filters.skip_reason)
+        if filters.client_id:
+            queryset = queryset.filter(campaign_recipients__campaign__client_id=filters.client_id)
 
     queryset = apply_engagement_filter(queryset, filters)
     return (
@@ -693,10 +736,10 @@ def transactional_click_queryset(filters: ContactExplorerFilters):
     return TransactionalMessage.objects.filter(**transactional_scope_filter(filters), first_clicked_at__isnull=False)
 
 
-def contact_result_rows(contacts, *, audience: Audience | None = None) -> list[ContactResultRow]:
+def contact_result_rows(contacts, *, audience: Audience | None = None, client: Client | None = None) -> list[ContactResultRow]:
     rows = []
     contact_ids = [contact.id for contact in contacts]
-    recent_issues = recent_contact_issues(contact_ids, audience=audience)
+    recent_issues = recent_contact_issues(contact_ids, audience=audience, client=client)
     for contact in contacts:
         subscriptions = scoped_subscriptions(contact.subscriptions.all(), audience)
         contact_tags = scoped_contact_tags(contact.contact_tags.all(), audience)
@@ -747,7 +790,7 @@ def tag_summary(contact_tags) -> str:
     return ", ".join(labels) or "-"
 
 
-def recent_contact_issues(contact_ids, *, audience: Audience | None = None) -> dict[int, str]:
+def recent_contact_issues(contact_ids, *, audience: Audience | None = None, client: Client | None = None) -> dict[int, str]:
     if not contact_ids:
         return {}
     issue_statuses = [
@@ -760,6 +803,8 @@ def recent_contact_issues(contact_ids, *, audience: Audience | None = None) -> d
     issues = CampaignRecipient.objects.filter(contact_id__in=contact_ids, status__in=issue_statuses)
     if audience is not None:
         issues = issues.filter(campaign__audience=audience)
+    if client is not None:
+        issues = issues.filter(campaign__client=client)
     issues = issues.select_related("campaign").order_by("contact_id", "-created_at", "-id")
     result = {}
     for recipient in issues:
@@ -778,19 +823,23 @@ def contact_detail_queryset() -> QuerySet[Contact]:
     )
 
 
-def contact_campaign_history(contact: Contact) -> QuerySet[CampaignRecipient]:
-    return (
-        CampaignRecipient.objects.filter(contact=contact)
-        .select_related("campaign", "campaign__client", "campaign__audience")
-        .order_by("-created_at", "-id")
+def contact_campaign_history(contact: Contact, client: Client | None = None) -> QuerySet[CampaignRecipient]:
+    queryset = CampaignRecipient.objects.filter(contact=contact).select_related(
+        "campaign",
+        "campaign__client",
+        "campaign__audience",
     )
+    if client is not None:
+        queryset = queryset.filter(campaign__client=client)
+    return queryset.order_by("-created_at", "-id")
 
 
-def contact_transactional_history(contact: Contact):
+def contact_transactional_history(contact: Contact, client: Client | None = None):
+    queryset = contact.transactional_messages.select_related("client")
+    if client is not None:
+        queryset = queryset.filter(client=client)
     return (
-        contact.transactional_messages.select_related("client")
-        .order_by("-created_at", "-id")
-        .only(
+        queryset.order_by("-created_at", "-id").only(
             "id",
             "client__name",
             "client__slug",
@@ -811,26 +860,31 @@ def contact_transactional_history(contact: Contact):
     )
 
 
-def contact_detail_context(contact: Contact) -> ContactDetailContext:
+def contact_detail_context(contact: Contact, client: Client | None = None) -> ContactDetailContext:
     subscriptions = contact.subscriptions.select_related("audience", "client").order_by(
         "audience__slug",
         "client__slug",
         "id",
     )
+    if client is not None:
+        subscriptions = subscriptions.filter(client=client)
     eligibility = eligibility_items(contact, subscriptions)
+    contact_tags = contact.contact_tags.select_related("tag", "tag__audience").order_by(
+        "tag__audience__slug",
+        "tag__slug",
+    )
+    if client is not None:
+        contact_tags = contact_tags.filter(tag__audience__organization=client.organization)
     return ContactDetailContext(
         eligibility=eligibility,
         subscriptions=subscriptions,
-        contact_tags=contact.contact_tags.select_related("tag", "tag__audience").order_by(
-            "tag__audience__slug",
-            "tag__slug",
-        ),
+        contact_tags=contact_tags,
         verification_badge=verification_badge(contact),
         validation_badge=validation_badge(contact),
         subscription_badge=subscription_badge(contact, subscriptions),
         sendability=sendability_summary(eligibility),
-        metrics=contact_metrics(contact),
-        recent_activity=recent_contact_activity(contact),
+        metrics=contact_metrics(contact, client),
+        recent_activity=recent_contact_activity(contact, client),
     )
 
 
@@ -900,16 +954,21 @@ def unique_reasons(reasons) -> tuple[str, ...]:
     return tuple(seen)
 
 
-def contact_metrics(contact: Contact) -> list[ContactMetric]:
+def contact_metrics(contact: Contact, client: Client | None = None) -> list[ContactMetric]:
     campaign_rows = CampaignRecipient.objects.filter(contact=contact)
     transactional_rows = contact.transactional_messages.all()
+    event_rows = EmailEvent.objects.filter(contact=contact)
+    if client is not None:
+        campaign_rows = campaign_rows.filter(campaign__client=client)
+        transactional_rows = transactional_rows.filter(client=client)
+        event_rows = event_rows.filter(client=client)
     return [
         ContactMetric("Last sent", latest_datetime(campaign_rows.aggregate(value=Max("sent_at"))["value"], transactional_rows.aggregate(value=Max("sent_at"))["value"]), "success"),
         ContactMetric("Last opened", latest_datetime(campaign_rows.aggregate(value=Max("first_opened_at"))["value"], transactional_rows.aggregate(value=Max("first_opened_at"))["value"]), "success"),
         ContactMetric("Last clicked", latest_datetime(campaign_rows.aggregate(value=Max("first_clicked_at"))["value"], transactional_rows.aggregate(value=Max("first_clicked_at"))["value"]), "success"),
-        ContactMetric("Last bounce", latest_datetime(contact.hard_bounced_at, EmailEvent.objects.filter(contact=contact, event_type=EmailEventType.BOUNCE).aggregate(value=Max("created_at"))["value"]), "danger"),
-        ContactMetric("Last complaint", latest_datetime(contact.complained_at, EmailEvent.objects.filter(contact=contact, event_type=EmailEventType.COMPLAINT).aggregate(value=Max("created_at"))["value"]), "danger"),
-        ContactMetric("Last unsubscribe", latest_datetime(contact.global_unsubscribed_at, EmailEvent.objects.filter(contact=contact, event_type=EmailEventType.UNSUBSCRIBE).aggregate(value=Max("created_at"))["value"]), "danger"),
+        ContactMetric("Last bounce", latest_datetime(contact.hard_bounced_at, event_rows.filter(event_type=EmailEventType.BOUNCE).aggregate(value=Max("created_at"))["value"]), "danger"),
+        ContactMetric("Last complaint", latest_datetime(contact.complained_at, event_rows.filter(event_type=EmailEventType.COMPLAINT).aggregate(value=Max("created_at"))["value"]), "danger"),
+        ContactMetric("Last unsubscribe", latest_datetime(contact.global_unsubscribed_at, event_rows.filter(event_type=EmailEventType.UNSUBSCRIBE).aggregate(value=Max("created_at"))["value"]), "danger"),
     ]
 
 
@@ -918,9 +977,9 @@ def latest_datetime(*values):
     return max(present) if present else None
 
 
-def recent_contact_activity(contact: Contact) -> list[ContactActivity]:
+def recent_contact_activity(contact: Contact, client: Client | None = None) -> list[ContactActivity]:
     rows: list[ContactActivity] = []
-    for event in contact_event_timeline(contact)[:8]:
+    for event in contact_event_timeline(contact, client)[:8]:
         rows.append(
             ContactActivity(
                 event.created_at,
@@ -929,7 +988,7 @@ def recent_contact_activity(contact: Contact) -> list[ContactActivity]:
                 event.url or "Email event recorded",
             )
         )
-    for recipient in contact_campaign_history(contact)[:5]:
+    for recipient in contact_campaign_history(contact, client)[:5]:
         rows.append(
             ContactActivity(
                 recipient.sent_at or recipient.created_at,
@@ -940,7 +999,7 @@ def recent_contact_activity(contact: Contact) -> list[ContactActivity]:
                 metadata=recipient.last_error or recipient.get_skip_reason_display(),
             )
         )
-    for message in contact_transactional_history(contact)[:5]:
+    for message in contact_transactional_history(contact, client)[:5]:
         rows.append(
             ContactActivity(
                 message.sent_at or message.created_at,
@@ -1042,20 +1101,19 @@ def transactional_reasons(contact: Contact):
     return tuple(reasons)
 
 
-def contact_event_timeline(contact: Contact) -> QuerySet[EmailEvent]:
-    return (
-        EmailEvent.objects.filter(contact=contact)
-        .select_related(
-            "campaign",
-            "campaign__client",
-            "campaign__audience",
-            "campaign_recipient",
-            "transactional_message",
-            "client",
-            "audience",
-        )
-        .order_by("-created_at", "-id")
+def contact_event_timeline(contact: Contact, client: Client | None = None) -> QuerySet[EmailEvent]:
+    queryset = EmailEvent.objects.filter(contact=contact).select_related(
+        "campaign",
+        "campaign__client",
+        "campaign__audience",
+        "campaign_recipient",
+        "transactional_message",
+        "client",
+        "audience",
     )
+    if client is not None:
+        queryset = queryset.filter(client=client)
+    return queryset.order_by("-created_at", "-id")
 
 
 def event_context(event: EmailEvent) -> str:
@@ -1083,9 +1141,12 @@ def metadata_summary(metadata) -> str:
     return json.dumps(metadata, sort_keys=True)[:240]
 
 
-def audience_queryset() -> QuerySet[Audience]:
+def audience_queryset(client: Client | None = None) -> QuerySet[Audience]:
+    queryset = Audience.objects.select_related("organization")
+    if client is not None:
+        queryset = queryset.filter(organization=client.organization)
     return (
-        Audience.objects.select_related("organization")
+        queryset
         .annotate(
             subscription_count=Count("subscriptions", distinct=True),
             contact_count=Count("subscriptions__contact", distinct=True),
@@ -1104,7 +1165,7 @@ def audience_detail_queryset() -> QuerySet[Audience]:
     return Audience.objects.select_related("organization")
 
 
-def audience_list_rows(audiences) -> list[AudienceListRow]:
+def audience_list_rows(audiences, client: Client | None = None) -> list[AudienceListRow]:
     return [
         AudienceListRow(
             audience=audience,
@@ -1113,8 +1174,12 @@ def audience_list_rows(audiences) -> list[AudienceListRow]:
             inactive_count=audience_inactive_count(audience),
             suppressed_count=audience_suppressed_count(audience),
             campaign_count=audience.campaign_count,
-            recent_campaign=Campaign.objects.filter(audience=audience).select_related("client").order_by("-updated_at", "-id").first(),
-            recent_event=EmailEvent.objects.filter(audience=audience).order_by("-created_at", "-id").first(),
+            recent_campaign=campaign_queryset(client).filter(audience=audience).order_by("-updated_at", "-id").first(),
+            recent_event=(
+                EmailEvent.objects.filter(audience=audience, client=client).order_by("-created_at", "-id").first()
+                if client is not None
+                else EmailEvent.objects.filter(audience=audience).order_by("-created_at", "-id").first()
+            ),
         )
         for audience in audiences
     ]
@@ -1152,16 +1217,20 @@ def audience_suppressed_count(audience: Audience) -> int:
     )
 
 
-def audience_summary(audience: Audience) -> list[Stat]:
+def audience_summary(audience: Audience, client: Client | None = None) -> list[Stat]:
     contacts = audience_contacts(audience)
+    subscriptions = Subscription.objects.filter(audience=audience)
+    if client is not None:
+        contacts = contacts.filter(subscriptions__client=client).distinct()
+        subscriptions = subscriptions.filter(client=client)
     return [
         Stat("members", "Members", contacts.count()),
-        Stat("subscribed", "Subscribed", Subscription.objects.filter(audience=audience, status=SubscriptionStatus.SUBSCRIBED).count()),
-        Stat("pending", "Pending", Subscription.objects.filter(audience=audience, status=SubscriptionStatus.PENDING).count()),
+        Stat("subscribed", "Subscribed", subscriptions.filter(status=SubscriptionStatus.SUBSCRIBED).count()),
+        Stat("pending", "Pending", subscriptions.filter(status=SubscriptionStatus.PENDING).count()),
         Stat(
             "unsubscribed",
             "Unsubscribed",
-            Subscription.objects.filter(audience=audience, status=SubscriptionStatus.UNSUBSCRIBED).count(),
+            subscriptions.filter(status=SubscriptionStatus.UNSUBSCRIBED).count(),
         ),
         Stat("verified", "Verified", contacts.filter(verified_at__isnull=False).count()),
         Stat("unverified", "Unverified", contacts.filter(verified_at__isnull=True).count()),
@@ -1199,31 +1268,38 @@ def count_by_field(queryset, field, *, choices=None):
     return sorted(raw_counts.items())
 
 
-def audience_breakdowns(audience: Audience):
+def audience_breakdowns(audience: Audience, client: Client | None = None):
     contacts = audience_contacts(audience)
+    campaign_recipients = CampaignRecipient.objects.filter(campaign__audience=audience)
+    if client is not None:
+        contacts = contacts.filter(subscriptions__client=client).distinct()
+        campaign_recipients = campaign_recipients.filter(campaign__client=client)
     return {
         "validation": count_by_field(contacts, "email_validation_status", choices=EmailValidationStatus.choices),
         "tags": Tag.objects.filter(audience=audience)
         .annotate(count=Count("contact_tags", distinct=True))
         .order_by("slug"),
         "campaign_statuses": count_by_field(
-            CampaignRecipient.objects.filter(campaign__audience=audience),
+            campaign_recipients,
             "status",
             choices=CampaignRecipientStatus.choices,
         ),
         "skip_reasons": count_by_field(
-            CampaignRecipient.objects.filter(campaign__audience=audience).exclude(skip_reason=""),
+            campaign_recipients.exclude(skip_reason=""),
             "skip_reason",
             choices=CampaignRecipientSkipReason.choices,
         ),
     }
 
 
-def audience_campaign_history(audience: Audience) -> QuerySet[Campaign]:
-    return Campaign.objects.filter(audience=audience).select_related("client").order_by("-created_at", "-id")
+def audience_campaign_history(audience: Audience, client: Client | None = None) -> QuerySet[Campaign]:
+    queryset = Campaign.objects.filter(audience=audience).select_related("client")
+    if client is not None:
+        queryset = queryset.filter(client=client)
+    return queryset.order_by("-created_at", "-id")
 
 
-def audience_recent_events(audience: Audience, event_type: str = "") -> QuerySet[EmailEvent]:
+def audience_recent_events(audience: Audience, event_type: str = "", client: Client | None = None) -> QuerySet[EmailEvent]:
     queryset = EmailEvent.objects.filter(audience=audience).select_related(
         "contact",
         "campaign",
@@ -1231,6 +1307,8 @@ def audience_recent_events(audience: Audience, event_type: str = "") -> QuerySet
         "transactional_message",
         "client",
     )
+    if client is not None:
+        queryset = queryset.filter(client=client)
     if valid_choice(event_type, EmailEventType):
         queryset = queryset.filter(event_type=event_type)
     return queryset.order_by("-created_at", "-id")
