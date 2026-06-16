@@ -11,6 +11,18 @@ This is the issue #13 MVP deployment path. It is intentionally practical without
 - SES: per-environment configuration set and sender identity parameters. DNS verification and production access are HUMAN checks.
 - Monitoring: CloudWatch log groups with per-environment retention, alarms, and dashboard coverage for queue age, DLQ depth, Lambda errors/throttles/duration, SES bounces/complaints, DB CPU/storage/connections, web health, stuck campaigns, and transactional queue latency.
 
+## Sandbox Intermediate Worker
+
+The current low-cost sandbox runs the Django web app on a single EC2 host with SQLite. Until the sandbox moves to shared Postgres/RDS, SQS workers must run on the same host as the web app so they can read the same database file. Deploying Lambda workers before that database move would let Lambda consume SQS messages but not load the corresponding Django rows.
+
+For this intermediate step, the sandbox deploy installs a `datamailer-transactional-worker.service` systemd unit on the EC2 host. It runs:
+
+```bash
+/opt/datamailer/.venv/bin/python manage.py process_sqs_worker transactional --batch-size 10 --wait-time 20
+```
+
+The command long-polls the transactional SQS queue, calls the same handler used by the future Lambda worker, deletes only successfully processed records, and leaves failed records for SQS retry/DLQ behavior. This is intentionally a sandbox bridge, not the final production architecture.
+
 ## Files
 
 - `infra/cloudformation/datamailer-mvp.json`: CloudFormation skeleton for staging/production.

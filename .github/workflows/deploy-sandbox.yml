@@ -66,7 +66,9 @@ jobs:
                 \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py collectstatic --noinput\",
                 \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer run python manage.py migrate --noinput\",
                 \"systemctl restart datamailer\",
+                \"bash /opt/datamailer/scripts/install_sandbox_worker_service.sh\",
                 \"systemctl is-active datamailer\",
+                \"systemctl is-active datamailer-transactional-worker\",
                 \"sudo -u ubuntu git -C /opt/datamailer rev-parse --short HEAD\"
               ]" \
               --query 'Command.CommandId' \
