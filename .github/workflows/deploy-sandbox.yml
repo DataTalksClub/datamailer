@@ -58,7 +58,7 @@ jobs:
               --document-name AWS-RunShellScript \
               --comment "Deploy Datamailer sandbox ${GITHUB_SHA}" \
               --parameters commands="[
-                \"set -euxo pipefail\",
+                \"set -eux\",
                 \"sudo -u ubuntu git -C /opt/datamailer fetch origin main\",
                 \"sudo -u ubuntu git -C /opt/datamailer checkout --force ${GITHUB_SHA}\",
                 \"sudo -u ubuntu /usr/local/bin/uv --directory /opt/datamailer sync --frozen\",
