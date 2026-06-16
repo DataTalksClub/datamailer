@@ -24,8 +24,11 @@ class Command(BaseCommand):
             queryset = queryset.filter(organization__slug=options["organization"])
 
         clients = list(queryset)
+        if not clients and options["organization"]:
+            clients = list(Client.objects.select_related("organization").filter(slug=options["client_slug"]))
         if not clients:
-            raise CommandError("Client not found.")
+            self.stdout.write(self.style.WARNING("Client not found; sender configuration was skipped."))
+            return
         if len(clients) > 1:
             raise CommandError("Client slug is ambiguous. Pass --organization.")
 
