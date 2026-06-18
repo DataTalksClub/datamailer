@@ -51,6 +51,7 @@ API_DOC_PATHS = {
     "mailing:api_recipient_list_member": "/api/recipient-lists/{list_key}/members/{source_object_key}",
     "mailing:api_recipient_list_bulk_upsert": "/api/recipient-lists/{list_key}/members/bulk-upsert",
     "mailing:api_recipient_list_reconcile": "/api/recipient-lists/{list_key}/members/reconcile",
+    "mailing:api_recipient_list_transactional_send": "/api/recipient-lists/{list_key}/transactional-send",
     "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
@@ -69,7 +70,9 @@ def docs_base_url():
     return settings.API_DOCS_BASE_URL.rstrip("/")
 
 
-def contact_response(*, contact_id=101, email="learner@example.com", audience="dtc-courses", client="dtc-courses", tags=None):
+def contact_response(
+    *, contact_id=101, email="learner@example.com", audience="dtc-courses", client="dtc-courses", tags=None
+):
     tags = tags or ["course-ml-zoomcamp"]
     return {
         "contact_id": contact_id,
@@ -156,7 +159,14 @@ response = requests.get(
 )
 response.raise_for_status()""".replace("__BASE_URL__", base_url),
                     "success": code_json(status_response()),
-                    "error": code_json({"error": {"code": "invalid_api_key", "message": "Authentication credentials were not accepted."}}),
+                    "error": code_json(
+                        {
+                            "error": {
+                                "code": "invalid_api_key",
+                                "message": "Authentication credentials were not accepted.",
+                            }
+                        }
+                    ),
                 },
             ],
         },
@@ -344,7 +354,9 @@ echo "Newsletter contact ID: $NEWSLETTER_CONTACT_ID" """,
                     "path": "/api/contacts/{contact_id}/tags",
                     "key": "Newsletter import/export",
                     "summary": "Replaces the contact's tag set for the target audience.",
-                    "request": code_json({"audience": "datatalks-club", "client": "dtc-newsletter", "tags": ["newsletter", "events"]}),
+                    "request": code_json(
+                        {"audience": "datatalks-club", "client": "dtc-newsletter", "tags": ["newsletter", "events"]}
+                    ),
                     "curl": """NEWSLETTER_CONTACT_ID=$(curl -sS "$DATAMAILER_URL/api/contacts/status?email=alex.verified@example.com&audience=datatalks-club&client=dtc-newsletter" \\
   -H "Authorization: Bearer $DATAMAILER_DTC_NEWSLETTER_KEY" \\
   | python -c 'import json, sys; print(json.load(sys.stdin)["contact_id"])')
@@ -622,7 +634,14 @@ requests.post(
                         {
                             "dry_run": False,
                             "idempotency_key": "newsletter-import-2026-05-25",
-                            "counts": {"total": 1, "created": 1, "updated": 0, "unchanged": 0, "skipped": 0, "invalid": 0},
+                            "counts": {
+                                "total": 1,
+                                "created": 1,
+                                "updated": 0,
+                                "unchanged": 0,
+                                "skipped": 0,
+                                "invalid": 0,
+                            },
                             "results": [{"index": 0, "item": 1, "action": "created", "contact": {"contact_id": 202}}],
                             "errors": [],
                         }
@@ -648,7 +667,14 @@ requests.post(
                         {
                             "dry_run": False,
                             "idempotency_key": "",
-                            "counts": {"total": 1, "created": 0, "updated": 1, "unchanged": 0, "skipped": 0, "invalid": 0},
+                            "counts": {
+                                "total": 1,
+                                "created": 0,
+                                "updated": 1,
+                                "unchanged": 0,
+                                "skipped": 0,
+                                "invalid": 0,
+                            },
                             "results": [{"index": 0, "item": 1, "action": "updated", "contact": {"contact_id": 202}}],
                             "errors": [],
                         }
@@ -736,6 +762,11 @@ def endpoint_groups():
                     "/api/recipient-lists/{list_key}/members/reconcile",
                     "Replace list membership from a current source snapshot.",
                 ),
+                (
+                    "POST",
+                    "/api/recipient-lists/{list_key}/transactional-send",
+                    "Queue one transactional email per active list member.",
+                ),
             ],
         },
         {
@@ -787,6 +818,10 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_recipient_list_reconcile"]: reverse(
             "mailing:api_recipient_list_reconcile",
             args=["registrants:ml-zoomcamp-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_recipient_list_transactional_send"]: reverse(
+            "mailing:api_recipient_list_transactional_send",
+            args=["homework-submitters:ml-zoomcamp-2026:homework-1"],
         ),
         API_DOC_PATHS["mailing:api_transactional_template"]: reverse(
             "mailing:api_transactional_template",
@@ -857,7 +892,11 @@ EXPORT_QUERY_PARAMS = [
     {"name": "tags", "in": "query", "schema": {"type": "string", "description": "Comma-separated tag slugs."}},
     {"name": "subscription_status", "in": "query", "schema": {"$ref": "#/components/schemas/SubscriptionStatus"}},
     {"name": "verified", "in": "query", "schema": {"type": "boolean"}},
-    {"name": "email_validation_status", "in": "query", "schema": {"$ref": "#/components/schemas/EmailValidationStatus"}},
+    {
+        "name": "email_validation_status",
+        "in": "query",
+        "schema": {"$ref": "#/components/schemas/EmailValidationStatus"},
+    },
     {
         "name": "suppression",
         "in": "query",
@@ -897,7 +936,9 @@ OPENAPI_SPEC = {
                 "summary": "List contacts",
                 "security": [{"BearerAuth": []}],
                 "parameters": EXPORT_QUERY_PARAMS,
-                "responses": bearer_responses(json_response("Contacts list", "#/components/schemas/ContactListResponse")),
+                "responses": bearer_responses(
+                    json_response("Contacts list", "#/components/schemas/ContactListResponse")
+                ),
             },
             "post": {
                 "tags": ["Contacts"],
@@ -1101,7 +1142,26 @@ OPENAPI_SPEC = {
                 "parameters": [LIST_KEY_PARAM],
                 "requestBody": json_body("#/components/schemas/RecipientListReconcileRequest"),
                 "responses": bearer_responses(
-                    json_response("Recipient list reconcile result", "#/components/schemas/RecipientListReconcileResponse")
+                    json_response(
+                        "Recipient list reconcile result", "#/components/schemas/RecipientListReconcileResponse"
+                    )
+                ),
+            }
+        },
+        "/api/recipient-lists/{list_key}/transactional-send": {
+            "post": {
+                "tags": ["Recipient Lists"],
+                "summary": "Send transactional email to recipient list",
+                "description": "Creates one transactional message per active list member. The base idempotency key is expanded with each member source object key.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/RecipientListTransactionalSendRequest"),
+                "responses": bearer_responses(
+                    json_response(
+                        "Recipient list transactional send result",
+                        "#/components/schemas/RecipientListTransactionalSendResponse",
+                    ),
+                    accepted=True,
                 ),
             }
         },
@@ -1212,7 +1272,10 @@ OPENAPI_SPEC = {
                 "tags": ["Public"],
                 "summary": "Apply unsubscribe",
                 "parameters": [UNSUBSCRIBE_PARAM],
-                "responses": {"200": {"description": "HTML confirmation"}, "400": {"description": "HTML validation error"}},
+                "responses": {
+                    "200": {"description": "HTML confirmation"},
+                    "400": {"description": "HTML validation error"},
+                },
             },
         },
         "/webhooks/ses": {
@@ -1327,6 +1390,22 @@ OPENAPI_SPEC = {
                         "properties": {
                             "dry_run": {"type": "boolean"},
                             "remove_absent": {"type": "boolean"},
+                        },
+                    },
+                ]
+            },
+            "RecipientListTransactionalSendRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["template_key", "idempotency_key"],
+                        "properties": {
+                            "template_key": {"type": "string"},
+                            "idempotency_key": {"type": "string"},
+                            "context": {"type": "object"},
+                            "metadata": {"type": "object"},
+                            "from_email": {"type": "string"},
                         },
                     },
                 ]
@@ -1558,6 +1637,24 @@ OPENAPI_SPEC = {
                     "removed_count": {"type": "integer"},
                 },
             },
+            "RecipientListTransactionalSendResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string"},
+                            "active_member_count": {"type": "integer"},
+                        },
+                    },
+                    "template_key": {"type": "string"},
+                    "idempotency_key": {"type": "string"},
+                    "created_count": {"type": "integer"},
+                    "enqueued_count": {"type": "integer"},
+                    "skipped_count": {"type": "integer"},
+                    "idempotent_replay_count": {"type": "integer"},
+                },
+            },
             "EmailValidationState": {
                 "type": "object",
                 "properties": {
@@ -1595,7 +1692,11 @@ OPENAPI_SPEC = {
                     "idempotency_key": {"type": "string"},
                     "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
                     "results": {"type": "array", "items": {"type": "object"}, "description": "Per-item/row actions."},
-                    "errors": {"type": "array", "items": {"type": "object"}, "description": "Partial item/row validation errors."},
+                    "errors": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Partial item/row validation errors.",
+                    },
                 },
             },
             "ContactHistory": {

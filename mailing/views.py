@@ -120,7 +120,11 @@ from mailing.services.recipient_lists import (
 from mailing.services.ses_webhooks import SesWebhookError, SnsSignatureError, ingest_sns_webhook
 from mailing.services.tokens import get_recipient_by_unsubscribe_token
 from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
-from mailing.services.transactional import TransactionalSendRejected, send_transactional_email_for_client
+from mailing.services.transactional import (
+    TransactionalSendRejected,
+    send_transactional_email_for_client,
+    send_transactional_email_to_recipient_list_for_client,
+)
 from mailing.services.transactional_catalog import (
     catalog_context,
     filter_transactional_templates,
@@ -319,7 +323,9 @@ def campaign_edit(request, campaign_id):
     active_client = require_active_client(request)
     if active_client is None:
         return redirect("mailing:dashboard")
-    campaign = get_object_or_404(Campaign.objects.select_related("client", "audience"), pk=campaign_id, client=active_client)
+    campaign = get_object_or_404(
+        Campaign.objects.select_related("client", "audience"), pk=campaign_id, client=active_client
+    )
     form = CampaignForm(request.POST or None, instance=campaign, active_client=active_client)
     if request.method == "POST" and form.is_valid():
         campaign = form.save()
@@ -347,10 +353,7 @@ def campaign_detail(request, campaign_id):
     recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
     estimate = estimate_campaign_recipients(campaign) if campaign.status == CampaignStatus.DRAFT else None
     events = campaign_recent_events(campaign)[:10]
-    event_rows = [
-        {"event": event, "metadata_summary": metadata_summary(event.metadata)}
-        for event in events
-    ]
+    event_rows = [{"event": event, "metadata_summary": metadata_summary(event.metadata)} for event in events]
     return render(
         request,
         "mailing/operator/campaign_detail.html",
@@ -590,7 +593,9 @@ def audience_create(request):
         audience = create_or_update_audience(actor=request.user, **form.cleaned_data)
         messages.success(request, "Audience created.")
         return redirect("mailing:audience_detail", audience_id=audience.id)
-    return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "create", "active_client": active_client})
+    return render(
+        request, "mailing/operator/audience_form.html", {"form": form, "mode": "create", "active_client": active_client}
+    )
 
 
 @staff_member_required
@@ -605,7 +610,11 @@ def audience_edit(request, audience_id):
         audience = create_or_update_audience(actor=request.user, audience=audience, **form.cleaned_data)
         messages.success(request, "Audience updated.")
         return redirect("mailing:audience_detail", audience_id=audience.id)
-    return render(request, "mailing/operator/audience_form.html", {"form": form, "mode": "edit", "audience": audience, "active_client": active_client})
+    return render(
+        request,
+        "mailing/operator/audience_form.html",
+        {"form": form, "mode": "edit", "audience": audience, "active_client": active_client},
+    )
 
 
 @staff_member_required
@@ -694,13 +703,17 @@ def tag_edit(request, tag_id):
     active_client = require_active_client(request)
     if active_client is None:
         return redirect("mailing:dashboard")
-    tag = get_object_or_404(Tag.objects.select_related("audience"), pk=tag_id, audience__organization=active_client.organization)
+    tag = get_object_or_404(
+        Tag.objects.select_related("audience"), pk=tag_id, audience__organization=active_client.organization
+    )
     form = TagForm(request.POST or None, instance=tag, audience=tag.audience)
     if request.method == "POST" and form.is_valid():
         tag = create_or_update_tag(actor=request.user, tag=tag, audience=tag.audience, **form.cleaned_data)
         messages.success(request, "Tag updated.")
         return redirect("mailing:tag_detail", tag_id=tag.id)
-    return render(request, "mailing/operator/tag_form.html", {"form": form, "tag": tag, "audience": tag.audience, "mode": "edit"})
+    return render(
+        request, "mailing/operator/tag_form.html", {"form": form, "tag": tag, "audience": tag.audience, "mode": "edit"}
+    )
 
 
 @staff_member_required
@@ -1265,6 +1278,27 @@ def api_recipient_list_reconcile(request, list_key):
         return validation_error_response(exc)
 
     return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list_transactional_send(request, list_key):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = send_transactional_email_to_recipient_list_for_client(
+            list_key,
+            json_request_body(request),
+            client,
+        )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=202)
 
 
 @csrf_exempt

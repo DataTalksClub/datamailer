@@ -118,6 +118,7 @@ GET /api/recipient-lists/{list_key}
 PUT /api/recipient-lists/{list_key}/members/{source_object_key}
 POST /api/recipient-lists/{list_key}/members/bulk-upsert
 POST /api/recipient-lists/{list_key}/members/reconcile
+POST /api/recipient-lists/{list_key}/transactional-send
 ```
 
 Single member upsert creates the parent list when it does not exist, so CMP does not need a separate "does this batch exist?" call when the first learner submits:
@@ -170,6 +171,26 @@ Bulk upsert accepts the same scope and list metadata plus a `members` array. It 
 ```
 
 Reconcile uses the provided member array as the current desired list. With `remove_absent=true`, existing members missing from the payload are marked removed instead of deleted. This gives CMP an idempotent backfill path for "everyone registered" and "everyone who submitted this homework/project" lists.
+
+List transactional send creates one transactional message per active list member using a shared template and context. The caller must provide a base `idempotency_key`; Datamailer appends each member `source_object_key` so retrying the same list send does not duplicate per-member email:
+
+```json
+{
+  "audience": "dtc-courses",
+  "client": "dtc-courses",
+  "template_key": "homework-score-published",
+  "idempotency_key": "homework-score:ml-zoomcamp-2026:homework-1",
+  "context": {
+    "course_title": "ML Zoomcamp 2026",
+    "homework_title": "Homework 1",
+    "scores_url": "https://courses.example.com/courses/ml-zoomcamp-2026/"
+  },
+  "metadata": {
+    "source": "course-management-platform",
+    "event": "homework_score_publication"
+  }
+}
+```
 
 ## Transactional Email API
 

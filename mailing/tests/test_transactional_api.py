@@ -14,6 +14,8 @@ from mailing.models import (
     EmailEventType,
     EmailTemplate,
     Organization,
+    RecipientList,
+    RecipientListMember,
     Subscription,
     SubscriptionStatus,
     TransactionalMessage,
@@ -83,6 +85,15 @@ def auth_headers(raw_key=API_KEY):
 def post_transactional(django_client, payload, raw_key=API_KEY):
     return django_client.post(
         reverse("mailing:api_transactional_send"),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def post_recipient_list_transactional(django_client, list_key, payload, raw_key=API_KEY):
+    return django_client.post(
+        reverse("mailing:api_recipient_list_transactional_send", args=[list_key]),
         data=payload,
         content_type="application/json",
         **auth_headers(raw_key),
@@ -275,6 +286,83 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["template_id"] == template.id
     assert enqueued[0]["template_key"] == template.key
     assert enqueued[0]["idempotency_key"] == "verify-123"
+
+
+def test_transactional_send_to_recipient_list_creates_per_member_messages(
+    client,
+    audience,
+    api_client_record,
+    template,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    allowed_contact = Contact.objects.create(email="allowed@example.com")
+    suppressed_contact = Contact.objects.create(
+        email="suppressed@example.com",
+        hard_bounced_at=timezone.now(),
+    )
+    recipient_list = RecipientList.objects.create(
+        client=api_client_record,
+        audience=audience,
+        key="homework-submitters:ml-zoomcamp-2026:homework-1",
+        type="homework_submitters",
+        name="Homework 1 submitters",
+        member_count=2,
+        active_member_count=2,
+    )
+    RecipientListMember.objects.create(
+        recipient_list=recipient_list,
+        contact=allowed_contact,
+        email=allowed_contact.normalized_email,
+        source_object_key="homework-submission:1",
+    )
+    RecipientListMember.objects.create(
+        recipient_list=recipient_list,
+        contact=suppressed_contact,
+        email=suppressed_contact.normalized_email,
+        source_object_key="homework-submission:2",
+    )
+
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "template_key": template.key,
+        "idempotency_key": "homework-score:homework-1",
+        "context": {
+            "product": "ML Zoomcamp",
+            "verification_url": "https://courses.example.com/scores",
+        },
+        "metadata": {"source": "score-publication"},
+    }
+
+    response = post_recipient_list_transactional(client, recipient_list.key, payload)
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["created_count"] == 2
+    assert body["enqueued_count"] == 1
+    assert body["skipped_count"] == 1
+    assert body["idempotent_replay_count"] == 0
+    messages = list(TransactionalMessage.objects.order_by("email"))
+    assert [message.email for message in messages] == ["allowed@example.com", "suppressed@example.com"]
+    assert messages[0].idempotency_key == "homework-score:homework-1:homework-submission:1"
+    assert messages[0].status == TransactionalMessageStatus.QUEUED
+    assert messages[0].metadata["recipient_list_key"] == recipient_list.key
+    assert messages[1].idempotency_key == "homework-score:homework-1:homework-submission:2"
+    assert messages[1].status == TransactionalMessageStatus.SKIPPED
+    assert messages[1].last_error == "hard_bounce"
+    assert len(enqueued) == 1
+    assert validate_transactional_email_message(enqueued[0]) == enqueued[0]
+
+    replay = post_recipient_list_transactional(client, recipient_list.key, payload)
+
+    assert replay.status_code == 202
+    assert replay.json()["created_count"] == 0
+    assert replay.json()["enqueued_count"] == 0
+    assert replay.json()["idempotent_replay_count"] == 2
+    assert TransactionalMessage.objects.count() == 2
+    assert len(enqueued) == 1
 
 
 def test_transactional_send_uses_client_default_sender(client, api_client_record, template, monkeypatch):

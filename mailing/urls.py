@@ -94,6 +94,11 @@ urlpatterns = [
         name="api_recipient_list_reconcile",
     ),
     path(
+        "api/recipient-lists/<str:list_key>/transactional-send",
+        views.api_recipient_list_transactional_send,
+        name="api_recipient_list_transactional_send",
+    ),
+    path(
         "api/recipient-lists/<str:list_key>/members/<str:source_object_key>",
         views.api_recipient_list_member,
         name="api_recipient_list_member",
