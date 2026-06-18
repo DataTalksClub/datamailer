@@ -222,12 +222,23 @@ Templates are scoped to the authenticated client. Use `PUT` to create or update 
 }
 ```
 
-The CMP homework confirmation template can be provisioned through the API with:
+CMP transactional templates can be provisioned through the API with:
 
 ```bash
 DATAMAILER_URL="https://datamailer.example.com" \
 DATAMAILER_API_KEY="<client-api-key>" \
-python scripts/upsert_homework_confirmation_template.py
+python scripts/upsert_cmp_templates.py
+```
+
+The script provisions these template keys:
+
+```text
+homework-submission-confirmation
+project-submission-confirmation
+homework-score-notification
+project-score-notification
+certificate-availability-notification
+deadline-reminder
 ```
 
 ### Send Transactional Email
