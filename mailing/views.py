@@ -110,6 +110,13 @@ from mailing.services.operator_ui import (
     metadata_summary,
     parse_contact_explorer_filters,
 )
+from mailing.services.recipient_lists import (
+    bulk_upsert_recipient_list_members_for_client,
+    get_recipient_list_for_client,
+    reconcile_recipient_list_for_client,
+    upsert_recipient_list_for_client,
+    upsert_recipient_list_member_for_client,
+)
 from mailing.services.ses_webhooks import SesWebhookError, SnsSignatureError, ingest_sns_webhook
 from mailing.services.tokens import get_recipient_by_unsubscribe_token
 from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
@@ -1178,6 +1185,82 @@ def api_transactional_message_status(request, message_id):
             message_id,
             client,
         )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list(request, list_key):
+    if request.method not in {"GET", "PUT"}:
+        return method_not_allowed_response(["GET", "PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = get_recipient_list_for_client(list_key, request.GET, client)
+        else:
+            payload = upsert_recipient_list_for_client(list_key, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list_member(request, list_key, source_object_key):
+    if request.method != "PUT":
+        return method_not_allowed_response(["PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = upsert_recipient_list_member_for_client(
+            list_key,
+            source_object_key,
+            json_request_body(request),
+            client,
+        )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list_bulk_upsert(request, list_key):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = bulk_upsert_recipient_list_members_for_client(list_key, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list_reconcile(request, list_key):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = reconcile_recipient_list_for_client(list_key, json_request_body(request), client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

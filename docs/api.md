@@ -108,6 +108,69 @@ GET /api/contacts.csv
 
 JSON and CSV imports are idempotent by normalized email plus audience/client scope. Invalid items are returned in partial errors while valid items continue. CSV export returns safe recreatable contact, subscription, tag, verification, validation, suppression, unsubscribe, and update timestamp columns.
 
+## Recipient List APIs
+
+Recipient lists are client-scoped batches for later list sends. CMP uses them for groups such as course registrants, homework submitters, and project submitters. Keys are unique within the authenticated client plus audience scope, for example `registrants:ml-zoomcamp-2026` or `homework-submitters:ml-zoomcamp-2026:homework-1`.
+
+```text
+PUT /api/recipient-lists/{list_key}
+GET /api/recipient-lists/{list_key}
+PUT /api/recipient-lists/{list_key}/members/{source_object_key}
+POST /api/recipient-lists/{list_key}/members/bulk-upsert
+POST /api/recipient-lists/{list_key}/members/reconcile
+```
+
+Single member upsert creates the parent list when it does not exist, so CMP does not need a separate "does this batch exist?" call when the first learner submits:
+
+```json
+{
+  "audience": "dtc-courses",
+  "client": "dtc-courses",
+  "list": {
+    "type": "homework_submitters",
+    "name": "ML Zoomcamp 2026 Homework 1 submitters",
+    "metadata": {
+      "course": "ml-zoomcamp-2026",
+      "homework": "homework-1"
+    }
+  },
+  "member": {
+    "email": "learner@example.com",
+    "status": "active",
+    "metadata": {
+      "submission_id": 42
+    }
+  }
+}
+```
+
+Bulk upsert accepts the same scope and list metadata plus a `members` array. It is intended for retroactive creation from CMP:
+
+```json
+{
+  "audience": "dtc-courses",
+  "client": "dtc-courses",
+  "list": {
+    "type": "registrants",
+    "name": "ML Zoomcamp 2026 registrants"
+  },
+  "members": [
+    {
+      "source_object_key": "registration:1",
+      "email": "one@example.com",
+      "metadata": {"user_id": 1}
+    },
+    {
+      "source_object_key": "registration:2",
+      "email": "two@example.com",
+      "metadata": {"user_id": 2}
+    }
+  ]
+}
+```
+
+Reconcile uses the provided member array as the current desired list. With `remove_absent=true`, existing members missing from the payload are marked removed instead of deleted. This gives CMP an idempotent backfill path for "everyone registered" and "everyone who submitted this homework/project" lists.
+
 ## Transactional Email API
 
 ### Transactional Template Upsert

@@ -82,6 +82,22 @@ urlpatterns = [
     path("api/contacts/<int:contact_id>/history", views.api_contact_history, name="api_contact_history"),
     path("api/subscriptions/subscribe", views.api_subscribe, name="api_subscribe"),
     path("api/subscriptions/unsubscribe", views.api_unsubscribe, name="api_unsubscribe"),
+    path("api/recipient-lists/<str:list_key>", views.api_recipient_list, name="api_recipient_list"),
+    path(
+        "api/recipient-lists/<str:list_key>/members/bulk-upsert",
+        views.api_recipient_list_bulk_upsert,
+        name="api_recipient_list_bulk_upsert",
+    ),
+    path(
+        "api/recipient-lists/<str:list_key>/members/reconcile",
+        views.api_recipient_list_reconcile,
+        name="api_recipient_list_reconcile",
+    ),
+    path(
+        "api/recipient-lists/<str:list_key>/members/<str:source_object_key>",
+        views.api_recipient_list_member,
+        name="api_recipient_list_member",
+    ),
     path(
         "api/transactional/templates/<slug:template_key>",
         views.api_transactional_template,

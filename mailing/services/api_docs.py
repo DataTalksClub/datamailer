@@ -4,7 +4,7 @@ from copy import deepcopy
 from django.conf import settings
 from django.urls import reverse
 
-from mailing.models import EmailValidationStatus, SubscriptionStatus
+from mailing.models import EmailValidationStatus, RecipientListType, SubscriptionStatus
 
 DEMO_API_KEYS = [
     {
@@ -47,6 +47,10 @@ API_DOC_PATHS = {
     "mailing:api_contact_history": "/api/contacts/{contact_id}/history",
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
+    "mailing:api_recipient_list": "/api/recipient-lists/{list_key}",
+    "mailing:api_recipient_list_member": "/api/recipient-lists/{list_key}/members/{source_object_key}",
+    "mailing:api_recipient_list_bulk_upsert": "/api/recipient-lists/{list_key}/members/bulk-upsert",
+    "mailing:api_recipient_list_reconcile": "/api/recipient-lists/{list_key}/members/reconcile",
     "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
@@ -713,6 +717,28 @@ def endpoint_groups():
             ],
         },
         {
+            "name": "Recipient Lists",
+            "endpoints": [
+                ("PUT", "/api/recipient-lists/{list_key}", "Create or update a client-scoped recipient list."),
+                ("GET", "/api/recipient-lists/{list_key}", "Get recipient list metadata and counts."),
+                (
+                    "PUT",
+                    "/api/recipient-lists/{list_key}/members/{source_object_key}",
+                    "Create or update one list member.",
+                ),
+                (
+                    "POST",
+                    "/api/recipient-lists/{list_key}/members/bulk-upsert",
+                    "Bulk create or update list members.",
+                ),
+                (
+                    "POST",
+                    "/api/recipient-lists/{list_key}/members/reconcile",
+                    "Replace list membership from a current source snapshot.",
+                ),
+            ],
+        },
+        {
             "name": "Public and Provider",
             "endpoints": [
                 ("GET", "/t/o/{tracking_token}.gif", "Open tracking pixel."),
@@ -746,6 +772,22 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_contact_history"]: reverse("mailing:api_contact_history", args=[123]),
         API_DOC_PATHS["mailing:api_subscribe"]: reverse("mailing:api_subscribe"),
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
+        API_DOC_PATHS["mailing:api_recipient_list"]: reverse(
+            "mailing:api_recipient_list",
+            args=["registrants:ml-zoomcamp-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_recipient_list_member"]: reverse(
+            "mailing:api_recipient_list_member",
+            args=["homework-submitters:ml-zoomcamp-2026:homework-1", "homework-submission:42"],
+        ),
+        API_DOC_PATHS["mailing:api_recipient_list_bulk_upsert"]: reverse(
+            "mailing:api_recipient_list_bulk_upsert",
+            args=["registrants:ml-zoomcamp-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_recipient_list_reconcile"]: reverse(
+            "mailing:api_recipient_list_reconcile",
+            args=["registrants:ml-zoomcamp-2026"],
+        ),
         API_DOC_PATHS["mailing:api_transactional_template"]: reverse(
             "mailing:api_transactional_template",
             args=["homework-submission-confirmation"],
@@ -793,6 +835,13 @@ def bearer_responses(success, *, accepted=False):
 
 CONTACT_ID_PARAM = {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
 TAG_SLUG_PARAM = {"name": "tag_slug", "in": "path", "required": True, "schema": {"type": "string"}}
+LIST_KEY_PARAM = {"name": "list_key", "in": "path", "required": True, "schema": {"type": "string"}}
+SOURCE_OBJECT_KEY_PARAM = {
+    "name": "source_object_key",
+    "in": "path",
+    "required": True,
+    "schema": {"type": "string"},
+}
 TRACKING_PARAM = {"name": "tracking_token", "in": "path", "required": True, "schema": {"type": "string"}}
 UNSUBSCRIBE_PARAM = {"name": "unsubscribe_token", "in": "path", "required": True, "schema": {"type": "string"}}
 
@@ -994,6 +1043,68 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/ContactStatus")),
             }
         },
+        "/api/recipient-lists/{list_key}": {
+            "get": {
+                "tags": ["Recipient Lists"],
+                "summary": "Get recipient list",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    LIST_KEY_PARAM,
+                    {"name": "audience", "in": "query", "required": True, "schema": {"type": "string"}},
+                    {"name": "client", "in": "query", "required": True, "schema": {"type": "string"}},
+                ],
+                "responses": bearer_responses(
+                    json_response("Recipient list", "#/components/schemas/RecipientListResponse")
+                ),
+            },
+            "put": {
+                "tags": ["Recipient Lists"],
+                "summary": "Create or update recipient list",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/RecipientListUpsertRequest"),
+                "responses": bearer_responses(
+                    json_response("Recipient list", "#/components/schemas/RecipientListUpsertResponse")
+                ),
+            },
+        },
+        "/api/recipient-lists/{list_key}/members/{source_object_key}": {
+            "put": {
+                "tags": ["Recipient Lists"],
+                "summary": "Create or update recipient list member",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM, SOURCE_OBJECT_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/RecipientListMemberUpsertRequest"),
+                "responses": bearer_responses(
+                    json_response("Recipient list member", "#/components/schemas/RecipientListMemberUpsertResponse")
+                ),
+            }
+        },
+        "/api/recipient-lists/{list_key}/members/bulk-upsert": {
+            "post": {
+                "tags": ["Recipient Lists"],
+                "summary": "Bulk create or update recipient list members",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/RecipientListBulkUpsertRequest"),
+                "responses": bearer_responses(
+                    json_response("Bulk recipient list result", "#/components/schemas/RecipientListBulkUpsertResponse")
+                ),
+            }
+        },
+        "/api/recipient-lists/{list_key}/members/reconcile": {
+            "post": {
+                "tags": ["Recipient Lists"],
+                "summary": "Reconcile recipient list members",
+                "description": "Applies a current source snapshot and can mark absent active members removed.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/RecipientListReconcileRequest"),
+                "responses": bearer_responses(
+                    json_response("Recipient list reconcile result", "#/components/schemas/RecipientListReconcileResponse")
+                ),
+            }
+        },
         "/api/transactional/send": {
             "post": {
                 "tags": ["Transactional"],
@@ -1155,6 +1266,71 @@ OPENAPI_SPEC = {
                 "required": ["audience", "client"],
                 "properties": {"audience": {"type": "string"}, "client": {"type": "string"}},
             },
+            "RecipientListType": {"type": "string", "enum": [choice.value for choice in RecipientListType]},
+            "RecipientListInput": {
+                "type": "object",
+                "properties": {
+                    "type": {"$ref": "#/components/schemas/RecipientListType"},
+                    "name": {"type": "string"},
+                    "metadata": {"type": "object"},
+                },
+            },
+            "RecipientListMemberInput": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {
+                    "source_object_key": {"type": "string"},
+                    "email": {"type": "string", "format": "email"},
+                    "status": {"type": "string", "enum": ["active", "removed"]},
+                    "metadata": {"type": "object"},
+                },
+            },
+            "RecipientListUpsertRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {"$ref": "#/components/schemas/RecipientListInput"},
+                ]
+            },
+            "RecipientListMemberUpsertRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "list": {"$ref": "#/components/schemas/RecipientListInput"},
+                            "member": {"$ref": "#/components/schemas/RecipientListMemberInput"},
+                        },
+                    },
+                ]
+            },
+            "RecipientListBulkUpsertRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["members"],
+                        "properties": {
+                            "list": {"$ref": "#/components/schemas/RecipientListInput"},
+                            "members": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/RecipientListMemberInput"},
+                            },
+                        },
+                    },
+                ]
+            },
+            "RecipientListReconcileRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/RecipientListBulkUpsertRequest"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "dry_run": {"type": "boolean"},
+                            "remove_absent": {"type": "boolean"},
+                        },
+                    },
+                ]
+            },
             "ContactUpsertRequest": {
                 "allOf": [
                     {"$ref": "#/components/schemas/ScopedMutationRequest"},
@@ -1315,6 +1491,72 @@ OPENAPI_SPEC = {
                     {"$ref": "#/components/schemas/ContactStatus"},
                     {"type": "object", "properties": {"tags": {"type": "array", "items": {"type": "string"}}}},
                 ]
+            },
+            "RecipientList": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "type": {"$ref": "#/components/schemas/RecipientListType"},
+                    "name": {"type": "string"},
+                    "audience": {"type": "string"},
+                    "client": {"type": "string"},
+                    "metadata": {"type": "object"},
+                    "member_count": {"type": "integer"},
+                    "active_member_count": {"type": "integer"},
+                    "last_reconciled_at": {"type": ["string", "null"], "format": "date-time"},
+                    "created_at": {"type": ["string", "null"], "format": "date-time"},
+                    "updated_at": {"type": ["string", "null"], "format": "date-time"},
+                },
+            },
+            "RecipientListMember": {
+                "type": "object",
+                "properties": {
+                    "source_object_key": {"type": "string"},
+                    "email": {"type": "string", "format": "email"},
+                    "contact_id": {"type": "integer"},
+                    "status": {"type": "string", "enum": ["active", "removed"]},
+                    "active": {"type": "boolean"},
+                    "removed_at": {"type": ["string", "null"], "format": "date-time"},
+                    "metadata": {"type": "object"},
+                    "created_at": {"type": "string", "format": "date-time"},
+                    "updated_at": {"type": "string", "format": "date-time"},
+                },
+            },
+            "RecipientListResponse": {
+                "type": "object",
+                "properties": {"recipient_list": {"$ref": "#/components/schemas/RecipientList"}},
+            },
+            "RecipientListUpsertResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
+                    "created": {"type": "boolean"},
+                },
+            },
+            "RecipientListMemberUpsertResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
+                    "member": {"$ref": "#/components/schemas/RecipientListMember"},
+                    "created": {"type": "boolean"},
+                },
+            },
+            "RecipientListBulkUpsertResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
+                    "created_count": {"type": "integer"},
+                    "updated_count": {"type": "integer"},
+                },
+            },
+            "RecipientListReconcileResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
+                    "dry_run": {"type": "boolean"},
+                    "upsert_count": {"type": "integer"},
+                    "removed_count": {"type": "integer"},
+                },
             },
             "EmailValidationState": {
                 "type": "object",

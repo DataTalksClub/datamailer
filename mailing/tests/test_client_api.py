@@ -16,6 +16,8 @@ from mailing.models import (
     EmailTemplate,
     EmailValidationStatus,
     Organization,
+    RecipientList,
+    RecipientListMember,
     Subscription,
     SubscriptionStatus,
     Tag,
@@ -196,6 +198,143 @@ def test_contact_upsert_is_idempotent_and_scoped_to_authenticated_client(client,
     assert Subscription.objects.count() == 1
     assert Tag.objects.count() == 2
     assert ContactTag.objects.count() == 2
+
+
+def test_recipient_list_member_upsert_creates_list_and_member_idempotently(client, audience, api_client_record):
+    list_key = "homework-submitters:ml-zoomcamp-2026:homework-1"
+    source_key = "homework-submission:42"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "ML Zoomcamp 2026 Homework 1 submitters",
+            "metadata": {"course": "ml-zoomcamp-2026", "homework": "homework-1"},
+        },
+        "member": {
+            "email": " Learner@Example.COM ",
+            "status": "active",
+            "metadata": {"submission_id": 42},
+        },
+    }
+
+    first = put_json(client, "mailing:api_recipient_list_member", payload, list_key, source_key)
+    second = put_json(client, "mailing:api_recipient_list_member", payload, list_key, source_key)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    body = second.json()
+    assert body["created"] is False
+    assert body["recipient_list"]["key"] == list_key
+    assert body["recipient_list"]["active_member_count"] == 1
+    assert body["member"]["source_object_key"] == source_key
+    assert body["member"]["email"] == "learner@example.com"
+    assert Contact.objects.count() == 1
+    assert RecipientList.objects.count() == 1
+    assert RecipientListMember.objects.count() == 1
+
+    get_response = client.get(
+        reverse("mailing:api_recipient_list", args=[list_key]),
+        {"audience": audience.slug, "client": api_client_record.slug},
+        **auth_headers(),
+    )
+    assert get_response.status_code == 200
+    assert get_response.json()["recipient_list"]["member_count"] == 1
+
+
+def test_recipient_list_keys_are_scoped_to_authenticated_client(
+    client,
+    audience,
+    api_client_record,
+    other_audience,
+    other_client,
+):
+    list_key = "registrants:ml-zoomcamp-2026"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "type": "registrants",
+        "name": "ML Zoomcamp 2026 registrants",
+    }
+    other_payload = {
+        "audience": other_audience.slug,
+        "client": other_client.slug,
+        "type": "registrants",
+        "name": "Other registrants",
+    }
+
+    response = put_json(client, "mailing:api_recipient_list", payload, list_key)
+    other_response = put_json(client, "mailing:api_recipient_list", other_payload, list_key, raw_key="other-key")
+
+    assert response.status_code == 200
+    assert other_response.status_code == 200
+    assert RecipientList.objects.filter(key=list_key).count() == 2
+
+
+def test_recipient_list_bulk_upsert_and_reconcile(client, audience, api_client_record):
+    list_key = "registrants:ml-zoomcamp-2026"
+    dry_run_key = "registrants:dry-run"
+    base_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "registrants",
+            "name": "ML Zoomcamp 2026 registrants",
+        },
+        "members": [
+            {
+                "source_object_key": "registration:1",
+                "email": "one@example.com",
+                "metadata": {"user_id": 1},
+            },
+            {
+                "source_object_key": "registration:2",
+                "email": "two@example.com",
+                "metadata": {"user_id": 2},
+            },
+        ],
+    }
+
+    dry_run_response = client.post(
+        reverse("mailing:api_recipient_list_reconcile", args=[dry_run_key]),
+        data={**base_payload, "dry_run": True},
+        content_type="application/json",
+        **auth_headers(),
+    )
+    assert dry_run_response.status_code == 200
+    assert dry_run_response.json()["dry_run"] is True
+    assert RecipientList.objects.filter(key=dry_run_key).exists() is False
+
+    bulk_response = client.post(
+        reverse("mailing:api_recipient_list_bulk_upsert", args=[list_key]),
+        data=base_payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+    assert bulk_response.status_code == 200
+    assert bulk_response.json()["created_count"] == 2
+
+    reconcile_payload = {
+        **base_payload,
+        "members": [base_payload["members"][0]],
+        "remove_absent": True,
+    }
+    reconcile_response = client.post(
+        reverse("mailing:api_recipient_list_reconcile", args=[list_key]),
+        data=reconcile_payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+
+    assert reconcile_response.status_code == 200
+    body = reconcile_response.json()
+    assert body["removed_count"] == 1
+    assert body["recipient_list"]["member_count"] == 2
+    assert body["recipient_list"]["active_member_count"] == 1
+    assert RecipientListMember.objects.get(source_object_key="registration:1").active is True
+    removed = RecipientListMember.objects.get(source_object_key="registration:2")
+    assert removed.active is False
+    assert removed.removed_at is not None
 
 
 def test_contact_upsert_accepts_validation_and_suppression_inputs_idempotently(client, audience, api_client_record):

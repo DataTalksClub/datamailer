@@ -256,6 +256,69 @@ class ContactSourceMetadata(TimeStampedModel):
         return f"{self.contact.normalized_email}: {self.source}"
 
 
+class RecipientListType(models.TextChoices):
+    REGISTRANTS = "registrants", "Registrants"
+    HOMEWORK_SUBMITTERS = "homework_submitters", "Homework submitters"
+    PROJECT_SUBMITTERS = "project_submitters", "Project submitters"
+    CUSTOM = "custom", "Custom"
+
+
+class RecipientList(TimeStampedModel):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="recipient_lists")
+    audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name="recipient_lists")
+    key = models.CharField(max_length=255)
+    type = models.CharField(
+        max_length=40,
+        choices=RecipientListType.choices,
+        default=RecipientListType.CUSTOM,
+    )
+    name = models.CharField(max_length=255)
+    metadata = models.JSONField(default=dict, blank=True)
+    member_count = models.PositiveIntegerField(default=0)
+    active_member_count = models.PositiveIntegerField(default=0)
+    last_reconciled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "recipient_lists"
+        ordering = ["client__slug", "audience__slug", "key"]
+        constraints = [
+            models.UniqueConstraint(fields=["client", "audience", "key"], name="unique_recipient_list_scope_key"),
+        ]
+        indexes = [
+            models.Index(fields=["client", "audience", "type"], name="recip_list_scope_type_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.client.slug}/{self.audience.slug}/{self.key}"
+
+
+class RecipientListMember(TimeStampedModel):
+    recipient_list = models.ForeignKey(RecipientList, on_delete=models.CASCADE, related_name="members")
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, related_name="recipient_list_members")
+    email = models.EmailField(max_length=320)
+    source_object_key = models.CharField(max_length=255)
+    metadata = models.JSONField(default=dict, blank=True)
+    active = models.BooleanField(default=True, db_index=True)
+    removed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "recipient_list_members"
+        ordering = ["recipient_list_id", "source_object_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["recipient_list", "contact"], name="unique_recipient_list_contact"),
+            models.UniqueConstraint(
+                fields=["recipient_list", "source_object_key"],
+                name="unique_recipient_list_source_object",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["recipient_list", "active"], name="recip_list_member_active_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient_list.key}: {self.source_object_key}"
+
+
 class CampaignStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     QUEUED = "queued", "Queued"
