@@ -1,3 +1,5 @@
+from email.utils import parseaddr
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email, validate_slug
@@ -209,7 +211,9 @@ class ClientForm(forms.ModelForm):
         self.fields["default_sender_id"].help_text = "Used when the API payload does not specify from_email."
         self.fields["sender_emails"].label = "Configured senders"
         self.fields["sender_emails"].help_text = (
-            "One sender per line as sender-id=email@example.com. API payload from_email must use a configured sender ID."
+            "One sender per line as sender-id=email@example.com or "
+            "sender-id=Display Name <email@example.com>. API payload "
+            "from_email must use a configured sender ID."
         )
         if self.instance and self.instance.pk:
             self.fields["sender_emails"].initial = "\n".join(
@@ -260,8 +264,12 @@ class ClientForm(forms.ModelForm):
                 validate_slug(sender_id)
             except ValidationError as exc:
                 raise forms.ValidationError(f"Enter a valid sender ID: {sender_id}") from exc
+            _, parsed_email = parseaddr(email)
+            email_to_validate = parsed_email or email
+            if parsed_email and parsed_email not in email:
+                raise forms.ValidationError(f"Enter a valid sender email address: {email}")
             try:
-                validate_email(email)
+                validate_email(email_to_validate)
             except ValidationError as exc:
                 raise forms.ValidationError(f"Enter a valid sender email address: {email}") from exc
             if sender_id in seen_ids:

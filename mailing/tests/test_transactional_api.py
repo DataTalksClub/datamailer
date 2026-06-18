@@ -305,6 +305,34 @@ def test_transactional_send_uses_client_default_sender(client, api_client_record
     assert len(enqueued) == 1
 
 
+def test_transactional_send_uses_configured_display_sender(client, api_client_record, template, monkeypatch):
+    api_client_record.default_sender_id = "courses"
+    api_client_record.sender_emails = [
+        {
+            "id": "courses",
+            "email": "DataTalks.Club Courses <courses@dtcdev.click>",
+        },
+    ]
+    api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", lambda payload: None)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 202
+    message = TransactionalMessage.objects.get()
+    assert message.from_email_id == "courses"
+    assert message.from_email == "DataTalks.Club Courses <courses@dtcdev.click>"
+    assert response.json()["message"]["from_email"] == "courses"
+    assert response.json()["message"]["from_email_address"] == "DataTalks.Club Courses <courses@dtcdev.click>"
+
+
 def test_transactional_send_accepts_allowed_payload_sender(client, api_client_record, template, monkeypatch):
     api_client_record.default_sender_id = "courses"
     api_client_record.sender_emails = [

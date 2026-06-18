@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from email.utils import parseaddr
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email, validate_slug
@@ -27,14 +28,20 @@ def normalize_sender_id(value):
 
 
 def normalize_sender_email(value):
-    email = str(value or "").strip()
-    if not email:
+    sender = str(value or "").strip()
+    if not sender:
         return ""
+
+    _, parsed_email = parseaddr(sender)
+    email = parsed_email or sender
+    if parsed_email and parsed_email not in sender:
+        raise ApiValidationError({"sender_emails": "invalid_email"})
+
     try:
         validate_email(email)
     except ValidationError as exc:
         raise ApiValidationError({"sender_emails": "invalid_email"}) from exc
-    return email
+    return sender
 
 
 def sender_id_from_email(email):

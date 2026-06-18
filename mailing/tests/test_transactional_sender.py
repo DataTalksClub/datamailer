@@ -110,6 +110,43 @@ def test_transactional_handler_sends_persisted_message_and_records_sent_event(tr
     assert event.metadata["ses_message_id"] == "ses-message-123"
 
 
+@override_settings(DEFAULT_FROM_EMAIL="sender@example.com", AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
+def test_transactional_handler_uses_message_display_sender(transactional_message, monkeypatch):
+    transactional_message.from_email_id = "courses"
+    transactional_message.from_email = "DataTalks.Club Courses <courses@dtcdev.click>"
+    transactional_message.save(update_fields=["from_email_id", "from_email", "updated_at"])
+    ses = boto3.client(
+        "ses",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    with Stubber(ses) as stubber:
+        stubber.add_response(
+            "send_email",
+            {"MessageId": "ses-message-123"},
+            {
+                "Source": "DataTalks.Club Courses <courses@dtcdev.click>",
+                "Destination": {"ToAddresses": ["person@example.com"]},
+                "Message": {
+                    "Subject": {"Charset": "UTF-8", "Data": "Persisted subject"},
+                    "Body": {
+                        "Html": {"Charset": "UTF-8", "Data": "<p>Persisted body</p>"},
+                        "Text": {"Charset": "UTF-8", "Data": "Persisted body"},
+                    },
+                },
+            },
+        )
+        monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: ses)
+
+        response = transactional_email_handler(_event("message-1", build_transactional_queue_payload(transactional_message)))
+
+    transactional_message.refresh_from_db()
+    assert response == {"batchItemFailures": []}
+    assert transactional_message.status == TransactionalMessageStatus.SENT
+    assert transactional_message.ses_message_id == "ses-message-123"
+
+
 @pytest.mark.parametrize(
     ("status", "event_type"),
     [
