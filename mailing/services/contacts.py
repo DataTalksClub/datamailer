@@ -157,6 +157,16 @@ def has_invalid_email_validation(contact):
     return contact.email_validation_status in NON_DELIVERABLE_EMAIL_VALIDATION_STATUSES
 
 
+def is_verified_for_marketing(contact, audience_subscription, client_subscription):
+    return any(
+        [
+            contact.verified_at is not None,
+            audience_subscription is not None and audience_subscription.verified_at is not None,
+            client_subscription is not None and client_subscription.verified_at is not None,
+        ]
+    )
+
+
 def is_marketing_email_allowed(contact, audience, client=None):
     suppression = get_contact_suppression_state(contact)
     if suppression.has_marketing_suppression:

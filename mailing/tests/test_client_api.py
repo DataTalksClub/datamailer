@@ -23,6 +23,7 @@ from mailing.models import (
     TransactionalMessageStatus,
 )
 from mailing.services.auth import authenticate_bearer_token, check_api_key, create_client_api_key
+from mailing.services.campaigns import snapshot_campaign_recipients
 
 pytestmark = pytest.mark.django_db
 
@@ -250,6 +251,35 @@ def test_contact_upsert_verified_marks_subscription_not_global_contact(client, a
     assert contact.verified_at is None
     assert subscription.verified_at is not None
     assert response.json()["can_send_marketing"] is True
+
+
+def test_contact_upsert_verified_contact_is_campaign_eligible(client, audience, api_client_record):
+    response = post_json(
+        client,
+        "mailing:api_contacts",
+        {
+            "email": "person@example.com",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "status": "subscribed",
+            "verified": True,
+        },
+    )
+    campaign = Campaign.objects.create(
+        audience=audience,
+        client=api_client_record,
+        subject="Course starts",
+    )
+
+    result = snapshot_campaign_recipients(campaign)
+
+    recipient = CampaignRecipient.objects.get(campaign=campaign)
+    assert response.status_code == 200
+    assert result.recipient_count == 1
+    assert result.skipped_count == 0
+    assert recipient.email == "person@example.com"
+    assert recipient.status == CampaignRecipientStatus.PENDING
+    assert recipient.skip_reason == ""
 
 
 def test_contact_tag_mutations_are_idempotent_and_campaign_filter_compatible(client, audience, api_client_record):

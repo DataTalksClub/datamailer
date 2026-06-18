@@ -19,7 +19,10 @@ from mailing.models import (
     normalize_tag_filter,
 )
 from mailing.queue_contracts import CAMPAIGN_EMAIL_CONTRACT, CONTRACT_VERSION, validate_campaign_email_message
-from mailing.services.contacts import has_invalid_email_validation
+from mailing.services.contacts import (
+    has_invalid_email_validation,
+    is_verified_for_marketing,
+)
 from mailing.sqs import enqueue_campaign_email
 
 
@@ -262,14 +265,19 @@ def _skip_reason(contact, campaign):
         return CampaignRecipientSkipReason.GLOBAL_UNSUBSCRIBE
     if has_invalid_email_validation(contact):
         return CampaignRecipientSkipReason.INVALID_EMAIL
-    if contact.verified_at is None:
+    audience_subscription = _subscription_for(contact, campaign, client=None)
+    client_subscription = _subscription_for(contact, campaign, client=campaign.client)
+
+    if not is_verified_for_marketing(
+        contact,
+        audience_subscription,
+        client_subscription,
+    ):
         return CampaignRecipientSkipReason.UNVERIFIED
 
-    audience_subscription = _subscription_for(contact, campaign, client=None)
     if audience_subscription and audience_subscription.status == SubscriptionStatus.UNSUBSCRIBED:
         return CampaignRecipientSkipReason.AUDIENCE_UNSUBSCRIBE
 
-    client_subscription = _subscription_for(contact, campaign, client=campaign.client)
     if client_subscription and client_subscription.status == SubscriptionStatus.UNSUBSCRIBED:
         return CampaignRecipientSkipReason.CLIENT_UNSUBSCRIBE
     if not client_subscription or client_subscription.status != SubscriptionStatus.SUBSCRIBED:

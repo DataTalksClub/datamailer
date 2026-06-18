@@ -52,6 +52,8 @@ POST /api/contacts
 
 Creates or updates the global contact, creates or updates the audience/client subscription, and adds audience-scoped tags.
 
+`verified=true` marks the audience/client subscription as verified for the authenticated client scope. Marketing, campaign, and recipient-list eligibility treat a contact as verified when the global contact, audience subscription, or client subscription has a verification timestamp.
+
 ### Contact Status
 
 ```text

@@ -24,6 +24,7 @@ from mailing.services.contacts import (
     assign_tag,
     is_marketing_email_allowed,
     is_transactional_email_allowed,
+    is_verified_for_marketing,
     normalize_email,
     normalize_tag_slug,
     subscribe_contact,
@@ -815,12 +816,3 @@ def isoformat(value):
         return None
     return value.isoformat().replace("+00:00", "Z")
 
-
-def is_verified_for_marketing(contact, audience_subscription, client_subscription):
-    return any(
-        [
-            contact.verified_at is not None,
-            audience_subscription is not None and audience_subscription.verified_at is not None,
-            client_subscription is not None and client_subscription.verified_at is not None,
-        ]
-    )
