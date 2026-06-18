@@ -5,6 +5,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from mailing.models import Campaign, CampaignRecipient, CampaignRecipientStatus, EmailEvent, EmailEventType
+from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import unsubscribe_contact
 from mailing.services.tokens import get_recipient_by_tracking_token, get_recipient_by_unsubscribe_token
 
@@ -30,12 +31,16 @@ def record_open(raw_token):
     if recipient is None:
         return None
 
-    recipient = CampaignRecipient.objects.select_for_update().select_related(
-        "campaign",
-        "campaign__client",
-        "campaign__audience",
-        "contact",
-    ).get(pk=recipient.pk)
+    recipient = (
+        CampaignRecipient.objects.select_for_update()
+        .select_related(
+            "campaign",
+            "campaign__client",
+            "campaign__audience",
+            "contact",
+        )
+        .get(pk=recipient.pk)
+    )
     now = timezone.now()
     update_fields = ["open_count", "updated_at"]
     recipient.open_count += 1
@@ -56,12 +61,16 @@ def record_click(raw_token, destination_url):
     if recipient is None:
         return None
 
-    recipient = CampaignRecipient.objects.select_for_update().select_related(
-        "campaign",
-        "campaign__client",
-        "campaign__audience",
-        "contact",
-    ).get(pk=recipient.pk)
+    recipient = (
+        CampaignRecipient.objects.select_for_update()
+        .select_related(
+            "campaign",
+            "campaign__client",
+            "campaign__audience",
+            "contact",
+        )
+        .get(pk=recipient.pk)
+    )
     now = timezone.now()
     update_fields = ["click_count", "updated_at"]
     recipient.click_count += 1
@@ -82,12 +91,16 @@ def apply_unsubscribe(raw_token, scope):
     if recipient is None:
         return None
 
-    recipient = CampaignRecipient.objects.select_for_update().select_related(
-        "campaign",
-        "campaign__client",
-        "campaign__audience",
-        "contact",
-    ).get(pk=recipient.pk)
+    recipient = (
+        CampaignRecipient.objects.select_for_update()
+        .select_related(
+            "campaign",
+            "campaign__client",
+            "campaign__audience",
+            "contact",
+        )
+        .get(pk=recipient.pk)
+    )
     now = timezone.now()
     campaign = recipient.campaign
     contact = recipient.contact
@@ -99,13 +112,20 @@ def apply_unsubscribe(raw_token, scope):
     elif scope == "audience":
         unsubscribe_contact(contact, campaign.audience, reason="public_unsubscribe", unsubscribed_at=now)
     else:
-        unsubscribe_contact(contact, campaign.audience, campaign.client, reason="public_unsubscribe", unsubscribed_at=now)
+        unsubscribe_contact(
+            contact, campaign.audience, campaign.client, reason="public_unsubscribe", unsubscribed_at=now
+        )
 
     if recipient.status != CampaignRecipientStatus.UNSUBSCRIBED:
         recipient.status = CampaignRecipientStatus.UNSUBSCRIBED
         recipient.save(update_fields=["status", "updated_at"])
 
-    _create_campaign_event(recipient, EmailEventType.UNSUBSCRIBE, metadata={"scope": scope})
+    event = _create_campaign_event(
+        recipient,
+        EmailEventType.UNSUBSCRIBE,
+        metadata={"scope": scope},
+    )
+    emit_cmp_contact_event(event)
     refresh_campaign_engagement_counts(campaign)
     return recipient
 
@@ -118,7 +138,9 @@ def refresh_campaign_engagement_counts(campaign):
     counts = {
         "unique_open_count": CampaignRecipient.objects.filter(campaign=campaign, first_opened_at__isnull=False).count(),
         "open_count": aggregate["open_count"] or 0,
-        "unique_click_count": CampaignRecipient.objects.filter(campaign=campaign, first_clicked_at__isnull=False).count(),
+        "unique_click_count": CampaignRecipient.objects.filter(
+            campaign=campaign, first_clicked_at__isnull=False
+        ).count(),
         "click_count": aggregate["click_count"] or 0,
         "unsubscribe_count": CampaignRecipient.objects.filter(
             campaign=campaign,

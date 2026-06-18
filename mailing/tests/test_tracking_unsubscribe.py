@@ -1,3 +1,4 @@
+import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -98,7 +99,9 @@ def test_token_generation_uses_random_hashes_only_and_preserves_existing_hashes(
 def test_random_token_generation_is_not_deterministic(campaign, contact):
     first_recipient = CampaignRecipient.objects.create(campaign=campaign, contact=contact, email=contact.email)
     second_contact = Contact.objects.create(email="other@example.com", verified_at=timezone.now())
-    second_recipient = CampaignRecipient.objects.create(campaign=campaign, contact=second_contact, email=second_contact.email)
+    second_recipient = CampaignRecipient.objects.create(
+        campaign=campaign, contact=second_contact, email=second_contact.email
+    )
 
     first_tokens = ensure_campaign_recipient_tokens(first_recipient)
     second_tokens = ensure_campaign_recipient_tokens(second_recipient)
@@ -209,7 +212,9 @@ def test_click_redirect_records_repeated_clicks_and_redirects(client, recipient)
     ]
 
 
-@pytest.mark.parametrize("destination", ["", "mailto:person@example.com", "javascript:alert(1)", "/relative", "https://"])
+@pytest.mark.parametrize(
+    "destination", ["", "mailto:person@example.com", "javascript:alert(1)", "/relative", "https://"]
+)
 def test_click_redirect_rejects_missing_or_unsafe_urls(client, recipient, destination):
     token = ensure_campaign_recipient_tokens(recipient).tracking_token
     response = client.get(reverse("mailing:tracking_click", args=[token]), {"u": destination})
@@ -275,19 +280,74 @@ def test_unsubscribe_post_applies_scope_idempotently_and_records_events(client, 
     if scope == "global":
         assert contact.global_unsubscribed_at is not None
     elif scope == "audience":
-        subscription = Subscription.objects.get(contact=contact, audience=recipient.campaign.audience, client__isnull=True)
+        subscription = Subscription.objects.get(
+            contact=contact, audience=recipient.campaign.audience, client__isnull=True
+        )
         assert subscription.status == SubscriptionStatus.UNSUBSCRIBED
         assert subscription.unsubscribe_reason == "public_unsubscribe"
     else:
-        subscription = Subscription.objects.get(contact=contact, audience=recipient.campaign.audience, client=recipient.campaign.client)
+        subscription = Subscription.objects.get(
+            contact=contact, audience=recipient.campaign.audience, client=recipient.campaign.client
+        )
         assert subscription.status == SubscriptionStatus.UNSUBSCRIBED
         assert subscription.unsubscribe_reason == "public_unsubscribe"
+
+
+@override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
+def test_unsubscribe_post_emits_cmp_callback(client, recipient, monkeypatch):
+    posts = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def fake_urlopen(request, *, timeout):
+        posts.append(
+            {
+                "url": request.full_url,
+                "json": json.loads(request.data.decode("utf-8")),
+                "headers": dict(request.header_items()),
+                "timeout": timeout,
+            }
+        )
+        return Response()
+
+    monkeypatch.setattr(
+        "mailing.services.cmp_callbacks.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr(
+        "mailing.services.cmp_callbacks.transaction.on_commit",
+        lambda callback: callback(),
+    )
+    token = ensure_campaign_recipient_tokens(recipient).unsubscribe_token
+
+    response = client.post(
+        reverse("mailing:public_unsubscribe", args=[token]),
+        {"scope": "client"},
+    )
+
+    assert response.status_code == 200
+    assert len(posts) == 1
+    body = posts[0]["json"]
+    assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
+    assert posts[0]["headers"]["Authorization"] == "Bearer secret"
+    assert body["event_type"] == "subscription.unsubscribed"
+    assert body["email"] == recipient.contact.normalized_email
+    assert body["audience"] == recipient.campaign.audience.slug
+    assert body["client"] == recipient.campaign.client.slug
+    assert body["metadata"]["scope"] == "client"
 
 
 def test_unsubscribe_invalid_token_and_invalid_scope_do_not_mutate(client, recipient):
     token = ensure_campaign_recipient_tokens(recipient).unsubscribe_token
 
-    invalid_token_response = client.post(reverse("mailing:public_unsubscribe", args=["missing-token"]), {"scope": "global"})
+    invalid_token_response = client.post(
+        reverse("mailing:public_unsubscribe", args=["missing-token"]), {"scope": "global"}
+    )
     invalid_scope_response = client.post(reverse("mailing:public_unsubscribe", args=[token]), {"scope": "bad"})
     invalid_token_html = invalid_token_response.content.decode()
     invalid_scope_html = invalid_scope_response.content.decode()
@@ -314,7 +374,9 @@ def test_unsubscribe_invalid_scope_keeps_subscriptions_unchanged(client, recipie
 
     recipient.refresh_from_db()
     contact.refresh_from_db()
-    subscription = Subscription.objects.get(contact=contact, audience=recipient.campaign.audience, client=recipient.campaign.client)
+    subscription = Subscription.objects.get(
+        contact=contact, audience=recipient.campaign.audience, client=recipient.campaign.client
+    )
     assert response.status_code == 400
     assert recipient.status == CampaignRecipientStatus.SENT
     assert contact.global_unsubscribed_at is None

@@ -23,6 +23,7 @@ from mailing.models import (
     TransactionalMessageStatus,
 )
 from mailing.queue_contracts import CONTRACT_VERSION, SES_WEBHOOKS_CONTRACT, validate_ses_webhook_message
+from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.sqs import enqueue_ses_webhook
 
 SNS_NOTIFICATION = "Notification"
@@ -237,7 +238,7 @@ def process_ses_webhook(payload):
         if event is None:
             return None
         if source is not None:
-            apply_correlated_updates(payload, source)
+            apply_correlated_updates(payload, source, event)
         return event
 
 
@@ -290,14 +291,18 @@ def append_provider_event(payload, source):
     return EmailEvent.objects.create(**kwargs)
 
 
-def apply_correlated_updates(payload, source):
+def apply_correlated_updates(payload, source, event):
     notification_type = payload["notification_type"]
     occurred_at = event_timestamp(payload)
+    metadata = payload.get("metadata") or {}
     if isinstance(source, CampaignRecipient):
-        apply_campaign_recipient_update(source, notification_type, occurred_at, payload.get("metadata") or {})
+        apply_campaign_recipient_update(source, notification_type, occurred_at, metadata)
         refresh_campaign_provider_counts(source.campaign_id)
     elif isinstance(source, TransactionalMessage):
-        apply_transactional_message_update(source, notification_type, occurred_at, payload.get("metadata") or {})
+        apply_transactional_message_update(source, notification_type, occurred_at, metadata)
+
+    if notification_type == "complaint" or (notification_type == "bounce" and is_hard_bounce(metadata)):
+        emit_cmp_contact_event(event)
 
 
 def apply_campaign_recipient_update(recipient, notification_type, occurred_at, metadata):

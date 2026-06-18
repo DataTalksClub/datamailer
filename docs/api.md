@@ -286,3 +286,27 @@ POST /webhooks/ses
 ```
 
 These are not client Bearer API routes.
+
+## CMP Contact Event Callbacks
+
+When configured, Datamailer posts hard-bounce, complaint, and public
+unsubscribe events back to CMP after the local Datamailer transaction commits.
+
+```text
+CMP_WEBHOOK_URL=https://courses.example.com/api/datamailer/events
+CMP_WEBHOOK_TOKEN=shared-secret
+```
+
+Datamailer sends:
+
+```text
+Authorization: Bearer <CMP_WEBHOOK_TOKEN>
+```
+
+Implemented callback event types:
+
+```text
+contact.hard_bounced
+contact.complained
+subscription.unsubscribed
+```

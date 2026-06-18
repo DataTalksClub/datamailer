@@ -163,7 +163,9 @@ def test_webhook_endpoint_handles_subscription_confirmation_only_when_allowed(cl
     skipped = client.post(reverse("mailing:ses_webhook"), data=json.dumps(payload), content_type="application/json")
 
     with override_settings(SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION=True):
-        confirmed = client.post(reverse("mailing:ses_webhook"), data=json.dumps(payload), content_type="application/json")
+        confirmed = client.post(
+            reverse("mailing:ses_webhook"), data=json.dumps(payload), content_type="application/json"
+        )
 
     assert skipped.status_code == 200
     assert skipped.json()["confirmed"] is False
@@ -248,10 +250,13 @@ def test_worker_delivery_updates_transactional_message(transactional_message):
     assert response == {"batchItemFailures": []}
     assert transactional_message.delivered_at is not None
     assert transactional_message.status == TransactionalMessageStatus.SENT
-    assert EmailEvent.objects.filter(
-        event_type=EmailEventType.DELIVERED,
-        transactional_message=transactional_message,
-    ).count() == 1
+    assert (
+        EmailEvent.objects.filter(
+            event_type=EmailEventType.DELIVERED,
+            transactional_message=transactional_message,
+        ).count()
+        == 1
+    )
 
 
 def test_worker_hard_bounce_suppresses_campaign_contact(recipient, audience, app_client):
@@ -273,6 +278,56 @@ def test_worker_hard_bounce_suppresses_campaign_contact(recipient, audience, app
     assert is_marketing_email_allowed(recipient.contact, audience, app_client) is False
     assert is_transactional_email_allowed(recipient.contact) is False
     assert EmailEvent.objects.filter(event_type=EmailEventType.BOUNCE, campaign_recipient=recipient).count() == 1
+
+
+@override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
+def test_worker_hard_bounce_emits_cmp_callback(recipient, monkeypatch):
+    posts = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def fake_urlopen(request, *, timeout):
+        posts.append(
+            {
+                "url": request.full_url,
+                "json": json.loads(request.data.decode("utf-8")),
+                "headers": dict(request.header_items()),
+                "timeout": timeout,
+            }
+        )
+        return Response()
+
+    monkeypatch.setattr(
+        "mailing.services.cmp_callbacks.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr(
+        "mailing.services.cmp_callbacks.transaction.on_commit",
+        lambda callback: callback(),
+    )
+    payload = webhook_payload(
+        "bounce",
+        "sns-bounce-cmp",
+        "ses-campaign-1",
+        metadata={"bounce_type": "Permanent", "bounce_sub_type": "General"},
+    )
+
+    ses_webhooks_handler(records_from_payloads([("message-1", payload)]), None)
+
+    assert len(posts) == 1
+    body = posts[0]["json"]
+    assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
+    assert posts[0]["headers"]["Authorization"] == "Bearer secret"
+    assert body["event_type"] == "contact.hard_bounced"
+    assert body["email"] == recipient.contact.normalized_email
+    assert body["audience"] == recipient.campaign.audience.slug
+    assert body["client"] == recipient.campaign.client.slug
+    assert body["metadata"]["bounce_type"] == "Permanent"
 
 
 def test_worker_raw_sns_hard_bounce_suppresses_campaign_contact(recipient, audience, app_client):
@@ -316,10 +371,13 @@ def test_worker_complaint_suppresses_transactional_contact(transactional_message
     assert transactional_message.status == TransactionalMessageStatus.COMPLAINED
     assert transactional_message.contact.complained_at is not None
     assert is_transactional_email_allowed(transactional_message.contact) is False
-    assert EmailEvent.objects.filter(
-        event_type=EmailEventType.COMPLAINT,
-        transactional_message=transactional_message,
-    ).count() == 1
+    assert (
+        EmailEvent.objects.filter(
+            event_type=EmailEventType.COMPLAINT,
+            transactional_message=transactional_message,
+        ).count()
+        == 1
+    )
 
 
 def test_worker_raw_sns_complaint_suppresses_transactional_contact(transactional_message):
@@ -343,10 +401,13 @@ def test_worker_raw_sns_complaint_suppresses_transactional_contact(transactional
     assert transactional_message.status == TransactionalMessageStatus.COMPLAINED
     assert transactional_message.contact.complained_at is not None
     assert is_transactional_email_allowed(transactional_message.contact) is False
-    assert EmailEvent.objects.filter(
-        event_type=EmailEventType.COMPLAINT,
-        transactional_message=transactional_message,
-    ).count() == 1
+    assert (
+        EmailEvent.objects.filter(
+            event_type=EmailEventType.COMPLAINT,
+            transactional_message=transactional_message,
+        ).count()
+        == 1
+    )
 
 
 def test_worker_soft_bounce_audits_without_hard_suppression(recipient):
