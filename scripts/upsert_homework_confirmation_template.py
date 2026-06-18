@@ -34,6 +34,18 @@ TEMPLATE_PAYLOAD = {
         "{% endfor %}"
         "</ul>"
         "{% endif %}"
+        "{% if notification_footer or profile_url %}"
+        "<hr>"
+        "<p style=\"color:#57606a;font-size:13px;line-height:1.5\">"
+        "{% if notification_footer %}{{ notification_footer }} {% endif %}"
+        "If you don't want to receive these emails, you can "
+        "{% if profile_url %}"
+        "<a href=\"{{ profile_url }}\">turn them off in your profile</a>."
+        "{% else %}"
+        "turn them off in your profile."
+        "{% endif %}"
+        "</p>"
+        "{% endif %}"
     ),
     "text_body": (
         "{{ intro_text|default:'Your homework submission was saved.' }}\n\n"
@@ -44,6 +56,14 @@ TEMPLATE_PAYLOAD = {
         "{% if submitted_fields_text %}"
         "Submitted details:\n{{ submitted_fields_text }}\n\n"
         "{% endif %}"
+        "{% if notification_footer_text %}"
+        "{{ notification_footer_text }}\n"
+        "{% elif notification_footer %}"
+        "{{ notification_footer }}\n"
+        "{% if profile_url %}"
+        "Manage email preferences: {{ profile_url }}\n"
+        "{% endif %}"
+        "{% endif %}"
     ),
     "required_context": [
         {"name": "course_title", "description": "Course title."},
@@ -51,6 +71,7 @@ TEMPLATE_PAYLOAD = {
         {"name": "submission_id", "description": "Course platform submission id."},
         {"name": "submitted_at", "description": "Submission timestamp."},
         {"name": "update_url", "description": "Absolute URL where the learner can update the submission."},
+        {"name": "profile_url", "description": "Absolute URL where the learner can manage email preferences."},
     ],
     "example_context": {
         "course_slug": "ml-zoomcamp",
@@ -85,6 +106,16 @@ TEMPLATE_PAYLOAD = {
         ],
         "submitted_fields_text": "Homework URL: https://github.com/example/homework\nTime spent on homework: 4 hours",
         "submitted_answers_text": "Pick one option: 2. Second option",
+        "profile_url": "https://courses.datatalks.club/accounts/settings/",
+        "notification_footer": (
+            "You are receiving this because homework and project submission "
+            "emails are enabled in your profile."
+        ),
+        "notification_footer_text": (
+            "If you don't want to receive these emails, you can turn off "
+            "homework and project submission emails in your profile: "
+            "https://courses.datatalks.club/accounts/settings/"
+        ),
     },
     "is_active": True,
 }
