@@ -66,3 +66,41 @@ def test_provision_client_scope_is_idempotent_and_keeps_client_sender_config():
     client = Client.objects.get(slug="dtc-courses")
     assert client.default_sender_id == "courses"
     assert client.sender_emails == [{"id": "courses", "email": "courses@dtcdev.click"}]
+
+
+def test_provision_client_scope_adds_audience_for_existing_client_organizations():
+    legacy_organization = Organization.objects.create(
+        name="Legacy Organization",
+        slug="legacy",
+    )
+    Client.objects.create(
+        organization=legacy_organization,
+        name="Existing DTC Courses",
+        slug="dtc-courses",
+    )
+
+    call_command(
+        "provision_client_scope",
+        "--organization",
+        "datatalksclub",
+        "--organization-name",
+        "DataTalksClub",
+        "--audience",
+        "dtc-courses",
+        "--audience-name",
+        "DataTalksClub Courses",
+        "--client",
+        "dtc-courses",
+        "--client-name",
+        "DTC Courses",
+    )
+
+    assert Audience.objects.filter(
+        organization__slug="datatalksclub",
+        slug="dtc-courses",
+    ).exists()
+    legacy_audience = Audience.objects.get(
+        organization=legacy_organization,
+        slug="dtc-courses",
+    )
+    assert legacy_audience.name == "DataTalksClub Courses"

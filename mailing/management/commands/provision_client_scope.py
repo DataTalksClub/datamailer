@@ -43,8 +43,21 @@ class Command(BaseCommand):
             },
         )
 
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Provisioned scope organization={organization.slug} audience={audience.slug} client={client.slug}"
+        existing_client_orgs = Organization.objects.filter(
+            clients__slug=client_slug,
+        ).exclude(pk=organization.pk)
+        provisioned_extra_audiences = []
+        for client_organization in existing_client_orgs.distinct():
+            extra_audience, _ = Audience.objects.update_or_create(
+                organization=client_organization,
+                slug=audience_slug,
+                defaults={
+                    "name": options["audience_name"].strip() or audience_slug,
+                },
             )
-        )
+            provisioned_extra_audiences.append(f"{extra_audience.organization.slug}/{extra_audience.slug}")
+
+        message = f"Provisioned scope organization={organization.slug} audience={audience.slug} client={client.slug}"
+        if provisioned_extra_audiences:
+            message = f"{message}; extra_audiences={','.join(provisioned_extra_audiences)}"
+        self.stdout.write(self.style.SUCCESS(message))
