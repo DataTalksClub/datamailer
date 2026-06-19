@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from mailing.aws import ses_client
 from mailing.models import EmailEvent, EmailEventType, TransactionalMessage, TransactionalMessageStatus
+from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.ses import send_email
 
 TERMINAL_ACK_STATUSES = {
@@ -40,9 +41,7 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
     try:
         with transaction.atomic():
             message = (
-                TransactionalMessage.objects.select_for_update()
-                .select_related("client", "contact")
-                .get(id=message_id)
+                TransactionalMessage.objects.select_for_update().select_related("client", "contact").get(id=message_id)
             )
 
             if message.status in TERMINAL_ACK_STATUSES:
@@ -120,13 +119,15 @@ def _record_retryable_error(message_id, error):
 
 
 def _append_event(message, event_type, metadata):
-    return EmailEvent.objects.create(
+    event = EmailEvent.objects.create(
         transactional_message=message,
         contact=message.contact,
         client=message.client,
         event_type=event_type,
         metadata=metadata,
     )
+    emit_cmp_contact_event(event)
+    return event
 
 
 def _error_message(exc):

@@ -51,6 +51,22 @@ python manage.py process_sqs_worker ses-webhooks --batch-size 10 --wait-time 20
 
 This uses the same SQS message contracts and worker handlers as Lambda. Once the sandbox uses shared Postgres/RDS, replace the EC2 worker service with SQS event-source Lambda workers.
 
+Sandbox deploys must also provision the CMP client scope before configuring
+senders:
+
+```bash
+python manage.py provision_client_scope \
+  --organization datatalksclub \
+  --organization-name DataTalksClub \
+  --audience dtc-courses \
+  --audience-name "DataTalksClub Courses" \
+  --client dtc-courses \
+  --client-name "DTC Courses"
+```
+
+Do this outside local demo seeding so sandbox always has the
+`dtc-courses` audience and client rows that CMP uses.
+
 ## Queue Design
 
 Queues:

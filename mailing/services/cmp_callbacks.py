@@ -14,6 +14,8 @@ CMP_EVENT_TYPES = {
     EmailEventType.BOUNCE: "contact.hard_bounced",
     EmailEventType.COMPLAINT: "contact.complained",
     EmailEventType.UNSUBSCRIBE: "subscription.unsubscribed",
+    EmailEventType.SKIPPED: "transactional.skipped",
+    EmailEventType.FAILED: "transactional.failed",
 }
 
 
@@ -31,6 +33,11 @@ def cmp_callback_config():
 
 def callback_metadata(event):
     metadata = dict(event.metadata or {})
+    if event.transactional_message_id:
+        metadata = {
+            **(event.transactional_message.metadata or {}),
+            **metadata,
+        }
     if event.campaign_id:
         metadata["campaign_id"] = event.campaign_id
     if event.campaign_recipient_id:
@@ -45,6 +52,15 @@ def callback_metadata(event):
 def callback_payload(event):
     if event.event_type not in CMP_EVENT_TYPES or event.contact is None:
         return None
+    if (
+        event.event_type
+        in {
+            EmailEventType.SKIPPED,
+            EmailEventType.FAILED,
+        }
+        and not event.transactional_message_id
+    ):
+        return None
 
     metadata = callback_metadata(event)
     preference_key = metadata.get("preference_key") or metadata.get("cmp_preference_key") or ""
@@ -55,7 +71,7 @@ def callback_payload(event):
         "occurred_at": event.created_at.isoformat(),
         "contact_id": event.contact_id,
         "email_event_id": event.pk,
-        "audience": event.audience.slug if event.audience_id else "",
+        "audience": event.audience.slug if event.audience_id else metadata.get("audience", ""),
         "client": event.client.slug if event.client_id else "",
         "metadata": metadata,
     }

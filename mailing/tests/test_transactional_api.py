@@ -2,6 +2,7 @@ import json
 
 import pytest
 from django.contrib import admin
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -89,6 +90,32 @@ def post_transactional(django_client, payload, raw_key=API_KEY):
         content_type="application/json",
         **auth_headers(raw_key),
     )
+
+
+class CallbackResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+
+def collect_cmp_callbacks(monkeypatch):
+    posts = []
+
+    def fake_urlopen(request, *, timeout):
+        posts.append(
+            {
+                "url": request.full_url,
+                "json": json.loads(request.data.decode("utf-8")),
+                "headers": dict(request.header_items()),
+                "timeout": timeout,
+            }
+        )
+        return CallbackResponse()
+
+    monkeypatch.setattr("mailing.services.cmp_callbacks.urlopen", fake_urlopen)
+    return posts
 
 
 def post_recipient_list_transactional(django_client, list_key, payload, raw_key=API_KEY):
@@ -288,6 +315,7 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["idempotency_key"] == "verify-123"
 
 
+@override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
 def test_transactional_send_to_recipient_list_creates_per_member_messages(
     client,
     audience,
@@ -296,6 +324,7 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     monkeypatch,
 ):
     enqueued = []
+    posts = collect_cmp_callbacks(monkeypatch)
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
     allowed_contact = Contact.objects.create(email="allowed@example.com")
     suppressed_contact = Contact.objects.create(
@@ -354,6 +383,14 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     assert messages[1].last_error == "hard_bounce"
     assert len(enqueued) == 1
     assert validate_transactional_email_message(enqueued[0]) == enqueued[0]
+    assert len(posts) == 1
+    assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
+    assert posts[0]["headers"]["Authorization"] == "Bearer secret"
+    assert posts[0]["json"]["event_type"] == "transactional.skipped"
+    assert posts[0]["json"]["email"] == "suppressed@example.com"
+    assert posts[0]["json"]["audience"] == audience.slug
+    assert posts[0]["json"]["client"] == api_client_record.slug
+    assert posts[0]["json"]["metadata"]["reason"] == "hard_bounce"
 
     replay = post_recipient_list_transactional(client, recipient_list.key, payload)
 

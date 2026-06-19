@@ -69,6 +69,32 @@ def transactional_message(api_client_record, contact, template):
     )
 
 
+class CallbackResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+
+def collect_cmp_callbacks(monkeypatch):
+    posts = []
+
+    def fake_urlopen(request, *, timeout):
+        posts.append(
+            {
+                "url": request.full_url,
+                "json": json.loads(request.data.decode("utf-8")),
+                "headers": dict(request.header_items()),
+                "timeout": timeout,
+            }
+        )
+        return CallbackResponse()
+
+    monkeypatch.setattr("mailing.services.cmp_callbacks.urlopen", fake_urlopen)
+    return posts
+
+
 @override_settings(DEFAULT_FROM_EMAIL="sender@example.com", AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
 def test_transactional_handler_sends_persisted_message_and_records_sent_event(transactional_message, monkeypatch):
     ses = boto3.client(
@@ -95,7 +121,9 @@ def test_transactional_handler_sends_persisted_message_and_records_sent_event(tr
         )
         monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: ses)
 
-        response = transactional_email_handler(_event("message-1", build_transactional_queue_payload(transactional_message)))
+        response = transactional_email_handler(
+            _event("message-1", build_transactional_queue_payload(transactional_message))
+        )
 
     transactional_message.refresh_from_db()
     event = EmailEvent.objects.get(event_type=EmailEventType.SENT)
@@ -139,7 +167,9 @@ def test_transactional_handler_uses_message_display_sender(transactional_message
         )
         monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: ses)
 
-        response = transactional_email_handler(_event("message-1", build_transactional_queue_payload(transactional_message)))
+        response = transactional_email_handler(
+            _event("message-1", build_transactional_queue_payload(transactional_message))
+        )
 
     transactional_message.refresh_from_db()
     assert response == {"batchItemFailures": []}
@@ -182,14 +212,18 @@ def test_duplicate_terminal_delivery_is_acknowledged_without_ses_or_duplicate_ev
 
     monkeypatch.setattr("mailing.services.transactional_sender.ses_client", fail_if_called)
 
-    response = transactional_email_handler(_event("message-1", build_transactional_queue_payload(transactional_message)))
+    response = transactional_email_handler(
+        _event("message-1", build_transactional_queue_payload(transactional_message))
+    )
 
     assert response == {"batchItemFailures": []}
     assert EmailEvent.objects.filter(event_type=event_type).count() == 1
 
 
 def test_client_or_idempotency_mismatch_marks_failed_and_acknowledges(transactional_message, monkeypatch):
-    payload = build_transactional_queue_payload(transactional_message) | {"client_id": transactional_message.client_id + 1}
+    payload = build_transactional_queue_payload(transactional_message) | {
+        "client_id": transactional_message.client_id + 1
+    }
 
     def fail_if_called():
         raise AssertionError("SES should not be called for queue payload mismatches")
@@ -213,7 +247,9 @@ def test_transient_ses_failure_leaves_message_retryable_and_returns_batch_failur
 
     monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: TransientSesClient())
 
-    response = transactional_email_handler(_event("message-1", build_transactional_queue_payload(transactional_message)))
+    response = transactional_email_handler(
+        _event("message-1", build_transactional_queue_payload(transactional_message))
+    )
 
     transactional_message.refresh_from_db()
     assert response == {"batchItemFailures": [{"itemIdentifier": "message-1"}]}
@@ -223,7 +259,10 @@ def test_transient_ses_failure_leaves_message_retryable_and_returns_batch_failur
     assert EmailEvent.objects.count() == 0
 
 
+@override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
 def test_permanent_ses_failure_marks_failed_and_acknowledges(transactional_message, monkeypatch):
+    posts = collect_cmp_callbacks(monkeypatch)
+
     class PermanentSesClient:
         def send_email(self, **params):
             raise ClientError(
@@ -233,7 +272,9 @@ def test_permanent_ses_failure_marks_failed_and_acknowledges(transactional_messa
 
     monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: PermanentSesClient())
 
-    response = transactional_email_handler(_event("message-1", build_transactional_queue_payload(transactional_message)))
+    response = transactional_email_handler(
+        _event("message-1", build_transactional_queue_payload(transactional_message))
+    )
 
     transactional_message.refresh_from_db()
     event = EmailEvent.objects.get(event_type=EmailEventType.FAILED)
@@ -242,6 +283,13 @@ def test_permanent_ses_failure_marks_failed_and_acknowledges(transactional_messa
     assert transactional_message.ses_message_id == ""
     assert transactional_message.last_error == "MessageRejected: Address rejected"
     assert event.metadata["reason"] == "ses_permanent_failure"
+    assert len(posts) == 1
+    assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
+    assert posts[0]["headers"]["Authorization"] == "Bearer secret"
+    assert posts[0]["json"]["event_type"] == "transactional.failed"
+    assert posts[0]["json"]["email"] == transactional_message.email
+    assert posts[0]["json"]["client"] == transactional_message.client.slug
+    assert posts[0]["json"]["metadata"]["reason"] == "ses_permanent_failure"
 
 
 def test_mixed_batch_retries_only_invalid_and_transient_records(transactional_message, monkeypatch):

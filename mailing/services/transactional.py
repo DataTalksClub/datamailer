@@ -15,6 +15,7 @@ from mailing.models import (
 )
 from mailing.queue_contracts import CONTRACT_VERSION, TRANSACTIONAL_EMAIL_CONTRACT, validate_transactional_email_message
 from mailing.services.api import ApiValidationError, isoformat, validate_contact_scope
+from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import is_transactional_email_allowed, normalize_email, upsert_contact
 from mailing.services.senders import normalize_sender_id, resolve_sender_email
 from mailing.services.transactional_catalog import validate_template_context
@@ -134,6 +135,7 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                     "recipient_list_key": recipient_list.key,
                     "recipient_list_member_id": member.id,
                     "source_object_key": member.source_object_key,
+                    "audience": recipient_list.audience.slug,
                 },
                 "from_email": payload["from_email"],
             }
@@ -351,13 +353,15 @@ def create_transactional_message(*, client, contact, template, payload, sender, 
 
 
 def append_transactional_event(message, event_type, metadata):
-    return EmailEvent.objects.create(
+    event = EmailEvent.objects.create(
         transactional_message=message,
         contact=message.contact,
         client=message.client,
         event_type=event_type,
         metadata=metadata,
     )
+    emit_cmp_contact_event(event)
+    return event
 
 
 def build_transactional_queue_payload(message):

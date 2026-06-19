@@ -20,6 +20,22 @@ Local demo data creates stable named keys for examples:
 - `dtc-newsletter` / `Newsletter import/export`: `dm_dtcnews_demo_newsletter_import_export_key`
 - `asl-platform` / `ASL platform transactional`: `dm_aslplatform_demo_transactional_email_key`
 
+Sandbox deployment provisions the CMP scope explicitly:
+
+```bash
+python manage.py provision_client_scope \
+  --organization datatalksclub \
+  --organization-name DataTalksClub \
+  --audience dtc-courses \
+  --audience-name "DataTalksClub Courses" \
+  --client dtc-courses \
+  --client-name "DTC Courses"
+```
+
+That keeps `DATAMAILER_AUDIENCE=dtc-courses` and
+`DATAMAILER_CLIENT=dtc-courses` valid for CMP contact sync, status lookups,
+history lookups, recipient lists, and transactional sends.
+
 The in-app examples default to `DATAMAILER_API_DOCS_BASE_URL`, falling back to `PUBLIC_BASE_URL`. Override `DATAMAILER_URL` when running an example against a different environment:
 
 ```bash
@@ -110,7 +126,7 @@ JSON and CSV imports are idempotent by normalized email plus audience/client sco
 
 ## Recipient List APIs
 
-Recipient lists are client-scoped batches for later list sends. CMP uses them for groups such as course registrants, homework submitters, and project submitters. Keys are unique within the authenticated client plus audience scope, for example `registrants:ml-zoomcamp-2026` or `homework-submitters:ml-zoomcamp-2026:homework-1`.
+Recipient lists are client-scoped batches for later list sends. CMP uses them for groups such as course registrants, enrolled learners, homework submitters, and project submitters. Keys are unique within the authenticated client plus audience scope, for example `course-registrants:ml-zoomcamp-2026`, `course-enrolled:ml-zoomcamp-2026`, or `homework-submitters:ml-zoomcamp-2026:homework-1`.
 
 ```text
 PUT /api/recipient-lists/{list_key}
@@ -300,8 +316,9 @@ These are not client Bearer API routes.
 
 ## CMP Contact Event Callbacks
 
-When configured, Datamailer posts hard-bounce, complaint, and public
-unsubscribe events back to CMP after the local Datamailer transaction commits.
+When configured, Datamailer posts hard-bounce, complaint, public unsubscribe,
+and transactional skipped/failed events back to CMP after the local Datamailer
+transaction commits.
 
 ```text
 CMP_WEBHOOK_URL=https://courses.example.com/api/datamailer/events
@@ -320,4 +337,9 @@ Implemented callback event types:
 contact.hard_bounced
 contact.complained
 subscription.unsubscribed
+transactional.skipped
+transactional.failed
 ```
+
+Callbacks are currently best-effort HTTP posts with error logging. Durable
+retry and operator-visible callback attempts are tracked separately.

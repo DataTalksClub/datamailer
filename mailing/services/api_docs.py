@@ -805,7 +805,7 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
         API_DOC_PATHS["mailing:api_recipient_list"]: reverse(
             "mailing:api_recipient_list",
-            args=["registrants:ml-zoomcamp-2026"],
+            args=["course-registrants:ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_member"]: reverse(
             "mailing:api_recipient_list_member",
@@ -813,11 +813,11 @@ def route_path_map():
         ),
         API_DOC_PATHS["mailing:api_recipient_list_bulk_upsert"]: reverse(
             "mailing:api_recipient_list_bulk_upsert",
-            args=["registrants:ml-zoomcamp-2026"],
+            args=["course-registrants:ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_reconcile"]: reverse(
             "mailing:api_recipient_list_reconcile",
-            args=["registrants:ml-zoomcamp-2026"],
+            args=["course-registrants:ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_transactional_send"]: reverse(
             "mailing:api_recipient_list_transactional_send",

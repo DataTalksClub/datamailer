@@ -249,7 +249,7 @@ def test_recipient_list_keys_are_scoped_to_authenticated_client(
     other_audience,
     other_client,
 ):
-    list_key = "registrants:ml-zoomcamp-2026"
+    list_key = "course-registrants:ml-zoomcamp-2026"
     payload = {
         "audience": audience.slug,
         "client": api_client_record.slug,
@@ -272,8 +272,8 @@ def test_recipient_list_keys_are_scoped_to_authenticated_client(
 
 
 def test_recipient_list_bulk_upsert_and_reconcile(client, audience, api_client_record):
-    list_key = "registrants:ml-zoomcamp-2026"
-    dry_run_key = "registrants:dry-run"
+    list_key = "course-registrants:ml-zoomcamp-2026"
+    dry_run_key = "course-registrants:dry-run"
     base_payload = {
         "audience": audience.slug,
         "client": api_client_record.slug,
