@@ -12,6 +12,8 @@ from mailing.models import (
     CampaignRecipient,
     CampaignRecipientStatus,
     Client,
+    CmpCallback,
+    CmpCallbackStatus,
     Contact,
     EmailEvent,
     EmailEventType,
@@ -19,6 +21,7 @@ from mailing.models import (
     Subscription,
     SubscriptionStatus,
 )
+from mailing.services.cmp_callbacks import process_due_cmp_callbacks
 from mailing.services.public_urls import (
     campaign_recipient_public_urls,
     click_redirect_url,
@@ -331,6 +334,8 @@ def test_unsubscribe_post_emits_cmp_callback(client, recipient, monkeypatch):
     )
 
     assert response.status_code == 200
+    assert CmpCallback.objects.filter(status=CmpCallbackStatus.PENDING).count() == 1
+    process_due_cmp_callbacks()
     assert len(posts) == 1
     body = posts[0]["json"]
     assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"

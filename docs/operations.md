@@ -42,14 +42,19 @@ Keep Django web thin and cheap on ARM. Django should enqueue work and serve UI/A
 
 ## Sandbox EC2 Worker Bridge
 
-The sandbox may run Datamailer web on EC2 with SQLite before the shared Postgres/RDS stack is enabled. In that mode, workers need local access to the same SQLite database file as the web process. Run transactional and SES webhook SQS processing as systemd services on the same EC2 instance:
+The sandbox may run Datamailer web on EC2 with SQLite before the shared Postgres/RDS stack is enabled. In that mode, workers need local access to the same SQLite database file as the web process. Run transactional, SES webhook, and CMP callback processing as systemd services on the same EC2 instance:
 
 ```bash
 python manage.py process_sqs_worker transactional --batch-size 10 --wait-time 20
 python manage.py process_sqs_worker ses-webhooks --batch-size 10 --wait-time 20
+python manage.py process_cmp_callbacks --batch-size 25 --idle-sleep 5
 ```
 
-This uses the same SQS message contracts and worker handlers as Lambda. Once the sandbox uses shared Postgres/RDS, replace the EC2 worker service with SQS event-source Lambda workers.
+The SQS workers use the same message contracts and handlers as Lambda. The CMP
+callback dispatcher reads the local `cmp_callbacks` outbox and retries failed
+HTTP callbacks with backoff. Once the sandbox uses shared Postgres/RDS, replace
+the EC2 SQS worker services with SQS event-source Lambda workers; keep one
+scheduled or long-running callback dispatcher for the outbox.
 
 Sandbox deploys must also provision the CMP client scope before configuring
 senders:

@@ -6,6 +6,7 @@ from mailing.models import (
     CampaignRecipient,
     Client,
     ClientApiKey,
+    CmpCallback,
     Contact,
     ContactTag,
     EmailEvent,
@@ -215,7 +216,16 @@ class EmailEventInline(admin.TabularInline):
 @admin.register(TransactionalMessage)
 class TransactionalMessageAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
-    list_display = ("email", "from_email_id", "from_email", "template_key", "client", "status", "idempotency_key", "created_at")
+    list_display = (
+        "email",
+        "from_email_id",
+        "from_email",
+        "template_key",
+        "client",
+        "status",
+        "idempotency_key",
+        "created_at",
+    )
     list_filter = ("status", "client", "template")
     search_fields = (
         "email",
@@ -246,3 +256,34 @@ class EmailEventAdmin(admin.ModelAdmin):
         "campaign__subject",
     )
     autocomplete_fields = ("campaign", "campaign_recipient", "transactional_message", "contact", "client", "audience")
+
+
+@admin.register(CmpCallback)
+class CmpCallbackAdmin(admin.ModelAdmin):
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "last_attempt_at",
+        "delivered_at",
+    )
+    list_display = (
+        "event_type",
+        "status",
+        "client",
+        "contact",
+        "attempt_count",
+        "next_attempt_at",
+        "delivered_at",
+        "created_at",
+    )
+    list_filter = ("status", "event_type", "client")
+    search_fields = (
+        "event_id",
+        "event_type",
+        "contact__email",
+        "contact__normalized_email",
+        "client__name",
+        "client__slug",
+        "last_error",
+    )
+    autocomplete_fields = ("email_event", "contact", "client", "audience")

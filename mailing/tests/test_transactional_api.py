@@ -10,6 +10,8 @@ from mailing.admin import EmailEventAdmin, EmailTemplateAdmin, TransactionalMess
 from mailing.models import (
     Audience,
     Client,
+    CmpCallback,
+    CmpCallbackStatus,
     Contact,
     EmailEvent,
     EmailEventType,
@@ -24,6 +26,7 @@ from mailing.models import (
 )
 from mailing.queue_contracts import validate_transactional_email_message
 from mailing.services.auth import create_client_api_key
+from mailing.services.cmp_callbacks import process_due_cmp_callbacks
 from mailing.sqs import json_body, records_from_messages
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -383,6 +386,8 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     assert messages[1].last_error == "hard_bounce"
     assert len(enqueued) == 1
     assert validate_transactional_email_message(enqueued[0]) == enqueued[0]
+    assert CmpCallback.objects.filter(status=CmpCallbackStatus.PENDING).count() == 1
+    process_due_cmp_callbacks()
     assert len(posts) == 1
     assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
     assert posts[0]["headers"]["Authorization"] == "Bearer secret"

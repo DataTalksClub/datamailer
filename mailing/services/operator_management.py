@@ -94,6 +94,8 @@ def create_or_update_client(
     slug,
     default_sender_id,
     sender_emails,
+    cmp_webhook_url,
+    cmp_webhook_token,
     is_active,
 ):
     if client is None:
@@ -103,6 +105,8 @@ def create_or_update_client(
             slug=slug,
             default_sender_id=default_sender_id,
             sender_emails=sender_emails,
+            cmp_webhook_url=cmp_webhook_url,
+            cmp_webhook_token=cmp_webhook_token,
             is_active=is_active,
         )
         audit(
@@ -114,24 +118,36 @@ def create_or_update_client(
                 "slug": slug,
                 "default_sender_id": default_sender_id,
                 "sender_emails": sender_emails,
+                "cmp_webhook_url": cmp_webhook_url,
+                "cmp_webhook_token_configured": bool(cmp_webhook_token),
                 "is_active": is_active,
             },
         )
         return client
     changed = {}
+    changed_fields = set()
     for field, value in {
         "name": name,
         "slug": slug,
         "default_sender_id": default_sender_id,
         "sender_emails": sender_emails,
+        "cmp_webhook_url": cmp_webhook_url,
+        "cmp_webhook_token": cmp_webhook_token,
         "is_active": is_active,
     }.items():
         old = getattr(client, field)
         if old != value:
-            changed[field] = [old, value]
+            if field == "cmp_webhook_token":
+                changed["cmp_webhook_token_configured"] = [
+                    bool(old),
+                    bool(value),
+                ]
+            else:
+                changed[field] = [old, value]
             setattr(client, field, value)
+            changed_fields.add(field)
     if changed:
-        client.save(update_fields=sorted(set(changed) | {"updated_at"}))
+        client.save(update_fields=sorted(changed_fields | {"updated_at"}))
         audit(actor, "client.update", client, changed)
     return client
 
@@ -176,7 +192,13 @@ def client_api_keys_for_detail(client):
 def update_contact_state(*, actor, contact, verified_state, validation_status, validation_reason, suppression_flags):
     now = timezone.now()
     changed = {}
-    verified_at = contact.verified_at or now if verified_state == "verified" else None if verified_state == "unverified" else contact.verified_at
+    verified_at = (
+        contact.verified_at or now
+        if verified_state == "verified"
+        else None
+        if verified_state == "unverified"
+        else contact.verified_at
+    )
     if contact.verified_at != verified_at:
         changed["verified_at"] = [contact.verified_at.isoformat() if contact.verified_at else None, bool(verified_at)]
         contact.verified_at = verified_at

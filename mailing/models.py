@@ -48,6 +48,8 @@ class Client(TimeStampedModel):
     allowed_from_emails = models.JSONField(default=list, blank=True)
     default_sender_id = models.SlugField(max_length=80, blank=True)
     sender_emails = models.JSONField(default=list, blank=True)
+    cmp_webhook_url = models.URLField(max_length=2048, blank=True)
+    cmp_webhook_token = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -531,6 +533,7 @@ class EmailEventType(models.TextChoices):
     DELIVERED = "delivered", "Delivered"
     OPEN = "open", "Open"
     CLICK = "click", "Click"
+    SUBSCRIBE = "subscribe", "Subscribe"
     UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
     BOUNCE = "bounce", "Bounce"
     COMPLAINT = "complaint", "Complaint"
@@ -584,8 +587,72 @@ class EmailEvent(models.Model):
         return f"{self.event_type} at {self.created_at}"
 
 
+class CmpCallbackStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    DELIVERED = "delivered", "Delivered"
+    FAILED = "failed", "Failed"
+
+
+class CmpCallback(TimeStampedModel):
+    email_event = models.OneToOneField(
+        EmailEvent,
+        on_delete=models.CASCADE,
+        related_name="cmp_callback",
+    )
+    contact = models.ForeignKey(
+        Contact,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cmp_callbacks",
+    )
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cmp_callbacks",
+    )
+    audience = models.ForeignKey(
+        Audience,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cmp_callbacks",
+    )
+    event_id = models.CharField(max_length=120, unique=True)
+    event_type = models.CharField(max_length=80)
+    callback_url = models.URLField(max_length=2048)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=CmpCallbackStatus.choices,
+        default=CmpCallbackStatus.PENDING,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=8)
+    next_attempt_at = models.DateTimeField(db_index=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    response_status = models.PositiveIntegerField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "cmp_callbacks"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["status", "next_attempt_at"], name="cmp_cb_status_next_idx"),
+            models.Index(fields=["client", "status", "created_at"], name="cmp_cb_client_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} {self.event_id} ({self.status})"
+
+
 class OperatorAudit(models.Model):
-    actor = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="operator_audits")
+    actor = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="operator_audits"
+    )
     action = models.CharField(max_length=120, db_index=True)
     target_type = models.CharField(max_length=80, db_index=True)
     target_id = models.PositiveBigIntegerField(db_index=True)

@@ -316,14 +316,18 @@ These are not client Bearer API routes.
 
 ## CMP Contact Event Callbacks
 
-When configured, Datamailer posts hard-bounce, complaint, public unsubscribe,
-and transactional skipped/failed events back to CMP after the local Datamailer
-transaction commits.
+When configured, Datamailer queues hard-bounce, complaint, public unsubscribe,
+resubscribe, and transactional skipped/failed events for CMP after the local
+Datamailer transaction commits. A background dispatcher posts queued callbacks
+and retries failures with backoff.
 
 ```text
 CMP_WEBHOOK_URL=https://courses.example.com/api/datamailer/events
 CMP_WEBHOOK_TOKEN=shared-secret
 ```
+
+These global settings are the fallback. A Datamailer client can also configure
+its own CMP webhook URL and token from the operator client form.
 
 Datamailer sends:
 
@@ -337,9 +341,17 @@ Implemented callback event types:
 contact.hard_bounced
 contact.complained
 subscription.unsubscribed
+subscription.resubscribed
 transactional.skipped
 transactional.failed
 ```
 
-Callbacks are currently best-effort HTTP posts with error logging. Durable
-retry and operator-visible callback attempts are tracked separately.
+Callbacks are stored in the `cmp_callbacks` outbox. Run the dispatcher with:
+
+```bash
+python manage.py process_cmp_callbacks --batch-size 25
+```
+
+Sandbox deploys install this dispatcher as `datamailer-cmp-callbacks-worker`.
+Operators can inspect recent callback status, attempt counts, next retry time,
+delivery time, and the last error from the client detail page and Django admin.

@@ -120,4 +120,43 @@
       </div>
     {% endif %}
   </section>
+
+  <section class="detail-section" aria-labelledby="cmp-callbacks">
+    <div class="section-header">
+      <h2 id="cmp-callbacks">CMP Callbacks</h2>
+    </div>
+    {% if callback_rows %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Status</th>
+              <th>Attempts</th>
+              <th>Next retry</th>
+              <th>Delivered</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for callback in callback_rows %}
+              <tr>
+                <td><code>{{ callback.event_type }}</code></td>
+                <td><span class="badge neutral">{{ callback.get_status_display }}</span></td>
+                <td>{{ callback.attempt_count }}/{{ callback.max_attempts }}</td>
+                <td>{{ callback.next_attempt_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ callback.delivered_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td class="truncate">{{ callback.last_error|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <strong>No CMP callbacks queued.</strong>
+        <div class="muted">Callbacks for transactional skipped and failed events will appear here.</div>
+      </div>
+    {% endif %}
+  </section>
 {% endblock %}

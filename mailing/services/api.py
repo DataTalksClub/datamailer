@@ -20,6 +20,7 @@ from mailing.models import (
     SubscriptionStatus,
     TransactionalMessage,
 )
+from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import (
     assign_tag,
     is_marketing_email_allowed,
@@ -464,6 +465,19 @@ def upsert_contact_for_client(data, authenticated_client):
             "unsubscribe_reason": "",
         },
     )
+    if (
+        existing_subscription is not None
+        and existing_subscription.status == SubscriptionStatus.UNSUBSCRIBED
+        and status == SubscriptionStatus.SUBSCRIBED
+    ):
+        event = EmailEvent.objects.create(
+            contact=contact,
+            client=scope.client,
+            audience=scope.audience,
+            event_type=EmailEventType.SUBSCRIBE,
+            metadata={"source": "api"},
+        )
+        emit_cmp_contact_event(event)
 
     for tag_name in tags:
         assign_tag(contact, scope.audience, tag_name)
@@ -512,7 +526,9 @@ def unsubscribe_for_client(data, authenticated_client):
     else:
         unsubscribe_contact(contact, scope.audience, scope.client, reason=reason)
 
-    return contact_status_payload(contact, scope.audience, scope.client, requested_email=scope.email) | {"scope": scope_name}
+    return contact_status_payload(contact, scope.audience, scope.client, requested_email=scope.email) | {
+        "scope": scope_name
+    }
 
 
 def validate_existing_contact_scope(contact_id, data, authenticated_client):
@@ -578,7 +594,9 @@ def update_contact_verification_for_client(contact_id, data, authenticated_clien
         contact.save(update_fields=["verified_at", "updated_at"])
 
     subscription = Subscription.objects.get(contact=contact, audience=scope.audience, client=scope.client)
-    subscription_verified_at = verified_at if not verified or subscription.verified_at is None else subscription.verified_at
+    subscription_verified_at = (
+        verified_at if not verified or subscription.verified_at is None else subscription.verified_at
+    )
     if subscription.verified_at != subscription_verified_at:
         Subscription.objects.filter(pk=subscription.pk).update(
             verified_at=subscription_verified_at,
@@ -629,13 +647,23 @@ def update_contact_suppression_for_client(contact_id, data, authenticated_client
         }
         for field in updates:
             if getattr(contact, field) is not None:
-                EmailEvent.objects.create(
+                event = EmailEvent.objects.create(
                     contact=contact,
                     client=scope.client,
                     audience=scope.audience,
                     event_type=event_map[field],
                     metadata={"source": "api", "reason": reason},
                 )
+                emit_cmp_contact_event(event)
+            elif field == "global_unsubscribed_at":
+                event = EmailEvent.objects.create(
+                    contact=contact,
+                    client=scope.client,
+                    audience=scope.audience,
+                    event_type=EmailEventType.SUBSCRIBE,
+                    metadata={"source": "api", "reason": reason},
+                )
+                emit_cmp_contact_event(event)
     return contact_payload(contact, scope.audience, scope.client, requested_email=contact.email)
 
 
@@ -791,8 +819,7 @@ def get_contact_history_for_client(contact_id, data, authenticated_client):
         event_queryset = event_queryset.filter(id__lt=cursor)
     event_items = [
         event_history_item(event)
-        for event in event_queryset.select_related("client", "audience")
-        .order_by("-id")[: limit + 1]
+        for event in event_queryset.select_related("client", "audience").order_by("-id")[: limit + 1]
     ]
     next_cursor = None
     if len(event_items) > limit:
@@ -815,4 +842,3 @@ def isoformat(value):
     if value is None:
         return None
     return value.isoformat().replace("+00:00", "Z")
-

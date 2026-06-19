@@ -63,27 +63,35 @@ class CampaignForm(forms.ModelForm):
         self.fields["text_body"].label = "Text body"
         self.fields["text_body"].help_text = "Paste the final plain-text fallback. Keep it aligned with the HTML body."
         self.fields["subject"].help_text = "Use the final subject line that recipients will see."
-        self.fields["preview_text"].help_text = "Optional inbox preview text shown after the subject by many email clients."
+        self.fields[
+            "preview_text"
+        ].help_text = "Optional inbox preview text shown after the subject by many email clients."
         self.fields["scheduled_at"].help_text = "Optional. Leave blank to keep the draft unscheduled."
         self.fields["audience"].queryset = Audience.objects.select_related("organization").order_by(
             "organization__slug", "slug"
         )
-        self.fields["client"].queryset = Client.objects.select_related("organization").filter(is_active=True).order_by(
-            "organization__slug", "slug"
+        self.fields["client"].queryset = (
+            Client.objects.select_related("organization").filter(is_active=True).order_by("organization__slug", "slug")
         )
         if active_client is not None:
             self.fields["client"].queryset = Client.objects.filter(pk=active_client.pk)
             self.fields["client"].initial = active_client
             self.fields["client"].widget = forms.HiddenInput()
-            self.fields["audience"].queryset = Audience.objects.select_related("organization").filter(
-                organization=active_client.organization
-            ).order_by("slug")
-            self.fields["include_tags"].queryset = Tag.objects.select_related("audience").filter(
-                audience__organization=active_client.organization
-            ).order_by("audience__slug", "slug")
-            self.fields["exclude_tags"].queryset = Tag.objects.select_related("audience").filter(
-                audience__organization=active_client.organization
-            ).order_by("audience__slug", "slug")
+            self.fields["audience"].queryset = (
+                Audience.objects.select_related("organization")
+                .filter(organization=active_client.organization)
+                .order_by("slug")
+            )
+            self.fields["include_tags"].queryset = (
+                Tag.objects.select_related("audience")
+                .filter(audience__organization=active_client.organization)
+                .order_by("audience__slug", "slug")
+            )
+            self.fields["exclude_tags"].queryset = (
+                Tag.objects.select_related("audience")
+                .filter(audience__organization=active_client.organization)
+                .order_by("audience__slug", "slug")
+            )
         if self.instance and self.instance.pk:
             self.fields["include_tags"].initial = Tag.objects.filter(
                 audience=self.instance.audience,
@@ -150,15 +158,11 @@ class AudienceForm(forms.ModelForm):
         self.active_client = active_client
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("slug")
-        self.fields["organization"].help_text = (
-            "The selected organization scopes this audience and its slug."
-        )
+        self.fields["organization"].help_text = "The selected organization scopes this audience and its slug."
         self.fields["name"].label = "Audience name"
         self.fields["name"].help_text = "Operator-facing name shown in lists and campaign setup."
         self.fields["slug"].label = "Audience slug"
-        self.fields["slug"].help_text = (
-            "Lowercase identifier; must be unique within the selected organization."
-        )
+        self.fields["slug"].help_text = "Lowercase identifier; must be unique within the selected organization."
         if active_client is not None:
             self.fields["organization"].queryset = Organization.objects.filter(pk=active_client.organization_id)
             self.fields["organization"].initial = active_client.organization
@@ -194,14 +198,28 @@ class ClientForm(forms.ModelForm):
 
     class Meta:
         model = Client
-        fields = ["organization", "name", "slug", "default_sender_id", "sender_emails", "is_active"]
+        fields = [
+            "organization",
+            "name",
+            "slug",
+            "default_sender_id",
+            "sender_emails",
+            "cmp_webhook_url",
+            "cmp_webhook_token",
+            "is_active",
+        ]
+        widgets = {
+            "cmp_webhook_token": forms.PasswordInput(render_value=True),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["organization"].queryset = Organization.objects.order_by("slug")
         self.fields["organization"].help_text = "The organization that owns this integration and scopes its slug."
         self.fields["name"].label = "Client name"
-        self.fields["name"].help_text = "Operator-facing name for the product, app, or external system using Datamailer."
+        self.fields[
+            "name"
+        ].help_text = "Operator-facing name for the product, app, or external system using Datamailer."
         self.fields["slug"].label = "Client slug"
         self.fields["slug"].help_text = (
             "Stable identifier used in URLs, support conversations, logs, audit context, and API examples. "
@@ -215,6 +233,17 @@ class ClientForm(forms.ModelForm):
             "sender-id=Display Name <email@example.com>. API payload "
             "from_email must use a configured sender ID."
         )
+        self.fields["cmp_webhook_url"].label = "CMP webhook URL"
+        self.fields["cmp_webhook_url"].required = False
+        self.fields["cmp_webhook_url"].help_text = (
+            "Optional client-specific callback endpoint for delivery, suppression, "
+            "unsubscribe, and transactional failure events."
+        )
+        self.fields["cmp_webhook_token"].label = "CMP webhook token"
+        self.fields["cmp_webhook_token"].required = False
+        self.fields["cmp_webhook_token"].help_text = (
+            "Bearer token Datamailer sends to the CMP webhook. Leave empty to use global settings, if configured."
+        )
         if self.instance and self.instance.pk:
             self.fields["sender_emails"].initial = "\n".join(
                 f"{sender.get('id')}={sender.get('email')}"
@@ -222,9 +251,9 @@ class ClientForm(forms.ModelForm):
                 if isinstance(sender, dict) and sender.get("id") and sender.get("email")
             )
         self.fields["is_active"].label = "Client is active"
-        self.fields["is_active"].help_text = (
-            "Inactive clients cannot use their API keys for authenticated API activity or sending."
-        )
+        self.fields[
+            "is_active"
+        ].help_text = "Inactive clients cannot use their API keys for authenticated API activity or sending."
 
     def clean_slug(self):
         slug = slugify(self.cleaned_data["slug"])
@@ -238,7 +267,9 @@ class ClientForm(forms.ModelForm):
             try:
                 validate_slug(sender_id)
             except ValidationError as exc:
-                raise forms.ValidationError("Enter a valid sender ID using letters, numbers, hyphens, or underscores.") from exc
+                raise forms.ValidationError(
+                    "Enter a valid sender ID using letters, numbers, hyphens, or underscores."
+                ) from exc
         return sender_id
 
     def clean_sender_emails(self):
@@ -307,7 +338,9 @@ class ClientApiKeyForm(forms.ModelForm):
         self.client = client
         super().__init__(*args, **kwargs)
         self.fields["name"].label = "Key name"
-        self.fields["name"].help_text = "Use a human-readable integration name, such as website signup or course platform."
+        self.fields[
+            "name"
+        ].help_text = "Use a human-readable integration name, such as website signup or course platform."
         self.fields["notes"].label = "Purpose and notes"
         self.fields["notes"].required = False
         self.fields["notes"].help_text = "Describe what uses this key. Do not store raw secrets here."
@@ -384,9 +417,11 @@ class ContactSubscriptionForm(forms.Form):
             "organization__slug", "slug"
         )
         if active_client is not None:
-            self.fields["audience"].queryset = Audience.objects.select_related("organization").filter(
-                organization=active_client.organization
-            ).order_by("slug")
+            self.fields["audience"].queryset = (
+                Audience.objects.select_related("organization")
+                .filter(organization=active_client.organization)
+                .order_by("slug")
+            )
             self.fields["client"].queryset = Client.objects.filter(pk=active_client.pk)
             self.fields["client"].initial = active_client
             self.fields["client"].widget = forms.HiddenInput()
@@ -418,9 +453,11 @@ class ContactTagAddForm(forms.Form):
             self.fields["audience"].queryset = Audience.objects.filter(
                 organization=active_client.organization
             ).order_by("slug")
-            self.fields["tag"].queryset = Tag.objects.select_related("audience").filter(
-                audience__organization=active_client.organization
-            ).order_by("audience__slug", "slug")
+            self.fields["tag"].queryset = (
+                Tag.objects.select_related("audience")
+                .filter(audience__organization=active_client.organization)
+                .order_by("audience__slug", "slug")
+            )
 
     def clean(self):
         cleaned = super().clean()
@@ -439,9 +476,7 @@ class ContactTagRemoveForm(forms.Form):
 
     def __init__(self, *args, contact=None, active_client=None, **kwargs):
         super().__init__(*args, **kwargs)
-        queryset = ContactTag.objects.filter(contact=contact).select_related(
-            "tag", "tag__audience"
-        )
+        queryset = ContactTag.objects.filter(contact=contact).select_related("tag", "tag__audience")
         if active_client is not None:
             queryset = queryset.filter(tag__audience__organization=active_client.organization)
         self.fields["membership"].queryset = queryset

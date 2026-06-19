@@ -9,6 +9,8 @@ from django.utils import timezone
 
 from mailing.models import (
     Client,
+    CmpCallback,
+    CmpCallbackStatus,
     Contact,
     EmailEvent,
     EmailEventType,
@@ -17,6 +19,7 @@ from mailing.models import (
     TransactionalMessage,
     TransactionalMessageStatus,
 )
+from mailing.services.cmp_callbacks import process_due_cmp_callbacks
 from mailing.services.transactional import build_transactional_queue_payload
 from mailing.sqs import records_from_messages
 from mailing.workers import transactional_email_handler
@@ -283,6 +286,8 @@ def test_permanent_ses_failure_marks_failed_and_acknowledges(transactional_messa
     assert transactional_message.ses_message_id == ""
     assert transactional_message.last_error == "MessageRejected: Address rejected"
     assert event.metadata["reason"] == "ses_permanent_failure"
+    assert CmpCallback.objects.filter(status=CmpCallbackStatus.PENDING).count() == 1
+    process_due_cmp_callbacks()
     assert len(posts) == 1
     assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
     assert posts[0]["headers"]["Authorization"] == "Bearer secret"

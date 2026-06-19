@@ -28,6 +28,7 @@ from mailing.models import (
     CampaignStatus,
     Client,
     ClientApiKey,
+    CmpCallback,
     EmailEvent,
     EmailEventType,
     Tag,
@@ -268,6 +269,9 @@ def transactional_message_detail(request, message_id):
         {"event": event, "context": event_context(event), "metadata_summary": metadata_summary(event.metadata)}
         for event in events
     ]
+    callback_rows = CmpCallback.objects.filter(
+        email_event__transactional_message=message,
+    ).order_by("-created_at", "-id")
     return render(
         request,
         "mailing/operator/transactional_message_detail.html",
@@ -275,6 +279,7 @@ def transactional_message_detail(request, message_id):
             "message": message,
             "badge": Badge(message.get_status_display(), delivery_tone(message.status)),
             "event_rows": event_rows,
+            "callback_rows": callback_rows,
             "metadata_summary": metadata_summary(message.metadata),
         },
     )
@@ -771,6 +776,11 @@ def client_detail(request, client_id):
         raw_api_key_context = request.session.pop("operator_raw_api_key")
     key_form = ClientApiKeyForm(client=client)
     api_keys = client_api_keys_for_detail(client)
+    cmp_callbacks = (
+        CmpCallback.objects.filter(client=client)
+        .select_related("contact", "email_event")
+        .order_by("-created_at", "-id")[:10]
+    )
     return render(
         request,
         "mailing/operator/client_detail.html",
@@ -781,6 +791,7 @@ def client_detail(request, client_id):
             "revoked_key_count": sum(1 for api_key in api_keys if api_key.revoked_at is not None),
             "key_form": key_form,
             "raw_api_key_context": raw_api_key_context,
+            "cmp_callbacks": cmp_callbacks,
             "audit_rows": latest_audits_for(client),
         },
     )

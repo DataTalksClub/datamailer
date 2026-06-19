@@ -18,6 +18,8 @@ from mailing.models import (
     CampaignRecipient,
     CampaignRecipientStatus,
     Client,
+    CmpCallback,
+    CmpCallbackStatus,
     Contact,
     EmailEvent,
     EmailEventType,
@@ -26,6 +28,7 @@ from mailing.models import (
     TransactionalMessage,
     TransactionalMessageStatus,
 )
+from mailing.services.cmp_callbacks import process_due_cmp_callbacks
 from mailing.services.contacts import is_marketing_email_allowed, is_transactional_email_allowed
 from mailing.services.ses_webhooks import SNS_MOCK_SIGNATURE, canonical_sns_message
 from mailing.sqs import records_from_messages
@@ -318,6 +321,8 @@ def test_worker_hard_bounce_emits_cmp_callback(recipient, monkeypatch):
     )
 
     ses_webhooks_handler(records_from_payloads([("message-1", payload)]), None)
+    assert CmpCallback.objects.filter(status=CmpCallbackStatus.PENDING).count() == 1
+    process_due_cmp_callbacks()
 
     assert len(posts) == 1
     body = posts[0]["json"]
