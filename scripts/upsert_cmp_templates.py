@@ -241,7 +241,7 @@ TEMPLATES = {
             "course_title": "ML Zoomcamp",
             "certificate_url": "https://courses.datatalks.club/certificates/example.pdf",
             "course_url": "https://courses.datatalks.club/ml-zoomcamp/",
-            "intro_text": "Your certificate for ML Zoomcamp is available.",
+            "intro_text": "Congratulations - your certificate for ML Zoomcamp is available.",
         },
         "is_active": True,
     },
