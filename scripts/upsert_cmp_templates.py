@@ -138,17 +138,34 @@ TEMPLATES = {
         "subject": "Scores available: {{ homework_title }}",
         "html_body": (
             "<p>Scores for <strong>{{ homework_title }}</strong> in {{ course_title }} are available.</p>"
+            "<p>Your score: <strong>{{ total_score }}</strong></p>"
+            "<p>Breakdown: questions {{ questions_score }}, learning in public {{ learning_in_public_score }}, "
+            "FAQ contribution {{ faq_score }}.</p>"
             '<p><a href="{{ scores_url }}">View scores</a></p>'
         ),
-        "text_body": "Scores for {{ homework_title }} in {{ course_title }} are available.\n\nView scores: {{ scores_url }}\n",
+        "text_body": (
+            "Scores for {{ homework_title }} in {{ course_title }} are available.\n\n"
+            "Your score: {{ total_score }}\n"
+            "Breakdown: questions {{ questions_score }}, learning in public {{ learning_in_public_score }}, "
+            "FAQ contribution {{ faq_score }}.\n\n"
+            "View scores: {{ scores_url }}\n"
+        ),
         "required_context": [
             {"name": "course_title", "description": "Course title."},
             {"name": "homework_title", "description": "Homework title."},
+            {"name": "questions_score", "description": "Homework question score for this learner."},
+            {"name": "learning_in_public_score", "description": "Learning in public score for this learner."},
+            {"name": "faq_score", "description": "FAQ contribution score for this learner."},
+            {"name": "total_score", "description": "Total homework score for this learner."},
             {"name": "scores_url", "description": "URL where scores can be viewed."},
         ],
         "example_context": {
             "course_title": "ML Zoomcamp",
             "homework_title": "Homework 1",
+            "questions_score": 6,
+            "learning_in_public_score": 2,
+            "faq_score": 1,
+            "total_score": 9,
             "scores_url": "https://courses.datatalks.club/ml-zoomcamp/",
         },
         "is_active": True,
@@ -159,17 +176,46 @@ TEMPLATES = {
         "subject": "Scores available: {{ project_title }}",
         "html_body": (
             "<p>Scores for <strong>{{ project_title }}</strong> in {{ course_title }} are available.</p>"
+            "<p>Your score: <strong>{{ total_score }}</strong></p>"
+            "<p>Breakdown: project {{ project_score }}, project learning in public {{ project_learning_in_public_score }}, "
+            "project FAQ {{ project_faq_score }}, peer review {{ peer_review_score }}, "
+            "peer review learning in public {{ peer_review_learning_in_public_score }}.</p>"
             '<p><a href="{{ scores_url }}">View scores</a></p>'
         ),
-        "text_body": "Scores for {{ project_title }} in {{ course_title }} are available.\n\nView scores: {{ scores_url }}\n",
+        "text_body": (
+            "Scores for {{ project_title }} in {{ course_title }} are available.\n\n"
+            "Your score: {{ total_score }}\n"
+            "Breakdown: project {{ project_score }}, project learning in public {{ project_learning_in_public_score }}, "
+            "project FAQ {{ project_faq_score }}, peer review {{ peer_review_score }}, "
+            "peer review learning in public {{ peer_review_learning_in_public_score }}.\n\n"
+            "View scores: {{ scores_url }}\n"
+        ),
         "required_context": [
             {"name": "course_title", "description": "Course title."},
             {"name": "project_title", "description": "Project title."},
+            {"name": "project_score", "description": "Project score for this learner."},
+            {
+                "name": "project_learning_in_public_score",
+                "description": "Project learning in public score for this learner.",
+            },
+            {"name": "project_faq_score", "description": "Project FAQ contribution score for this learner."},
+            {"name": "peer_review_score", "description": "Peer review score for this learner."},
+            {
+                "name": "peer_review_learning_in_public_score",
+                "description": "Peer review learning in public score for this learner.",
+            },
+            {"name": "total_score", "description": "Total project score for this learner."},
             {"name": "scores_url", "description": "URL where scores can be viewed."},
         ],
         "example_context": {
             "course_title": "ML Zoomcamp",
             "project_title": "Midterm Project",
+            "project_score": 70,
+            "project_learning_in_public_score": 5,
+            "project_faq_score": 1,
+            "peer_review_score": 18,
+            "peer_review_learning_in_public_score": 4,
+            "total_score": 98,
             "scores_url": "https://courses.datatalks.club/ml-zoomcamp/project/midterm",
         },
         "is_active": True,

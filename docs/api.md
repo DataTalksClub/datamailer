@@ -188,19 +188,39 @@ Bulk upsert accepts the same scope and list metadata plus a `members` array. It 
 
 Reconcile uses the provided member array as the current desired list. With `remove_absent=true`, existing members missing from the payload are marked removed instead of deleted. This gives CMP an idempotent backfill path for "everyone registered" and "everyone who submitted this homework/project" lists.
 
-List transactional send creates one transactional message per active list member using a shared template and context. The caller must provide a base `idempotency_key`; Datamailer appends each member `source_object_key` so retrying the same list send does not duplicate per-member email:
+List transactional send creates one transactional message per active list member using a shared template and context. The caller must provide a base `idempotency_key`; Datamailer appends each member `source_object_key` so retrying the same list send does not duplicate per-member email.
+
+The request can include `list` and `members`. When `members` is present, Datamailer syncs the recipient list before sending. The default `member_sync` mode is `reconcile`, which marks existing active members absent from the request as removed. Use `member_sync=upsert` to only add or update the provided members. Each member's metadata is merged into that recipient's template context and is also available under `member`.
 
 ```json
 {
   "audience": "dtc-courses",
   "client": "dtc-courses",
-  "template_key": "homework-score-published",
+  "template_key": "homework-score-notification",
   "idempotency_key": "homework-score:ml-zoomcamp-2026:homework-1",
   "context": {
     "course_title": "ML Zoomcamp 2026",
     "homework_title": "Homework 1",
     "scores_url": "https://courses.example.com/courses/ml-zoomcamp-2026/"
   },
+  "list": {
+    "type": "homework_submitters",
+    "name": "ML Zoomcamp 2026 Homework 1 submitters"
+  },
+  "members": [
+    {
+      "source_object_key": "homework-submission:123",
+      "email": "learner@example.com",
+      "status": "active",
+      "metadata": {
+        "submission_id": 123,
+        "questions_score": 6,
+        "learning_in_public_score": 2,
+        "faq_score": 1,
+        "total_score": 9
+      }
+    }
+  ],
   "metadata": {
     "source": "course-management-platform",
     "event": "homework_score_publication"

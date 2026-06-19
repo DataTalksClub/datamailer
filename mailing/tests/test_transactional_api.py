@@ -407,6 +407,90 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     assert len(enqueued) == 1
 
 
+def test_recipient_list_send_can_sync_members_and_render_member_context(
+    client,
+    audience,
+    api_client_record,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    score_template = EmailTemplate.objects.create(
+        client=api_client_record,
+        key="homework-score-notification",
+        name="Homework score notification",
+        subject="Score: {{ total_score }}",
+        html_body="<p>{{ homework_title }}: {{ total_score }}</p><p>{{ member.submission_id }}</p>",
+        text_body="{{ homework_title }}: {{ total_score }} / {{ member.submission_id }}",
+        required_context=[
+            {"name": "homework_title"},
+            {"name": "total_score"},
+        ],
+    )
+    old_contact = Contact.objects.create(email="old@example.com")
+    recipient_list = RecipientList.objects.create(
+        client=api_client_record,
+        audience=audience,
+        key="homework-submitters:ml-zoomcamp-2026:homework-1",
+        type="homework_submitters",
+        name="Homework 1 submitters",
+        member_count=1,
+        active_member_count=1,
+    )
+    RecipientListMember.objects.create(
+        recipient_list=recipient_list,
+        contact=old_contact,
+        email=old_contact.normalized_email,
+        source_object_key="homework-submission:old",
+    )
+
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "template_key": score_template.key,
+        "idempotency_key": "homework-score:homework-1",
+        "context": {
+            "homework_title": "Homework 1",
+        },
+        "metadata": {"source": "score-publication"},
+        "list": {
+            "type": "homework_submitters",
+            "name": "Homework 1 submitters",
+            "metadata": {"course_slug": "ml-zoomcamp-2026"},
+        },
+        "members": [
+            {
+                "source_object_key": "homework-submission:1",
+                "email": "learner@example.com",
+                "status": "active",
+                "metadata": {
+                    "submission_id": 1,
+                    "total_score": 9,
+                    "course_slug": "ml-zoomcamp-2026",
+                    "homework_slug": "homework-1",
+                },
+            }
+        ],
+    }
+
+    response = post_recipient_list_transactional(client, recipient_list.key, payload)
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["member_sync"]["upsert_count"] == 1
+    assert body["member_sync"]["removed_count"] == 1
+    assert body["created_count"] == 1
+    message = TransactionalMessage.objects.get()
+    assert message.email == "learner@example.com"
+    assert message.context["total_score"] == 9
+    assert message.context["member"]["submission_id"] == 1
+    assert message.subject == "Score: 9"
+    assert "Homework 1: 9" in message.text_body
+    assert message.metadata["recipient_list_member_metadata"]["total_score"] == 9
+    assert RecipientListMember.objects.get(source_object_key="homework-submission:old").active is False
+    assert len(enqueued) == 1
+
+
 def test_transactional_send_uses_client_default_sender(client, api_client_record, template, monkeypatch):
     api_client_record.default_sender_id = "courses"
     api_client_record.sender_emails = [

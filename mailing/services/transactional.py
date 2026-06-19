@@ -17,6 +17,10 @@ from mailing.queue_contracts import CONTRACT_VERSION, TRANSACTIONAL_EMAIL_CONTRA
 from mailing.services.api import ApiValidationError, isoformat, validate_contact_scope
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import is_transactional_email_allowed, normalize_email, upsert_contact
+from mailing.services.recipient_lists import (
+    bulk_upsert_recipient_list_members_for_client,
+    reconcile_recipient_list_for_client,
+)
 from mailing.services.senders import normalize_sender_id, resolve_sender_email
 from mailing.services.transactional_catalog import validate_template_context
 from mailing.services.transactional_rendering import render_template_string
@@ -96,29 +100,38 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
     payload = validate_recipient_list_send_payload(data, authenticated_client)
     template = get_transactional_template(authenticated_client, payload["template_key"])
     sender = resolve_sender_email(authenticated_client, payload["from_email"])
-    validate_template_context(template, payload["context"])
-
-    recipient_list = (
-        RecipientList.objects.select_related("client", "audience")
-        .filter(
-            client=authenticated_client,
-            audience=payload["audience"],
-            key=list_key,
-        )
-        .first()
-    )
-    if recipient_list is None:
-        raise ApiValidationError({"list_key": "not_found"}, status_code=404)
 
     queue_payloads = []
     created_count = 0
     enqueued_count = 0
     skipped_count = 0
     idempotent_replay_count = 0
+    member_sync_result = None
 
     with transaction.atomic():
+        if payload["members"] is not None:
+            member_sync_result = sync_recipient_list_members_for_send(list_key, payload, authenticated_client)
+
+        recipient_list = (
+            RecipientList.objects.select_related("client", "audience")
+            .filter(
+                client=authenticated_client,
+                audience=payload["audience"],
+                key=list_key,
+            )
+            .first()
+        )
+        if recipient_list is None:
+            raise ApiValidationError({"list_key": "not_found"}, status_code=404)
+
         members = list(recipient_list.members.select_related("contact").filter(active=True).order_by("id"))
-        for member in members:
+        member_contexts = [
+            (member, recipient_list_member_context(payload["context"], member.metadata)) for member in members
+        ]
+        for _, context in member_contexts:
+            validate_template_context(template, context)
+
+        for member, context in member_contexts:
             idempotency_key = f"{payload['idempotency_key']}:{member.source_object_key}"
             existing = find_existing_message(authenticated_client, idempotency_key)
             if existing is not None:
@@ -129,12 +142,13 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                 "email": member.email,
                 "template_key": template.key,
                 "idempotency_key": idempotency_key,
-                "context": payload["context"],
+                "context": context,
                 "metadata": payload["metadata"]
                 | {
                     "recipient_list_key": recipient_list.key,
                     "recipient_list_member_id": member.id,
                     "source_object_key": member.source_object_key,
+                    "recipient_list_member_metadata": member.metadata,
                     "audience": recipient_list.audience.slug,
                 },
                 "from_email": payload["from_email"],
@@ -190,7 +204,7 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
 
         transaction.on_commit(enqueue_payloads)
 
-    return {
+    response = {
         "recipient_list": {
             "key": recipient_list.key,
             "active_member_count": recipient_list.active_member_count,
@@ -202,6 +216,31 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
         "skipped_count": skipped_count,
         "idempotent_replay_count": idempotent_replay_count,
     }
+    if member_sync_result is not None:
+        response["member_sync"] = member_sync_result
+    return response
+
+
+def sync_recipient_list_members_for_send(list_key, payload, authenticated_client):
+    sync_payload = {
+        "audience": payload["audience"].slug,
+        "client": payload["client"].slug,
+        "members": payload["members"],
+    }
+    if payload["list"] is not None:
+        sync_payload["list"] = payload["list"]
+    if payload["member_sync"] == "reconcile":
+        sync_payload["remove_absent"] = payload["remove_absent_members"]
+        return reconcile_recipient_list_for_client(list_key, sync_payload, authenticated_client)
+    return bulk_upsert_recipient_list_members_for_client(list_key, sync_payload, authenticated_client)
+
+
+def recipient_list_member_context(base_context, member_metadata):
+    member = member_metadata if isinstance(member_metadata, dict) else {}
+    context = member.copy()
+    context.update(base_context)
+    context["member"] = member.copy()
+    return context
 
 
 def validate_transactional_send_payload(data):
@@ -284,6 +323,29 @@ def validate_recipient_list_send_payload(data, authenticated_client):
     elif not isinstance(metadata, dict):
         errors["metadata"] = "must_be_object"
 
+    members = data.get("members")
+    if members is None:
+        members = None
+    elif not isinstance(members, list):
+        errors["members"] = "must_be_list"
+
+    member_sync = data.get(
+        "member_sync",
+        "reconcile" if members is not None else "upsert",
+    )
+    if member_sync not in {"upsert", "reconcile"}:
+        errors["member_sync"] = "invalid"
+
+    remove_absent_members = data.get("remove_absent_members", True)
+    if not isinstance(remove_absent_members, bool):
+        errors["remove_absent_members"] = "must_be_boolean"
+
+    list_data = data.get("list")
+    if list_data is None:
+        list_data = None
+    elif not isinstance(list_data, dict):
+        errors["list"] = "must_be_object"
+
     from_email = ""
     if "from_email" in data and data.get("from_email") not in (None, ""):
         try:
@@ -301,6 +363,10 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         "idempotency_key": idempotency_key.strip(),
         "context": context,
         "metadata": metadata,
+        "members": members,
+        "member_sync": member_sync,
+        "remove_absent_members": remove_absent_members,
+        "list": list_data,
         "from_email": from_email,
     }
 

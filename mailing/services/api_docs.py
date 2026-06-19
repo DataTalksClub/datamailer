@@ -1152,7 +1152,7 @@ OPENAPI_SPEC = {
             "post": {
                 "tags": ["Recipient Lists"],
                 "summary": "Send transactional email to recipient list",
-                "description": "Creates one transactional message per active list member. The base idempotency key is expanded with each member source object key.",
+                "description": "Optionally reconciles or upserts list members, then creates one transactional message per active list member. The base idempotency key is expanded with each member source object key. Member metadata is merged into each recipient context and is also available under the member key.",
                 "security": [{"BearerAuth": []}],
                 "parameters": [LIST_KEY_PARAM],
                 "requestBody": json_body("#/components/schemas/RecipientListTransactionalSendRequest"),
@@ -1405,6 +1405,20 @@ OPENAPI_SPEC = {
                             "idempotency_key": {"type": "string"},
                             "context": {"type": "object"},
                             "metadata": {"type": "object"},
+                            "list": {"$ref": "#/components/schemas/RecipientListInput"},
+                            "members": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/RecipientListMemberInput"},
+                            },
+                            "member_sync": {
+                                "type": "string",
+                                "enum": ["reconcile", "upsert"],
+                                "default": "reconcile",
+                            },
+                            "remove_absent_members": {
+                                "type": "boolean",
+                                "default": True,
+                            },
                             "from_email": {"type": "string"},
                         },
                     },
