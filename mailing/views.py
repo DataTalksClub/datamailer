@@ -66,6 +66,12 @@ from mailing.services.contact_import_export import (
     export_contacts_csv_for_client,
     export_contacts_for_client,
 )
+from mailing.services.mock_inbox import (
+    clear_mock_inbox,
+    get_mock_inbox_message,
+    list_mock_inbox_messages,
+    mock_inbox_enabled,
+)
 from mailing.services.operator_management import (
     add_contact_tag,
     client_api_keys_for_detail,
@@ -1351,6 +1357,60 @@ def api_transactional_send(request):
         return JsonResponse(exc.payload, status=exc.status_code)
 
     return JsonResponse(payload, status=202)
+
+
+def _mock_inbox_disabled_response():
+    return JsonResponse(
+        {
+            "error": {
+                "code": "mock_inbox_disabled",
+                "message": "The mock inbox is not enabled on this deployment.",
+            }
+        },
+        status=404,
+    )
+
+
+@csrf_exempt
+def api_mock_inbox_messages(request):
+    if request.method not in {"GET", "DELETE"}:
+        return method_not_allowed_response(["GET", "DELETE"])
+
+    if not mock_inbox_enabled():
+        return _mock_inbox_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = list_mock_inbox_messages(request.GET, client)
+        else:
+            payload = clear_mock_inbox(api_request_data(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_mock_inbox_message_detail(request, message_id):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    if not mock_inbox_enabled():
+        return _mock_inbox_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_mock_inbox_message(message_id, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
 
 
 @csrf_exempt

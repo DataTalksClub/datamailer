@@ -6,6 +6,7 @@ from django.utils import timezone
 from mailing.aws import ses_client
 from mailing.models import EmailEvent, EmailEventType, TransactionalMessage, TransactionalMessageStatus
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
+from mailing.services.mock_inbox import is_mock_address
 from mailing.ses import send_email
 
 TERMINAL_ACK_STATUSES = {
@@ -62,6 +63,20 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
             if message.status != TransactionalMessageStatus.QUEUED:
                 _record_retryable_error(message.id, f"transactional message status is not sendable: {message.status}")
                 raise TransientSendFailure(f"transactional message status is not sendable: {message.status}")
+
+            if is_mock_address(message.email):
+                sent_at = timezone.now()
+                message.status = TransactionalMessageStatus.SENT
+                message.ses_message_id = f"mock-inbox:{message.id}"
+                message.sent_at = sent_at
+                message.last_error = ""
+                message.save(update_fields=["status", "ses_message_id", "sent_at", "last_error", "updated_at"])
+                _append_event(
+                    message,
+                    EmailEventType.SENT,
+                    {"captured": True, "mock_inbox": True, "sent_at": sent_at.isoformat()},
+                )
+                return message
 
             source = source or message.from_email or message.client.default_from_email or settings.DEFAULT_FROM_EMAIL
             try:

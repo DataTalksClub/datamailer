@@ -150,3 +150,13 @@ SES_WEBHOOKS_SIGNATURE_MODE = os.environ.get(
     "mock" if DEBUG or TESTING else "strict",
 )
 SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION = bool_env("SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION", default=False)
+
+# Mock inbox: capture-only test mailbox for e2e tests.
+# When enabled, transactional emails addressed to a recognized mock address are
+# still persisted as TransactionalMessage rows (so they can be inspected via the
+# mock-inbox API) but real SES delivery is skipped. An address is recognized as a
+# mock address when its domain matches MOCK_INBOX_DOMAIN, or when its local part
+# carries the MOCK_INBOX_PLUS_TAG sub-address (e.g. "e2e+anything@example.com").
+MOCK_INBOX_ENABLED = bool_env("MOCK_INBOX_ENABLED", default=DEBUG or TESTING)
+MOCK_INBOX_DOMAIN = os.environ.get("MOCK_INBOX_DOMAIN", "mailbox.test").strip().lower()
+MOCK_INBOX_PLUS_TAG = os.environ.get("MOCK_INBOX_PLUS_TAG", "e2e").strip().lower()

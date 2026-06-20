@@ -109,6 +109,12 @@ urlpatterns = [
         name="api_transactional_template",
     ),
     path("api/transactional/send", views.api_transactional_send, name="api_transactional_send"),
+    path("api/mock-inbox/messages", views.api_mock_inbox_messages, name="api_mock_inbox_messages"),
+    path(
+        "api/mock-inbox/messages/<int:message_id>",
+        views.api_mock_inbox_message_detail,
+        name="api_mock_inbox_message_detail",
+    ),
     path(
         "api/transactional/messages/<int:message_id>",
         views.api_transactional_message_status,
