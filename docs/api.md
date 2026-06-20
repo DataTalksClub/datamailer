@@ -320,6 +320,99 @@ GET /api/contacts/{contact_id}/history?audience=dtc-courses&client=dtc-courses&l
 
 Returns safe scoped campaign recipient, transactional message, and event history. Secret hashes and delivery link tokens are never returned.
 
+## Mock Inbox (test-only)
+
+The mock inbox lets end-to-end tests verify that an email was "delivered"
+without sending real mail. It is gated behind `MOCK_INBOX_ENABLED` (defaults on
+when `DEBUG` or under tests; explicitly opt in on shared deployments).
+
+An address is recognised as a **mock address** when either:
+
+- its domain equals `MOCK_INBOX_DOMAIN` (default `mailbox.test`), e.g.
+  `anyone@mailbox.test`; or
+- its local part is sub-addressed with `MOCK_INBOX_PLUS_TAG` (default `e2e`),
+  e.g. `e2e+homework@example.com`.
+
+Transactional sends to a mock address are still persisted as
+`TransactionalMessage` rows (rendered subject/body, template key, context,
+metadata, idempotency key) but the worker **skips real SES delivery** and marks
+them `sent` with a `ses_message_id` of `mock-inbox:{id}`. These endpoints read
+and clear those captured rows. All routes use the same client Bearer auth and
+are scoped to the authenticated client. When `MOCK_INBOX_ENABLED` is off, every
+route returns `404 {"error": {"code": "mock_inbox_disabled"}}`.
+
+### List captured messages
+
+```text
+GET /api/mock-inbox/messages?address=e2e+homework@example.com&limit=25
+```
+
+Returns recently captured messages for the mock address, newest first. `limit`
+is optional (default 25, max 200). Sending a non-mock address returns
+`422 {"error": {"code": "validation_error", "fields": {"address": "not_a_mock_address"}}}`.
+
+```json
+{
+  "address": "e2e+homework@example.com",
+  "count": 1,
+  "messages": [
+    {
+      "id": 42,
+      "email": "e2e+homework@example.com",
+      "from_email": "newsletter@example.com",
+      "subject": "Submission received",
+      "template_key": "homework-confirmation",
+      "status": "sent",
+      "idempotency_key": "homework-submission:123",
+      "created_at": "2026-06-20T10:00:00Z"
+    }
+  ]
+}
+```
+
+### Fetch one captured message (with body and context)
+
+```text
+GET /api/mock-inbox/messages/{message_id}
+```
+
+Returns the full message including `html_body`, `text_body`, `context`, and
+`metadata`. Returns `404` if the id is unknown, not owned by the client, or not
+a mock address.
+
+```json
+{
+  "message": {
+    "id": 42,
+    "email": "e2e+homework@example.com",
+    "subject": "Submission received",
+    "template_key": "homework-confirmation",
+    "status": "sent",
+    "idempotency_key": "homework-submission:123",
+    "created_at": "2026-06-20T10:00:00Z",
+    "html_body": "<p>Thanks ...</p>",
+    "text_body": "Thanks ...",
+    "context": {"course_slug": "e2e-smoke-1718880000"},
+    "metadata": {"event": "homework_submission"}
+  }
+}
+```
+
+### Clear captured messages (teardown)
+
+```text
+DELETE /api/mock-inbox/messages
+```
+
+With a JSON body `{"address": "e2e+homework@example.com"}` deletes captured
+messages for that mock address. With no body it deletes **all** mock-addressed
+messages for the client (real-recipient messages are never touched). Related
+`EmailEvent` rows cascade-delete.
+
+```json
+{"address": "e2e+homework@example.com", "deleted_count": 1}
+```
+
 ## Public and Provider Routes
 
 Public tracking, unsubscribe, and provider webhook routes are documented in OpenAPI and the in-app endpoint reference for integration context:
