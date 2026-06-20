@@ -72,12 +72,6 @@ from mailing.services.mock_inbox import (
     list_mock_inbox_messages,
     mock_inbox_enabled,
 )
-from mailing.services.real_inbox import (
-    clear_received_messages,
-    get_received_message,
-    list_received_messages,
-    real_inbox_enabled,
-)
 from mailing.services.operator_management import (
     add_contact_tag,
     client_api_keys_for_detail,
@@ -122,6 +116,12 @@ from mailing.services.operator_ui import (
     event_context,
     metadata_summary,
     parse_contact_explorer_filters,
+)
+from mailing.services.real_inbox import (
+    clear_received_messages,
+    get_received_message,
+    list_received_messages,
+    real_inbox_enabled,
 )
 from mailing.services.recipient_lists import (
     bulk_upsert_recipient_list_members_for_client,
