@@ -7,6 +7,7 @@ from mailing.aws import ses_client
 from mailing.models import EmailEvent, EmailEventType, TransactionalMessage, TransactionalMessageStatus
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.mock_inbox import is_mock_address
+from mailing.services.real_inbox import is_real_inbox_address
 from mailing.ses import send_email
 
 TERMINAL_ACK_STATUSES = {
@@ -64,7 +65,10 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
                 _record_retryable_error(message.id, f"transactional message status is not sendable: {message.status}")
                 raise TransientSendFailure(f"transactional message status is not sendable: {message.status}")
 
-            if is_mock_address(message.email):
+            # Real-inbox (SES inbound) test addresses must take the real SES send
+            # path so the message can be received back from the inbound S3 bucket.
+            # They take precedence over the mock inbox short-circuit below.
+            if is_mock_address(message.email) and not is_real_inbox_address(message.email):
                 sent_at = timezone.now()
                 message.status = TransactionalMessageStatus.SENT
                 message.ses_message_id = f"mock-inbox:{message.id}"
