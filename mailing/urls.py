@@ -115,6 +115,12 @@ urlpatterns = [
         views.api_mock_inbox_message_detail,
         name="api_mock_inbox_message_detail",
     ),
+    path("api/inbox/messages", views.api_real_inbox_messages, name="api_real_inbox_messages"),
+    path(
+        "api/inbox/messages/<path:s3_key>",
+        views.api_real_inbox_message_detail,
+        name="api_real_inbox_message_detail",
+    ),
     path(
         "api/transactional/messages/<int:message_id>",
         views.api_transactional_message_status,

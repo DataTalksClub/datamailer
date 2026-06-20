@@ -413,6 +413,104 @@ messages for the client (real-recipient messages are never touched). Related
 {"address": "e2e+homework@example.com", "deleted_count": 1}
 ```
 
+## Real Inbox (SES inbound, test-only)
+
+The real inbox is the counterpart to the mock inbox: instead of skipping SES, it
+proves an email was **actually sent via SES and received in a real mailbox**. The
+receiving side is infrastructure (`datamailer-infra`): an SES receipt rule for the
+inbound domain writes every raw MIME message to an S3 bucket. Datamailer really sends
+to the test address, and this read API parses the received mail back out of S3.
+
+An address is a **real-inbox address** when its domain (ignoring any `+tag`
+sub-address) equals `REAL_INBOX_DOMAIN` (default `mailer.dtcdev.click`), e.g.
+`e2e+e2e-smoke-1718880000@mailer.dtcdev.click` or
+`datamailer+<tag>@mailer.dtcdev.click`. Such addresses always take the **real SES
+send path** (they are never short-circuited by the mock inbox), independent of
+`REAL_INBOX_ENABLED`.
+
+The read/clear endpoints below are gated by `REAL_INBOX_ENABLED` and require
+`REAL_INBOX_S3_BUCKET` (plus `REAL_INBOX_S3_PREFIX`, default `raw/`). All routes use
+the same client Bearer auth. When `REAL_INBOX_ENABLED` is off, every route returns
+`404 {"error": {"code": "real_inbox_disabled"}}`. When the bucket is not configured,
+they return `503 {"error": {"code": "validation_error", "fields": {"config": "real_inbox_s3_bucket_not_configured"}}}`.
+
+> **Eventual consistency:** SES inbound delivery to S3 is asynchronous. In practice a
+> message lands within ~5-15 seconds; e2e tests should poll `GET /api/inbox/messages`
+> until `count > 0` (or a timeout of ~60s). Received mail is not scoped to a
+> Datamailer client — only to the recipient address — so isolate runs with a unique
+> `+<tag>`. The `address` query value contains a `+`; **URL-encode it** (`%2B`) so it
+> is not decoded to a space.
+
+### List received messages
+
+```text
+GET /api/inbox/messages?address=e2e%2Be2e-smoke-1718880000@mailer.dtcdev.click&limit=25
+```
+
+Polls the inbound S3 bucket, parses each raw MIME object, and returns the messages
+whose `To`/`Cc`/`X-Original-To` includes the address, newest first by S3
+`LastModified`. `limit` is optional (default 25, max 200). A non-real address returns
+`422 {"error": {"code": "validation_error", "fields": {"address": "not_a_real_inbox_address"}}}`.
+
+```json
+{
+  "address": "e2e+e2e-smoke-1718880000@mailer.dtcdev.click",
+  "count": 1,
+  "messages": [
+    {
+      "s3_key": "raw/s3oudir75a3gb1k2qlht3mianpfvr5h04ltujlo1",
+      "message_id": "<...@email.amazonses.com>",
+      "from_email": "no-reply@dtcdev.click",
+      "to": ["e2e+e2e-smoke-1718880000@mailer.dtcdev.click"],
+      "subject": "Submission received",
+      "received_at": "2026-06-20T10:04:22Z"
+    }
+  ]
+}
+```
+
+### Fetch one received message (with parsed body and headers)
+
+```text
+GET /api/inbox/messages/{s3_key}?address=e2e%2B<tag>@mailer.dtcdev.click
+```
+
+`{s3_key}` is the `s3_key` from the list response (it contains `/`, matched as a path).
+The `address` query param scopes the lookup so one address cannot read another's mail.
+Returns the parsed message including `text_body`, `html_body`, `from_email`, `to`,
+`subject`, `message_id`, `received_at`, and the SES `spam_verdict`/`virus_verdict`.
+Returns `404` when the key is unknown or not addressed to `address`.
+
+```json
+{
+  "message": {
+    "s3_key": "raw/s3oudir75a3gb1k2qlht3mianpfvr5h04ltujlo1",
+    "message_id": "<...@email.amazonses.com>",
+    "from_email": "no-reply@dtcdev.click",
+    "to": ["e2e+e2e-smoke-1718880000@mailer.dtcdev.click"],
+    "subject": "Submission received",
+    "received_at": "2026-06-20T10:04:22Z",
+    "text_body": "Thanks ...",
+    "html_body": "<p>Thanks ...</p>",
+    "spam_verdict": "PASS",
+    "virus_verdict": "PASS"
+  }
+}
+```
+
+### Clear received messages (teardown)
+
+```text
+DELETE /api/inbox/messages?address=e2e%2B<tag>@mailer.dtcdev.click
+```
+
+Deletes every received S3 object addressed to the real-inbox `address` (required).
+Use a unique `+<tag>` per run so teardown only removes that run's mail.
+
+```json
+{"address": "e2e+e2e-smoke-1718880000@mailer.dtcdev.click", "deleted_count": 1}
+```
+
 ## Public and Provider Routes
 
 Public tracking, unsubscribe, and provider webhook routes are documented in OpenAPI and the in-app endpoint reference for integration context:

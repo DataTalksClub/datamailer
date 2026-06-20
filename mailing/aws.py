@@ -16,3 +16,7 @@ def sqs_client(*, endpoint_url=None):
 
 def ses_client(*, endpoint_url=None):
     return aws_client("ses", endpoint_url=endpoint_url)
+
+
+def s3_client(*, endpoint_url=None):
+    return aws_client("s3", endpoint_url=endpoint_url)

@@ -117,6 +117,12 @@ from mailing.services.operator_ui import (
     metadata_summary,
     parse_contact_explorer_filters,
 )
+from mailing.services.real_inbox import (
+    clear_received_messages,
+    get_received_message,
+    list_received_messages,
+    real_inbox_enabled,
+)
 from mailing.services.recipient_lists import (
     bulk_upsert_recipient_list_members_for_client,
     get_recipient_list_for_client,
@@ -1407,6 +1413,60 @@ def api_mock_inbox_message_detail(request, message_id):
 
     try:
         payload = get_mock_inbox_message(message_id, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def _real_inbox_disabled_response():
+    return JsonResponse(
+        {
+            "error": {
+                "code": "real_inbox_disabled",
+                "message": "The real inbox (SES inbound) read API is not enabled on this deployment.",
+            }
+        },
+        status=404,
+    )
+
+
+@csrf_exempt
+def api_real_inbox_messages(request):
+    if request.method not in {"GET", "DELETE"}:
+        return method_not_allowed_response(["GET", "DELETE"])
+
+    if not real_inbox_enabled():
+        return _real_inbox_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = list_received_messages(request.GET, client)
+        else:
+            payload = clear_received_messages(api_request_data(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_real_inbox_message_detail(request, s3_key):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    if not real_inbox_enabled():
+        return _real_inbox_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_received_message(request.GET, s3_key, client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 
