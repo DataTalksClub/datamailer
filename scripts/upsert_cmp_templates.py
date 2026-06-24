@@ -59,6 +59,7 @@ TEMPLATES = {
             {"name": "profile_url", "description": "Preference settings URL."},
             {"name": "intro_text", "description": "Opening sentence."},
             {"name": "notification_footer", "description": "Preference footer."},
+            {"name": "notification_footer_text", "description": "Plain-text preference footer."},
         ],
         "example_context": {
             "email_subject": "Homework submission saved: Homework 1",
@@ -106,6 +107,7 @@ TEMPLATES = {
             {"name": "profile_url", "description": "Preference settings URL."},
             {"name": "intro_text", "description": "Opening sentence."},
             {"name": "notification_footer", "description": "Preference footer."},
+            {"name": "notification_footer_text", "description": "Plain-text preference footer."},
         ],
         "example_context": {
             "email_subject": "Project submission saved: Midterm Project",
@@ -137,36 +139,71 @@ TEMPLATES = {
         "description": "Tell homework submitters that scores are available.",
         "subject": "Scores available: {{ homework_title }}",
         "html_body": (
-            "<p>Scores for <strong>{{ homework_title }}</strong> in {{ course_title }} are available.</p>"
+            "<p>Your score for <strong>{{ homework_title }}</strong> in {{ course_title }} is ready.</p>"
             "<p>Your score: <strong>{{ total_score }}</strong></p>"
-            "<p>Breakdown: questions {{ questions_score }}, learning in public {{ learning_in_public_score }}, "
-            "FAQ contribution {{ faq_score }}.</p>"
-            '<p><a href="{{ scores_url }}">View scores</a></p>'
+            "<ul>"
+            "<li>Questions: {{ questions_score }}</li>"
+            "<li>Learning in public: {{ learning_in_public_score }}</li>"
+            "<li>FAQ contribution: {{ faq_score }}</li>"
+            "</ul>"
+            "<h2>Next steps</h2>"
+            "<ul>"
+            '<li><a href="{{ scores_url }}">Review your homework score</a></li>'
+            '<li><a href="{{ leaderboard_url }}">Check the course leaderboard</a></li>'
+            '<li><a href="{{ course_url }}">Open the course page</a></li>'
+            "</ul>"
+            '<hr><p style="color:#57606a;font-size:13px;line-height:1.5">'
+            "{{ notification_footer }} "
+            'To stop receiving these emails, update your profile settings: '
+            '<a href="{{ profile_url }}">{{ profile_url }}</a></p>'
         ),
         "text_body": (
-            "Scores for {{ homework_title }} in {{ course_title }} are available.\n\n"
+            "Your score for {{ homework_title }} in {{ course_title }} is ready.\n\n"
             "Your score: {{ total_score }}\n"
-            "Breakdown: questions {{ questions_score }}, learning in public {{ learning_in_public_score }}, "
-            "FAQ contribution {{ faq_score }}.\n\n"
-            "View scores: {{ scores_url }}\n"
+            "Breakdown:\n"
+            "- Questions: {{ questions_score }}\n"
+            "- Learning in public: {{ learning_in_public_score }}\n"
+            "- FAQ contribution: {{ faq_score }}\n\n"
+            "Next steps:\n"
+            "- Review your homework score: {{ scores_url }}\n"
+            "- Check the course leaderboard: {{ leaderboard_url }}\n"
+            "- Open the course page: {{ course_url }}\n\n"
+            "{{ notification_footer_text }}\n"
         ),
         "required_context": [
             {"name": "course_title", "description": "Course title."},
             {"name": "homework_title", "description": "Homework title."},
+            {"name": "course_url", "description": "Course page URL."},
             {"name": "questions_score", "description": "Homework question score for this learner."},
             {"name": "learning_in_public_score", "description": "Learning in public score for this learner."},
             {"name": "faq_score", "description": "FAQ contribution score for this learner."},
             {"name": "total_score", "description": "Total homework score for this learner."},
             {"name": "scores_url", "description": "URL where scores can be viewed."},
+            {"name": "leaderboard_url", "description": "Course leaderboard URL."},
+            {"name": "profile_url", "description": "Preference settings URL."},
+            {"name": "notification_footer", "description": "Preference footer."},
+            {"name": "notification_footer_text", "description": "Plain-text preference footer."},
         ],
         "example_context": {
             "course_title": "ML Zoomcamp",
             "homework_title": "Homework 1",
+            "course_url": "https://courses.datatalks.club/ml-zoomcamp/",
             "questions_score": 6,
             "learning_in_public_score": 2,
             "faq_score": 1,
             "total_score": 9,
-            "scores_url": "https://courses.datatalks.club/ml-zoomcamp/",
+            "scores_url": "https://courses.datatalks.club/ml-zoomcamp/homework/homework-1",
+            "leaderboard_url": "https://courses.datatalks.club/ml-zoomcamp/leaderboard",
+            "profile_url": "https://courses.datatalks.club/accounts/settings/",
+            "notification_footer": (
+                "You are receiving this because you submitted Homework 1 for ML Zoomcamp and "
+                "homework/project submission emails are enabled in your profile."
+            ),
+            "notification_footer_text": (
+                "If you don't want to receive homework/project submission and score emails, "
+                "turn off homework and project submission emails in your profile: "
+                "https://courses.datatalks.club/accounts/settings/"
+            ),
         },
         "is_active": True,
     },
@@ -175,24 +212,56 @@ TEMPLATES = {
         "description": "Tell project submitters that scores are available.",
         "subject": "Scores available: {{ project_title }}",
         "html_body": (
-            "<p>Scores for <strong>{{ project_title }}</strong> in {{ course_title }} are available.</p>"
+            "<p>Your score for <strong>{{ project_title }}</strong> in {{ course_title }} is ready.</p>"
             "<p>Your score: <strong>{{ total_score }}</strong></p>"
-            "<p>Breakdown: project {{ project_score }}, project learning in public {{ project_learning_in_public_score }}, "
-            "project FAQ {{ project_faq_score }}, peer review {{ peer_review_score }}, "
-            "peer review learning in public {{ peer_review_learning_in_public_score }}.</p>"
-            '<p><a href="{{ scores_url }}">View scores</a></p>'
+            "<ul>"
+            "<li>Project: {{ project_score }}</li>"
+            "<li>Project learning in public: {{ project_learning_in_public_score }}</li>"
+            "<li>Project FAQ: {{ project_faq_score }}</li>"
+            "<li>Peer review: {{ peer_review_score }}</li>"
+            "<li>Peer review learning in public: {{ peer_review_learning_in_public_score }}</li>"
+            "</ul>"
+            "{% if github_link %}"
+            "<p>Submission reviewed: "
+            '<a href="{{ github_link }}">GitHub repository</a>'
+            "{% if commit_id %} at commit <code>{{ commit_id }}</code>{% endif %}.</p>"
+            "{% endif %}"
+            "<h2>Next steps</h2>"
+            "<ul>"
+            '<li><a href="{{ scores_url }}">Review your project result</a></li>'
+            '<li><a href="{{ project_url }}">Open the project page</a></li>'
+            '<li><a href="{{ leaderboard_url }}">Check the course leaderboard</a></li>'
+            '<li><a href="{{ course_url }}">Open the course page</a></li>'
+            "</ul>"
+            '<hr><p style="color:#57606a;font-size:13px;line-height:1.5">'
+            "{{ notification_footer }} "
+            'To stop receiving these emails, update your profile settings: '
+            '<a href="{{ profile_url }}">{{ profile_url }}</a></p>'
         ),
         "text_body": (
-            "Scores for {{ project_title }} in {{ course_title }} are available.\n\n"
+            "Your score for {{ project_title }} in {{ course_title }} is ready.\n\n"
             "Your score: {{ total_score }}\n"
-            "Breakdown: project {{ project_score }}, project learning in public {{ project_learning_in_public_score }}, "
-            "project FAQ {{ project_faq_score }}, peer review {{ peer_review_score }}, "
-            "peer review learning in public {{ peer_review_learning_in_public_score }}.\n\n"
-            "View scores: {{ scores_url }}\n"
+            "Breakdown:\n"
+            "- Project: {{ project_score }}\n"
+            "- Project learning in public: {{ project_learning_in_public_score }}\n"
+            "- Project FAQ: {{ project_faq_score }}\n"
+            "- Peer review: {{ peer_review_score }}\n"
+            "- Peer review learning in public: {{ peer_review_learning_in_public_score }}\n\n"
+            "{% if github_link %}"
+            "Submission reviewed: {{ github_link }}{% if commit_id %} at commit {{ commit_id }}{% endif %}\n\n"
+            "{% endif %}"
+            "Next steps:\n"
+            "- Review your project result: {{ scores_url }}\n"
+            "- Open the project page: {{ project_url }}\n"
+            "- Check the course leaderboard: {{ leaderboard_url }}\n"
+            "- Open the course page: {{ course_url }}\n\n"
+            "{{ notification_footer_text }}\n"
         ),
         "required_context": [
             {"name": "course_title", "description": "Course title."},
             {"name": "project_title", "description": "Project title."},
+            {"name": "course_url", "description": "Course page URL."},
+            {"name": "project_url", "description": "Project page URL."},
             {"name": "project_score", "description": "Project score for this learner."},
             {
                 "name": "project_learning_in_public_score",
@@ -206,17 +275,36 @@ TEMPLATES = {
             },
             {"name": "total_score", "description": "Total project score for this learner."},
             {"name": "scores_url", "description": "URL where scores can be viewed."},
+            {"name": "leaderboard_url", "description": "Course leaderboard URL."},
+            {"name": "profile_url", "description": "Preference settings URL."},
+            {"name": "notification_footer", "description": "Preference footer."},
+            {"name": "notification_footer_text", "description": "Plain-text preference footer."},
         ],
         "example_context": {
             "course_title": "ML Zoomcamp",
             "project_title": "Midterm Project",
+            "course_url": "https://courses.datatalks.club/ml-zoomcamp/",
+            "project_url": "https://courses.datatalks.club/ml-zoomcamp/project/midterm",
             "project_score": 70,
             "project_learning_in_public_score": 5,
             "project_faq_score": 1,
             "peer_review_score": 18,
             "peer_review_learning_in_public_score": 4,
             "total_score": 98,
-            "scores_url": "https://courses.datatalks.club/ml-zoomcamp/project/midterm",
+            "github_link": "https://github.com/example/project",
+            "commit_id": "abc123",
+            "scores_url": "https://courses.datatalks.club/ml-zoomcamp/project/midterm/results",
+            "leaderboard_url": "https://courses.datatalks.club/ml-zoomcamp/leaderboard",
+            "profile_url": "https://courses.datatalks.club/accounts/settings/",
+            "notification_footer": (
+                "You are receiving this because you submitted Midterm Project for ML Zoomcamp and "
+                "homework/project submission emails are enabled in your profile."
+            ),
+            "notification_footer_text": (
+                "If you don't want to receive homework/project submission and score emails, "
+                "turn off homework and project submission emails in your profile: "
+                "https://courses.datatalks.club/accounts/settings/"
+            ),
         },
         "is_active": True,
     },
@@ -228,20 +316,32 @@ TEMPLATES = {
             "<p>{{ intro_text }}</p>"
             '<p><a href="{{ certificate_url }}">Download certificate</a></p>'
             '<p>Course page: <a href="{{ course_url }}">{{ course_url }}</a></p>'
+            '<hr><p style="color:#57606a;font-size:13px;line-height:1.5">'
+            "{{ notification_footer }} Manage preferences: "
+            '<a href="{{ profile_url }}">{{ profile_url }}</a></p>'
         ),
-        "text_body": "{{ intro_text }}\n\nDownload certificate: {{ certificate_url }}\nCourse page: {{ course_url }}\n",
+        "text_body": (
+            "{{ intro_text }}\n\n"
+            "Download certificate: {{ certificate_url }}\n"
+            "Course page: {{ course_url }}\n\n"
+            "Manage preferences: {{ profile_url }}\n"
+        ),
         "required_context": [
             {"name": "course_title", "description": "Course title."},
             {"name": "certificate_url", "description": "Certificate URL."},
             {"name": "course_url", "description": "Course page URL."},
+            {"name": "profile_url", "description": "Preference settings URL."},
             {"name": "intro_text", "description": "Opening sentence."},
+            {"name": "notification_footer", "description": "Preference footer."},
         ],
         "example_context": {
             "email_subject": "Certificate available: ML Zoomcamp",
             "course_title": "ML Zoomcamp",
             "certificate_url": "https://courses.datatalks.club/certificates/example.pdf",
             "course_url": "https://courses.datatalks.club/ml-zoomcamp/",
+            "profile_url": "https://courses.datatalks.club/accounts/settings/",
             "intro_text": "Congratulations - your certificate for ML Zoomcamp is available.",
+            "notification_footer": "You are receiving this because general course-related emails are enabled.",
         },
         "is_active": True,
     },
@@ -257,7 +357,13 @@ TEMPLATES = {
             "{{ notification_footer }} Manage preferences: "
             '<a href="{{ profile_url }}">{{ profile_url }}</a></p>'
         ),
-        "text_body": "{{ intro_text }}\n\nDeadline: {{ deadline_at }}\n{{ action_text }}\n\nManage preferences: {{ profile_url }}\n",
+        "text_body": (
+            "{{ intro_text }}\n\n"
+            "Deadline: {{ deadline_at }}\n"
+            "{{ action_text }}\n\n"
+            "{{ notification_footer }}\n"
+            "Manage preferences: {{ profile_url }}\n"
+        ),
         "required_context": [
             {"name": "course_title", "description": "Course title."},
             {"name": "item_title", "description": "Homework, project, or peer-review item title."},
@@ -265,6 +371,7 @@ TEMPLATES = {
             {"name": "action_url", "description": "URL for the learner action."},
             {"name": "profile_url", "description": "Preference settings URL."},
             {"name": "intro_text", "description": "Opening sentence."},
+            {"name": "notification_footer", "description": "Preference footer."},
         ],
         "example_context": {
             "email_subject": "Homework deadline soon: Homework 1",
