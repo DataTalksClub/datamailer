@@ -45,6 +45,7 @@ API_DOC_PATHS = {
     "mailing:api_contact_validation": "/api/contacts/{contact_id}/validation",
     "mailing:api_contact_suppression": "/api/contacts/{contact_id}/suppression",
     "mailing:api_contact_history": "/api/contacts/{contact_id}/history",
+    "mailing:api_client_senders": "/api/client/senders",
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
     "mailing:api_recipient_list": "/api/recipient-lists/{list_key}",
@@ -586,7 +587,7 @@ requests.post(
                                 "id": 901,
                                 "email": "learner@example.com",
                                 "from_email": "courses",
-                                "from_email_address": "courses@dtcdev.click",
+                                "from_email_address": "DataTalks.Club Courses <courses@dtcdev.click>",
                                 "template_key": "registration-welcome",
                                 "status": "queued",
                             },
@@ -734,6 +735,8 @@ def endpoint_groups():
         {
             "name": "Imports and Transactional",
             "endpoints": [
+                ("GET", "/api/client/senders", "Get authenticated client sender policy."),
+                ("PUT", "/api/client/senders", "Replace authenticated client sender policy."),
                 ("POST", "/api/contacts/imports", "Bulk JSON import/upsert."),
                 ("POST", "/api/contacts/imports/csv", "CSV upload/import."),
                 ("PUT", "/api/transactional/templates/{template_key}", "Create or update a transactional template."),
@@ -801,6 +804,7 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_contact_validation"]: reverse("mailing:api_contact_validation", args=[123]),
         API_DOC_PATHS["mailing:api_contact_suppression"]: reverse("mailing:api_contact_suppression", args=[123]),
         API_DOC_PATHS["mailing:api_contact_history"]: reverse("mailing:api_contact_history", args=[123]),
+        API_DOC_PATHS["mailing:api_client_senders"]: reverse("mailing:api_client_senders"),
         API_DOC_PATHS["mailing:api_subscribe"]: reverse("mailing:api_subscribe"),
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
         API_DOC_PATHS["mailing:api_recipient_list"]: reverse(
@@ -1164,6 +1168,27 @@ OPENAPI_SPEC = {
                     accepted=True,
                 ),
             }
+        },
+        "/api/client/senders": {
+            "get": {
+                "tags": ["Transactional"],
+                "summary": "Get client sender policy",
+                "description": "Returns configured sender IDs and display addresses for the authenticated client.",
+                "security": [{"BearerAuth": []}],
+                "responses": bearer_responses(
+                    json_response("Client sender policy", "#/components/schemas/ClientSenderPolicy")
+                ),
+            },
+            "put": {
+                "tags": ["Transactional"],
+                "summary": "Replace client sender policy",
+                "description": "Replaces configured sender IDs and the default sender for the authenticated client. The sender email may include an RFC 5322 display name, for example DataTalks.Club Courses <courses@dtcdev.click>.",
+                "security": [{"BearerAuth": []}],
+                "requestBody": json_body("#/components/schemas/ClientSenderPolicyUpdateRequest"),
+                "responses": bearer_responses(
+                    json_response("Client sender policy", "#/components/schemas/ClientSenderPolicy")
+                ),
+            },
         },
         "/api/transactional/send": {
             "post": {
@@ -1724,6 +1749,34 @@ OPENAPI_SPEC = {
                     "transactional_messages": {"type": "array", "items": {"type": "object"}},
                     "events": {"type": "array", "items": {"type": "object"}},
                     "next_cursor": {"type": ["string", "null"]},
+                },
+            },
+            "Sender": {
+                "type": "object",
+                "required": ["id", "email"],
+                "properties": {
+                    "id": {"type": "string", "description": "Configured sender ID used in from_email payloads."},
+                    "email": {
+                        "type": "string",
+                        "description": "Sender address, optionally with display name.",
+                        "examples": ["DataTalks.Club Courses <courses@dtcdev.click>"],
+                    },
+                },
+            },
+            "ClientSenderPolicy": {
+                "type": "object",
+                "properties": {
+                    "client": {"type": "object"},
+                    "default_sender_id": {"type": "string"},
+                    "senders": {"type": "array", "items": {"$ref": "#/components/schemas/Sender"}},
+                },
+            },
+            "ClientSenderPolicyUpdateRequest": {
+                "type": "object",
+                "required": ["default_sender_id", "senders"],
+                "properties": {
+                    "default_sender_id": {"type": "string"},
+                    "senders": {"type": "array", "items": {"$ref": "#/components/schemas/Sender"}},
                 },
             },
             "TransactionalSendRequest": {

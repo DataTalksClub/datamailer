@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from email.utils import parseaddr
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email, validate_slug
@@ -64,6 +65,104 @@ def template_payload(template):
         "created_at": isoformat(template.created_at),
         "updated_at": isoformat(template.updated_at),
     }
+
+
+def sender_policy_payload(client):
+    return {
+        "client": {
+            "organization": client.organization.slug,
+            "slug": client.slug,
+            "name": client.name,
+        },
+        "default_sender_id": client.default_sender_id,
+        "senders": client.sender_emails or [],
+    }
+
+
+def validate_sender_policy_payload(data):
+    errors = {}
+
+    senders = data.get("senders", data.get("sender_emails"))
+    if not isinstance(senders, list) or not senders:
+        errors["senders"] = "must_be_non_empty_list"
+        senders = []
+
+    normalized_senders = []
+    seen_sender_ids = set()
+    for index, sender in enumerate(senders):
+        if not isinstance(sender, dict):
+            errors[f"senders.{index}"] = "must_be_object"
+            continue
+
+        sender_id = sender.get("id")
+        if not isinstance(sender_id, str) or not sender_id.strip():
+            errors[f"senders.{index}.id"] = "required"
+            continue
+        sender_id = sender_id.strip()
+        try:
+            validate_slug(sender_id)
+        except ValidationError:
+            errors[f"senders.{index}.id"] = "invalid"
+            continue
+        if sender_id in seen_sender_ids:
+            errors[f"senders.{index}.id"] = "duplicate"
+            continue
+        seen_sender_ids.add(sender_id)
+
+        sender_email = sender.get("email")
+        if not isinstance(sender_email, str) or not sender_email.strip():
+            errors[f"senders.{index}.email"] = "required"
+            continue
+        sender_email = sender_email.strip()
+        _, parsed_email = parseaddr(sender_email)
+        email_to_validate = parsed_email or sender_email
+        try:
+            validate_email(email_to_validate)
+        except ValidationError:
+            errors[f"senders.{index}.email"] = "invalid"
+            continue
+
+        normalized_senders.append({"id": sender_id, "email": sender_email})
+
+    default_sender_id = data.get("default_sender_id", "")
+    if default_sender_id in (None, "") and normalized_senders:
+        default_sender_id = normalized_senders[0]["id"]
+    elif not isinstance(default_sender_id, str) or not default_sender_id.strip():
+        errors["default_sender_id"] = "required"
+    else:
+        default_sender_id = default_sender_id.strip()
+        try:
+            validate_slug(default_sender_id)
+        except ValidationError:
+            errors["default_sender_id"] = "invalid"
+
+    if (
+        isinstance(default_sender_id, str)
+        and default_sender_id
+        and default_sender_id not in {sender["id"] for sender in normalized_senders}
+    ):
+        errors["default_sender_id"] = "not_configured"
+
+    if errors:
+        raise ApiValidationError(errors)
+
+    return {
+        "default_sender_id": default_sender_id,
+        "sender_emails": normalized_senders,
+    }
+
+
+def get_client_sender_policy_for_client(authenticated_client):
+    return sender_policy_payload(authenticated_client)
+
+
+@transaction.atomic
+def update_client_sender_policy_for_client(data, authenticated_client):
+    updates = validate_sender_policy_payload(data)
+    authenticated_client.default_sender_id = updates["default_sender_id"]
+    authenticated_client.sender_emails = updates["sender_emails"]
+    authenticated_client.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
+    return sender_policy_payload(authenticated_client)
 
 
 def validate_transactional_template_payload(data, template_key):

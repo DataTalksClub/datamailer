@@ -136,6 +136,13 @@ def test_seed_demo_data_creates_transactional_history_and_hashed_api_keys():
     call_command("seed_demo_data")
 
     client = Client.objects.get(slug="dtc-courses")
+    assert client.default_sender_id == "courses"
+    assert client.sender_emails == [
+        {
+            "id": "courses",
+            "email": "DataTalks.Club Courses <courses@dtcdev.click>",
+        }
+    ]
     api_key = ClientApiKey.objects.get(client=client, name="Course platform transactional")
     assert api_key.display_prefix == "dm_dtccourses"
     assert check_api_key("dm_dtccourses_demo_transactional_email_key", api_key.key_hash) is True

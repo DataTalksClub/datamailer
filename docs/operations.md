@@ -67,10 +67,16 @@ python manage.py provision_client_scope \
   --audience-name "DataTalksClub Courses" \
   --client dtc-courses \
   --client-name "DTC Courses"
+
+python manage.py set_client_senders dtc-courses \
+  --organization datatalksclub \
+  --default-sender courses \
+  --sender 'courses=DataTalks.Club Courses <courses@dtcdev.click>'
 ```
 
 Do this outside local demo seeding so sandbox always has the
-`dtc-courses` audience and client rows that CMP uses.
+`dtc-courses` audience and client rows that CMP uses. The sender mapping is
+what controls the visible From display name for CMP emails.
 
 ## Queue Design
 

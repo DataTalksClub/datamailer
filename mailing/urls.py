@@ -80,6 +80,7 @@ urlpatterns = [
     path("api/contacts/<int:contact_id>/validation", views.api_contact_validation, name="api_contact_validation"),
     path("api/contacts/<int:contact_id>/suppression", views.api_contact_suppression, name="api_contact_suppression"),
     path("api/contacts/<int:contact_id>/history", views.api_contact_history, name="api_contact_history"),
+    path("api/client/senders", views.api_client_senders, name="api_client_senders"),
     path("api/subscriptions/subscribe", views.api_subscribe, name="api_subscribe"),
     path("api/subscriptions/unsubscribe", views.api_unsubscribe, name="api_unsubscribe"),
     path("api/recipient-lists/<str:list_key>", views.api_recipient_list, name="api_recipient_list"),

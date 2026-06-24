@@ -472,6 +472,7 @@ class EmailTemplate(TimeStampedModel):
 
 class TransactionalMessageStatus(models.TextChoices):
     QUEUED = "queued", "Queued"
+    SENDING = "sending", "Sending"
     SENT = "sent", "Sent"
     FAILED = "failed", "Failed"
     SKIPPED = "skipped", "Skipped"

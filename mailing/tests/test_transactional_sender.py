@@ -262,6 +262,48 @@ def test_transient_ses_failure_leaves_message_retryable_and_returns_batch_failur
     assert EmailEvent.objects.count() == 0
 
 
+def test_post_ses_failure_does_not_send_again_on_retry(transactional_message, monkeypatch):
+    class SuccessfulSesClient:
+        calls = 0
+
+        def send_email(self, **params):
+            self.calls += 1
+            return {"MessageId": "ses-message-123"}["MessageId"]
+
+    ses = SuccessfulSesClient()
+    monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: ses)
+
+    def fail_after_ses(*args, **kwargs):
+        raise RuntimeError("database event insert failed")
+
+    monkeypatch.setattr("mailing.services.transactional_sender._append_event", fail_after_ses)
+
+    response = transactional_email_handler(
+        _event("message-1", build_transactional_queue_payload(transactional_message))
+    )
+
+    transactional_message.refresh_from_db()
+    assert response == {"batchItemFailures": [{"itemIdentifier": "message-1"}]}
+    assert ses.calls == 1
+    assert transactional_message.status == TransactionalMessageStatus.SENDING
+    assert transactional_message.ses_message_id == ""
+    assert EmailEvent.objects.count() == 0
+
+    def fail_if_called():
+        raise AssertionError("SES should not be called while send is in progress")
+
+    monkeypatch.setattr("mailing.services.transactional_sender.ses_client", fail_if_called)
+    response = transactional_email_handler(
+        _event("message-1", build_transactional_queue_payload(transactional_message))
+    )
+
+    transactional_message.refresh_from_db()
+    assert response == {"batchItemFailures": [{"itemIdentifier": "message-1"}]}
+    assert ses.calls == 1
+    assert transactional_message.status == TransactionalMessageStatus.SENDING
+    assert EmailEvent.objects.count() == 0
+
+
 @override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
 def test_permanent_ses_failure_marks_failed_and_acknowledges(transactional_message, monkeypatch):
     posts = collect_cmp_callbacks(monkeypatch)

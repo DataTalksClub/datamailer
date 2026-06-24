@@ -139,6 +139,15 @@ def put_transactional_template(django_client, template_key, payload, raw_key=API
     )
 
 
+def put_client_senders(django_client, payload, raw_key=API_KEY):
+    return django_client.put(
+        reverse("mailing:api_client_senders"),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
 def test_transactional_template_api_upserts_and_returns_client_template(
     client,
     api_client_record,
@@ -545,6 +554,72 @@ def test_transactional_send_uses_configured_display_sender(client, api_client_re
     assert message.from_email == "DataTalks.Club Courses <courses@dtcdev.click>"
     assert response.json()["message"]["from_email"] == "courses"
     assert response.json()["message"]["from_email_address"] == "DataTalks.Club Courses <courses@dtcdev.click>"
+
+
+def test_client_sender_api_gets_and_updates_authenticated_client(client, api_client_record, template, monkeypatch):
+    get_response = client.get(reverse("mailing:api_client_senders"), **auth_headers())
+
+    assert get_response.status_code == 200
+    assert get_response.json()["client"]["slug"] == "dtc-courses"
+    assert get_response.json()["default_sender_id"] == "newsletter"
+    assert get_response.json()["senders"] == [{"id": "newsletter", "email": "newsletter@example.com"}]
+
+    update_response = put_client_senders(
+        client,
+        {
+            "default_sender_id": "courses",
+            "senders": [
+                {
+                    "id": "courses",
+                    "email": "DataTalks.Club Courses <courses@dtcdev.click>",
+                }
+            ],
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["default_sender_id"] == "courses"
+    assert update_response.json()["senders"] == [
+        {
+            "id": "courses",
+            "email": "DataTalks.Club Courses <courses@dtcdev.click>",
+        }
+    ]
+    api_client_record.refresh_from_db()
+    assert api_client_record.default_sender_id == "courses"
+    assert api_client_record.sender_emails == [
+        {
+            "id": "courses",
+            "email": "DataTalks.Club Courses <courses@dtcdev.click>",
+        }
+    ]
+
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", lambda payload: None)
+    send_response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert send_response.status_code == 202
+    assert send_response.json()["message"]["from_email"] == "courses"
+    assert send_response.json()["message"]["from_email_address"] == "DataTalks.Club Courses <courses@dtcdev.click>"
+
+
+def test_client_sender_api_validates_default_sender(client, api_client_record):
+    response = put_client_senders(
+        client,
+        {
+            "default_sender_id": "courses",
+            "senders": [{"id": "newsletter", "email": "newsletter@example.com"}],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"default_sender_id": "not_configured"}
 
 
 def test_transactional_send_accepts_allowed_payload_sender(client, api_client_record, template, monkeypatch):

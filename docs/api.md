@@ -30,11 +30,35 @@ python manage.py provision_client_scope \
   --audience-name "DataTalksClub Courses" \
   --client dtc-courses \
   --client-name "DTC Courses"
+
+python manage.py set_client_senders dtc-courses \
+  --organization datatalksclub \
+  --default-sender courses \
+  --sender 'courses=DataTalks.Club Courses <courses@dtcdev.click>'
 ```
 
 That keeps `DATAMAILER_AUDIENCE=dtc-courses` and
 `DATAMAILER_CLIENT=dtc-courses` valid for CMP contact sync, status lookups,
-history lookups, recipient lists, and transactional sends.
+history lookups, recipient lists, and transactional sends. The sender command
+keeps CMP payloads using `from_email=courses` while making delivered mail show
+`DataTalks.Club Courses`.
+
+The same sender mapping is available through the client-scoped API:
+
+```bash
+curl -sS -X PUT "$DATAMAILER_URL/api/client/senders" \
+  -H "Authorization: Bearer $DATAMAILER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "default_sender_id": "courses",
+    "senders": [
+      {
+        "id": "courses",
+        "email": "DataTalks.Club Courses <courses@dtcdev.click>"
+      }
+    ]
+  }'
+```
 
 The in-app examples default to `DATAMAILER_API_DOCS_BASE_URL`, falling back to `PUBLIC_BASE_URL`. Override `DATAMAILER_URL` when running an example against a different environment:
 
