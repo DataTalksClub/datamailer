@@ -24,6 +24,7 @@ dev = [
 DJANGO_SETTINGS_MODULE = "datamailer.settings"
 pythonpath = ["."]
 python_files = ["test_*.py", "*_test.py", "tests.py"]
+testpaths = ["mailing/tests", "tests"]
 markers = [
     "aws_local: requires LocalStack or another local AWS-compatible endpoint",
 ]

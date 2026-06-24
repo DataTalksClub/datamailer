@@ -27,7 +27,6 @@ from mailing.models import (
 from mailing.queue_contracts import validate_transactional_email_message
 from mailing.services.auth import create_client_api_key
 from mailing.services.cmp_callbacks import process_due_cmp_callbacks
-from mailing.sqs import json_body, records_from_messages
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -1065,76 +1064,3 @@ def test_transactional_models_are_available_in_admin():
     assert isinstance(admin.site._registry[TransactionalMessage], TransactionalMessageAdmin)
     assert isinstance(admin.site._registry[EmailEvent], EmailEventAdmin)
 
-
-@pytest.mark.aws_local
-def test_transactional_endpoint_enqueues_to_localstack_sqs(
-    client,
-    template,
-    local_sqs_client,
-    unique_queue_name,
-    settings,
-):
-    queue_url = local_sqs_client.create_queue(QueueName=unique_queue_name("transactional-email"))["QueueUrl"]
-    settings.SQS_TRANSACTIONAL_EMAIL_QUEUE_URL = queue_url
-
-    response = post_transactional(
-        client,
-        {
-            "email": "person@example.com",
-            "template_key": template.key,
-            "idempotency_key": "localstack-1",
-            "metadata": {"trace_id": "trace-1"},
-        },
-    )
-
-    sqs_response = local_sqs_client.receive_message(
-        QueueUrl=queue_url,
-        MaxNumberOfMessages=1,
-        WaitTimeSeconds=1,
-    )
-    event = records_from_messages(sqs_response["Messages"])
-    body = json_body(event["Records"][0])
-
-    assert response.status_code == 202
-    assert validate_transactional_email_message(body) == body
-    assert body["transactional_message_id"] == TransactionalMessage.objects.get().id
-    assert body["metadata"] == {"trace_id": "trace-1"}
-
-
-@pytest.mark.aws_local
-def test_transactional_duplicates_and_suppression_do_not_enqueue_to_localstack_sqs(
-    client,
-    template,
-    local_sqs_client,
-    unique_queue_name,
-    settings,
-):
-    queue_url = local_sqs_client.create_queue(QueueName=unique_queue_name("transactional-email"))["QueueUrl"]
-    settings.SQS_TRANSACTIONAL_EMAIL_QUEUE_URL = queue_url
-    payload = {
-        "email": "person@example.com",
-        "template_key": template.key,
-        "idempotency_key": "localstack-duplicate",
-    }
-
-    assert post_transactional(client, payload).status_code == 202
-    assert post_transactional(client, payload).status_code == 202
-
-    Contact.objects.create(email="blocked@example.com", hard_bounced_at=timezone.now())
-    suppressed = post_transactional(
-        client,
-        {
-            "email": "blocked@example.com",
-            "template_key": template.key,
-            "idempotency_key": "localstack-suppressed",
-        },
-    )
-
-    messages = local_sqs_client.receive_message(
-        QueueUrl=queue_url,
-        MaxNumberOfMessages=10,
-        WaitTimeSeconds=1,
-    )["Messages"]
-
-    assert suppressed.status_code == 409
-    assert [json.loads(message["Body"])["idempotency_key"] for message in messages] == ["localstack-duplicate"]

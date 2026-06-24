@@ -15,24 +15,20 @@ The default suite uses:
 - Django unit/view tests.
 - Pure Python worker helper tests.
 - `botocore.stub.Stubber` for SES payload assertions.
-- Skipped LocalStack tests when no local AWS endpoint is running.
+
+LocalStack tests are intentionally outside the default collection path in
+`tests_integration/`.
 
 ## Local AWS Tests
 
-Run LocalStack:
+Run:
 
 ```bash
-make localstack
-```
-
-In another terminal:
-
-```bash
-AWS_ACCESS_KEY_ID=test \
-AWS_SECRET_ACCESS_KEY=test \
-AWS_ENDPOINT_URL=http://localhost:4566 \
 make test-aws-local
 ```
+
+This starts LocalStack through Docker Compose, waits for its health endpoint, and
+runs the integration tests against `http://localhost:4566`.
 
 Local AWS tests are marked with:
 
@@ -41,6 +37,8 @@ pytestmark = pytest.mark.aws_local
 ```
 
 These tests use LocalStack for SQS wiring. They create unique queue names per test and do not depend on real AWS resources.
+They live in `tests_integration/` so normal `pytest` runs do not report
+environment-dependent skips.
 
 ## What Uses Mocks
 

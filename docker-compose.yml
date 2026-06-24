@@ -1,11 +1,12 @@
 services:
   localstack:
-    image: localstack/localstack:stable
+    image: localstack/localstack:4.4.0
     profiles: ["aws-local"]
     ports:
       - "4566:4566"
     environment:
-      SERVICES: sqs,ses
+      SERVICES: sqs
+      ACTIVATE_PRO: "0"
       AWS_DEFAULT_REGION: us-east-1
       DEBUG: "0"
     healthcheck:
