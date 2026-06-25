@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-05-17T14:25:11.499799825Z"
+exclude-newer = "2026-06-18T09:03:35.368360305Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -163,7 +163,7 @@ wheels = [
 ]
 
 [[package]]
-name = "datamailer"
+name = "datamailer-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

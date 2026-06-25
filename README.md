@@ -22,6 +22,21 @@ repo keeps app code, tests, CloudFormation skeletons, and smoke scripts.
 - [API Design](docs/api.md)
 - [Milestones and Tasks](docs/milestones.md)
 
+## CLI client
+
+[`cli/`](cli/) is a standalone, dependency-free command-line client published to PyPI as
+[`datamailer`](https://pypi.org/project/datamailer/). It lets scripts and agents send email
+through any Datamailer deployment with a URL and a client API key:
+
+```bash
+pip install datamailer
+datamailer configure --url https://datamailer.example.com --api-key dm_xxx
+./run_pipeline.sh | datamailer send --to me@example.com --subject "Pipeline output"
+```
+
+See [cli/README.md](cli/README.md). The CLI is versioned and released independently from this
+backend; its server distribution name is `datamailer-backend`.
+
 ## Setup
 
 ```bash
