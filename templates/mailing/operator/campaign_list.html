@@ -32,7 +32,9 @@
               <th scope="col">Audience</th>
               <th scope="col">Send time</th>
               <th scope="col">Recipients</th>
+              <th scope="col">Queue</th>
               <th scope="col">Delivery</th>
+              <th scope="col">Speed</th>
               <th scope="col">Engagement</th>
               <th scope="col">Action</th>
             </tr>
@@ -55,8 +57,16 @@
                 </td>
                 <td class="nowrap">{{ campaign.recipient_count }}</td>
                 <td class="nowrap">
+                  {{ row.progress.queued_count }} queued / {{ row.progress.processed_count }} processed
+                  <div class="helptext">Started {{ row.progress.started_at|date:"Y-m-d H:i"|default:"-" }}</div>
+                </td>
+                <td class="nowrap">
                   {{ campaign.sent_count }} sent / {{ campaign.delivered_count }} delivered
                   <div class="helptext">{{ campaign.bounce_count }} bounces / {{ campaign.complaint_count }} complaints</div>
+                </td>
+                <td class="nowrap">
+                  {{ row.progress.per_second|default:"-" }}
+                  <div class="helptext">{{ row.progress.per_minute|default:"-" }}</div>
                 </td>
                 <td class="nowrap">
                   {{ campaign.unique_open_count }} opens / {{ campaign.unique_click_count }} clicks

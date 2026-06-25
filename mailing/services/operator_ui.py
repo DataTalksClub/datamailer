@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, time
 
-from django.db.models import Count, Exists, Max, OuterRef, Q, QuerySet
+from django.db.models import Count, Exists, Max, Min, OuterRef, Q, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -42,6 +42,14 @@ RECIPIENT_FILTERS = {
     "failed": Q(status=CampaignRecipientStatus.FAILED),
     "sent": Q(status=CampaignRecipientStatus.SENT),
     "pending": Q(status=CampaignRecipientStatus.PENDING),
+}
+
+PROCESSED_RECIPIENT_STATUSES = {
+    CampaignRecipientStatus.SENT,
+    CampaignRecipientStatus.FAILED,
+    CampaignRecipientStatus.BOUNCED,
+    CampaignRecipientStatus.COMPLAINED,
+    CampaignRecipientStatus.UNSUBSCRIBED,
 }
 
 RECIPIENT_FILTER_LABELS = {
@@ -169,6 +177,24 @@ class CampaignListRow:
     badge: Badge
     timing_label: str
     timing_value: object | None
+    progress: "CampaignSendProgress"
+
+
+@dataclass(frozen=True)
+class CampaignSendProgress:
+    queued_count: int
+    processed_count: int
+    sent_count: int
+    started_at: object | None
+    ended_at: object | None
+    duration_seconds: int | None
+    duration_label: str
+    per_second: str
+    per_minute: str
+
+    @property
+    def has_started(self) -> bool:
+        return self.started_at is not None
 
 
 @dataclass(frozen=True)
@@ -428,15 +454,65 @@ def campaign_list_rows(campaigns) -> list[CampaignListRow]:
     rows = []
     for campaign in campaigns:
         timing_label, timing_value = campaign_timing(campaign)
+        progress = campaign_send_progress(campaign)
         rows.append(
             CampaignListRow(
                 campaign=campaign,
                 badge=campaign_status_badge(campaign.status),
                 timing_label=timing_label,
                 timing_value=timing_value,
+                progress=progress,
             )
         )
     return rows
+
+
+def campaign_send_progress(campaign: Campaign) -> CampaignSendProgress:
+    recipients = CampaignRecipient.objects.filter(campaign=campaign)
+    queued_count = recipients.filter(status=CampaignRecipientStatus.PENDING).count()
+    processed_count = recipients.filter(status__in=PROCESSED_RECIPIENT_STATUSES).count()
+    sent_window = recipients.filter(sent_at__isnull=False).aggregate(
+        sent_count=Count("id"),
+        started_at=Min("sent_at"),
+        ended_at=Max("sent_at"),
+    )
+    sent_count = sent_window["sent_count"] or 0
+    started_at = sent_window["started_at"]
+    ended_at = sent_window["ended_at"]
+    duration_seconds = None
+    per_second = ""
+    per_minute = ""
+    if started_at and ended_at and sent_count:
+        duration_seconds = max(int((ended_at - started_at).total_seconds()), 1)
+        per_second = f"{sent_count / duration_seconds:.2f}/sec"
+        per_minute = f"{(sent_count / duration_seconds) * 60:.1f}/min"
+
+    return CampaignSendProgress(
+        queued_count=queued_count,
+        processed_count=processed_count,
+        sent_count=sent_count,
+        started_at=started_at,
+        ended_at=ended_at,
+        duration_seconds=duration_seconds,
+        duration_label=format_duration(duration_seconds),
+        per_second=per_second,
+        per_minute=per_minute,
+    )
+
+
+def format_duration(seconds: int | None) -> str:
+    if seconds is None:
+        return ""
+    minutes, remaining_seconds = divmod(seconds, 60)
+    hours, remaining_minutes = divmod(minutes, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if remaining_minutes:
+        parts.append(f"{remaining_minutes}m")
+    if remaining_seconds or not parts:
+        parts.append(f"{remaining_seconds}s")
+    return " ".join(parts)
 
 
 def campaign_stats(campaign: Campaign) -> list[Stat]:
@@ -446,9 +522,12 @@ def campaign_stats(campaign: Campaign) -> list[Stat]:
     ).count()
     recipient_count = campaign.recipient_count
     sent_count = campaign.sent_count
+    progress = campaign_send_progress(campaign)
 
     return [
         Stat("recipients", "Recipients", recipient_count),
+        Stat("queued", "Queued", progress.queued_count),
+        Stat("processed", "Processed", progress.processed_count, rate(progress.processed_count, recipient_count)),
         Stat("sent", "Sent", sent_count, rate(sent_count, recipient_count)),
         Stat("skipped", "Skipped", campaign.skipped_count, rate(campaign.skipped_count, recipient_count)),
         Stat("delivered", "Delivered", campaign.delivered_count, rate(campaign.delivered_count, sent_count)),

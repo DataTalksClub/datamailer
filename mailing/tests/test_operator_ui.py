@@ -35,6 +35,7 @@ from mailing.services.operator_ui import (
     audience_recent_events,
     audience_summary,
     campaign_recipient_queryset,
+    campaign_send_progress,
     campaign_stats,
     contact_detail_context,
     contact_event_timeline,
@@ -141,6 +142,8 @@ def test_base_template_loads_datamailer_static_css(client, operator):
     assert b'href="/static/mailing/css/app.css"' in response.content
     assert b"<style>" not in response.content
     assert b'aria-current="page">Datamailer' in response.content
+    assert b'data-theme-toggle aria-label="Toggle dark mode"' in response.content
+    assert b"datamailer.theme" in response.content
     assert finders.find("mailing/css/app.css") is not None
 
 
@@ -298,11 +301,34 @@ def test_campaign_stats_include_derived_rates_and_failed_count(campaign):
 
     stats = {stat.key: stat for stat in campaign_stats(campaign)}
 
+    assert stats["queued"].value == 0
+    assert stats["processed"].value == 1
     assert stats["sent"].value == 3
     assert stats["sent"].rate == "75.0%"
     assert stats["delivered"].rate == "66.7%"
     assert stats["failures"].value == 1
     assert stats["failures"].rate == "25.0%"
+
+
+def test_campaign_send_progress_reports_queue_counts_and_speed(campaign):
+    started_at = timezone.now() - timedelta(seconds=120)
+    ended_at = started_at + timedelta(seconds=120)
+    create_recipient(campaign, "first@example.com", sent_at=started_at)
+    create_recipient(campaign, "second@example.com", sent_at=ended_at)
+    create_recipient(campaign, "queued@example.com", status=CampaignRecipientStatus.PENDING)
+    create_recipient(campaign, "failed@example.com", status=CampaignRecipientStatus.FAILED)
+
+    progress = campaign_send_progress(campaign)
+
+    assert progress.queued_count == 1
+    assert progress.processed_count == 3
+    assert progress.sent_count == 2
+    assert progress.started_at == started_at
+    assert progress.ended_at == ended_at
+    assert progress.duration_seconds == 120
+    assert progress.duration_label == "2m"
+    assert progress.per_second == "0.02/sec"
+    assert progress.per_minute == "1.0/min"
 
 
 def test_campaign_recipient_filter_mapping(campaign):
@@ -956,6 +982,10 @@ def test_operator_audience_views_require_staff(client, audience):
 
 def test_campaign_list_renders_recent_campaigns(client, operator, campaign):
     client.force_login(operator)
+    started_at = timezone.now() - timedelta(seconds=60)
+    create_recipient(campaign, "list-sent@example.com", sent_at=started_at)
+    create_recipient(campaign, "list-sent-2@example.com", sent_at=started_at + timedelta(seconds=60))
+    create_recipient(campaign, "list-queued@example.com", status=CampaignRecipientStatus.PENDING)
 
     response = client.get(reverse("mailing:campaign_list"))
     html = response.content.decode()
@@ -965,6 +995,11 @@ def test_campaign_list_renders_recent_campaigns(client, operator, campaign):
     assert "DTC Courses" in html
     assert "DataTalksClub" in html
     assert "Send time" in html
+    assert "Queue" in html
+    assert "Speed" in html
+    assert "1 queued / 2 processed" in html
+    assert "0.03/sec" in html
+    assert "2.0/min" in html
     assert "3 sent / 2 delivered" in html
     assert "1 opens / 1 clicks" in html
     assert "1 bounces / 1 complaints" in html
@@ -1221,9 +1256,11 @@ def test_audience_recent_events_filters_by_type(audience, client_record):
 
 def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operator, campaign):
     client.force_login(operator)
+    started_at = timezone.now() - timedelta(seconds=120)
     recipient = create_recipient(
         campaign,
         "person@example.com",
+        sent_at=started_at,
         first_opened_at=timezone.now(),
         first_clicked_at=timezone.now(),
         open_count=2,
@@ -1231,7 +1268,8 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
         ses_message_id="ses-123",
         last_error="",
     )
-    create_recipient(campaign, "other@example.com")
+    create_recipient(campaign, "other@example.com", sent_at=started_at + timedelta(seconds=120))
+    create_recipient(campaign, "pending@example.com", status=CampaignRecipientStatus.PENDING)
     EmailEvent.objects.create(
         campaign=campaign,
         campaign_recipient=recipient,
@@ -1249,6 +1287,15 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     assert response.status_code == 200
     assert "Summary" in html
     assert "Stats" in html
+    assert "Send started" in html
+    assert "Send ended" in html
+    assert "Send duration" in html
+    assert "Send speed" in html
+    assert "Queued" in html
+    assert "Processed" in html
+    assert "2m" in html
+    assert "0.02/sec" in html
+    assert "1.0/min" in html
     assert "Recipients" in html
     assert "Recent History" in html
     assert "Provider data" in html

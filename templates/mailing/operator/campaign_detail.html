@@ -52,6 +52,9 @@
       <div class="meta-item"><span class="meta-label">Scheduled</span>{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Sent</span>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Recipients snapshotted</span>{{ campaign.recipient_count }}</div>
+      <div class="meta-item"><span class="meta-label">Send started</span>{{ send_progress.started_at|date:"Y-m-d H:i:s"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Send ended</span>{{ send_progress.ended_at|date:"Y-m-d H:i:s"|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Send duration</span>{{ send_progress.duration_label|default:"-" }}</div>
     </div>
   </section>
 
@@ -70,6 +73,11 @@
           {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
         </div>
       {% endfor %}
+      <div class="stat">
+        <span class="stat-label">Send speed</span>
+        <span class="stat-value">{{ send_progress.per_second|default:"-" }}</span>
+        {% if send_progress.per_minute %}<span class="muted">{{ send_progress.per_minute }}</span>{% endif %}
+      </div>
     </div>
   </section>
 

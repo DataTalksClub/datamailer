@@ -5,6 +5,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Datamailer{% endblock %}</title>
+    <script>
+      (function () {
+        try {
+          const theme = localStorage.getItem("datamailer.theme");
+          if (theme === "dark" || theme === "light") {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch (error) {
+          return;
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="{% static 'mailing/css/app.css' %}">
   </head>
   <body>
@@ -15,6 +27,9 @@
           <a href="{% url 'mailing:client_list' %}" {% if request.resolver_match.url_name == "client_list" or request.resolver_match.url_name == "client_create" or request.resolver_match.url_name == "client_detail" or request.resolver_match.url_name == "client_edit" %}aria-current="page"{% endif %}>Clients</a>
           <a href="{% url 'mailing:api_docs' %}" {% if request.resolver_match.url_name == "api_docs" or request.resolver_match.url_name == "api_docs_json" %}aria-current="page"{% endif %}>API Docs</a>
           <a href="/admin/">Admin</a>
+          <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle dark mode" aria-pressed="false">
+            <span data-theme-toggle-label>Dark</span>
+          </button>
         </div>
       </nav>
     </header>
@@ -102,6 +117,44 @@
         setCollapsed(localStorage.getItem(key) === "1");
         toggle.addEventListener("click", function () {
           setCollapsed(!shell.classList.contains("sidebar-collapsed"));
+        });
+      })();
+      (function () {
+        const toggle = document.querySelector("[data-theme-toggle]");
+        const label = document.querySelector("[data-theme-toggle-label]");
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        if (!toggle || !label) return;
+
+        const storedTheme = () => {
+          try {
+            const theme = localStorage.getItem("datamailer.theme");
+            return theme === "dark" || theme === "light" ? theme : null;
+          } catch (error) {
+            return null;
+          }
+        };
+        const currentTheme = () => storedTheme() || (media.matches ? "dark" : "light");
+        const setTheme = (theme) => {
+          document.documentElement.dataset.theme = theme;
+          try {
+            localStorage.setItem("datamailer.theme", theme);
+          } catch (error) {
+            return;
+          }
+        };
+        const sync = () => {
+          const theme = currentTheme();
+          toggle.setAttribute("aria-pressed", String(theme === "dark"));
+          label.textContent = theme === "dark" ? "Light" : "Dark";
+        };
+
+        sync();
+        toggle.addEventListener("click", function () {
+          setTheme(currentTheme() === "dark" ? "light" : "dark");
+          sync();
+        });
+        media.addEventListener("change", function () {
+          if (!storedTheme()) sync();
         });
       })();
     </script>
