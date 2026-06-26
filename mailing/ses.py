@@ -16,6 +16,8 @@ def send_email(
     html_body,
     text_body="",
     reply_to="",
+    cc=None,
+    bcc=None,
 ):
     throttle_ses_send()
 
@@ -35,6 +37,10 @@ def send_email(
         params["ConfigurationSetName"] = settings.AWS_SES_CONFIGURATION_SET
     if reply_to:
         params["ReplyToAddresses"] = [reply_to]
+    if cc:
+        params["Destination"]["CcAddresses"] = cc
+    if bcc:
+        params["Destination"]["BccAddresses"] = bcc
 
     return ses_client.send_email(**params)["MessageId"]
 

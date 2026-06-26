@@ -158,6 +158,8 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                 },
                 "from_email": payload["from_email"],
                 "reply_to": payload["reply_to"],
+                "cc": payload["cc"],
+                "bcc": payload["bcc"],
             }
 
             delivery_decision = transactional_delivery_decision(member.contact, payload)
@@ -270,6 +272,8 @@ def send_transactional_email_to_transient_recipient_list_for_client(data, authen
                 },
                 "from_email": payload["from_email"],
                 "reply_to": payload["reply_to"],
+                "cc": payload["cc"],
+                "bcc": payload["bcc"],
             }
 
             delivery_decision = transactional_delivery_decision(contact, payload)
@@ -413,6 +417,8 @@ def validate_transactional_send_payload(data, authenticated_client):
             errors.update(exc.errors)
 
     reply_to = validate_optional_email_address(data, "reply_to", errors)
+    cc = validate_optional_email_addresses(data, "cc", errors)
+    bcc = validate_optional_email_addresses(data, "bcc", errors)
 
     if errors:
         raise ApiValidationError(errors)
@@ -432,6 +438,8 @@ def validate_transactional_send_payload(data, authenticated_client):
         "client": scope.client if scope else authenticated_client,
         "from_email": from_email,
         "reply_to": reply_to,
+        "cc": cc,
+        "bcc": bcc,
     }
 
 
@@ -498,6 +506,8 @@ def validate_recipient_list_send_payload(data, authenticated_client):
             errors.update(exc.errors)
 
     reply_to = validate_optional_email_address(data, "reply_to", errors)
+    cc = validate_optional_email_addresses(data, "cc", errors)
+    bcc = validate_optional_email_addresses(data, "bcc", errors)
 
     if errors:
         raise ApiValidationError(errors)
@@ -516,6 +526,8 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         "list": list_data,
         "from_email": from_email,
         "reply_to": reply_to,
+        "cc": cc,
+        "bcc": bcc,
     }
 
 
@@ -620,6 +632,33 @@ def validate_optional_email_address(data, field, errors):
     return value
 
 
+def validate_optional_email_addresses(data, field, errors):
+    value = data.get(field, [])
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        raw_values = [value]
+    elif isinstance(value, list):
+        raw_values = value
+    else:
+        errors[field] = "must_be_list"
+        return []
+
+    addresses = []
+    for index, raw in enumerate(raw_values):
+        if not isinstance(raw, str) or not raw.strip():
+            errors[f"{field}.{index}"] = "must_be_non_empty_string"
+            continue
+        address = raw.strip()
+        try:
+            validate_email(address)
+        except ValidationError:
+            errors[f"{field}.{index}"] = "invalid"
+            continue
+        addresses.append(address)
+    return addresses
+
+
 def find_existing_message(client, idempotency_key):
     if not idempotency_key:
         return None
@@ -666,6 +705,10 @@ def create_transactional_message(*, client, contact, template, payload, sender, 
     metadata = payload["metadata"]
     if payload.get("reply_to"):
         metadata = metadata | {"reply_to": payload["reply_to"]}
+    if payload.get("cc"):
+        metadata = metadata | {"cc": payload["cc"]}
+    if payload.get("bcc"):
+        metadata = metadata | {"bcc": payload["bcc"]}
     return TransactionalMessage.objects.create(
         client=client,
         contact=contact,
@@ -729,6 +772,8 @@ def response_payload(result):
             "from_email": message.from_email_id,
             "from_email_address": message.from_email,
             "reply_to": message.metadata.get("reply_to", ""),
+            "cc": message.metadata.get("cc", []),
+            "bcc": message.metadata.get("bcc", []),
             "status": message.status,
             "template_key": message.template_key,
             "idempotency_key": message.idempotency_key,

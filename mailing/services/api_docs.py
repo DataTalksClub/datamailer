@@ -1891,6 +1891,14 @@ OPENAPI_SPEC = {
                             },
                             "from_email": {"type": "string"},
                             "reply_to": {"type": "string", "format": "email"},
+                            "cc": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "email"},
+                            },
+                            "bcc": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "email"},
+                            },
                         },
                     },
                 ]
@@ -1921,6 +1929,14 @@ OPENAPI_SPEC = {
                             },
                             "from_email": {"type": "string"},
                             "reply_to": {"type": "string", "format": "email"},
+                            "cc": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "email"},
+                            },
+                            "bcc": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "email"},
+                            },
                         },
                     },
                 ]
@@ -2324,6 +2340,14 @@ OPENAPI_SPEC = {
                         "description": "Optional configured sender ID, such as courses. If omitted, Datamailer uses the client's default sender ID. Raw email addresses are rejected.",
                     },
                     "reply_to": {"type": "string", "format": "email"},
+                    "cc": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "email"},
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "email"},
+                    },
                     "template_key": {"type": "string"},
                     "idempotency_key": {"type": "string"},
                     "category_tag": {"type": "string"},

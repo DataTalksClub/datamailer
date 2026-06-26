@@ -81,6 +81,47 @@ def test_send_email_uses_reply_to_address():
     assert message_id == "message-123"
 
 
+@override_settings(AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
+def test_send_email_uses_cc_and_bcc_addresses():
+    client = boto3.client(
+        "ses",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "send_email",
+            {"MessageId": "message-123"},
+            {
+                "Source": "newsletter@example.com",
+                "Destination": {
+                    "ToAddresses": ["person@example.com"],
+                    "CcAddresses": ["mentor@example.com"],
+                    "BccAddresses": ["audit@example.com"],
+                },
+                "Message": {
+                    "Subject": {"Charset": "UTF-8", "Data": "Welcome"},
+                    "Body": {
+                        "Html": {"Charset": "UTF-8", "Data": "<p>Hello</p>"},
+                    },
+                },
+            },
+        )
+
+        message_id = send_email(
+            ses_client=client,
+            source="newsletter@example.com",
+            to_email="person@example.com",
+            subject="Welcome",
+            html_body="<p>Hello</p>",
+            cc=["mentor@example.com"],
+            bcc=["audit@example.com"],
+        )
+
+    assert message_id == "message-123"
+
+
 @override_settings(AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="", SES_MAX_SEND_RATE_PER_SECOND=2)
 def test_send_email_throttles_between_ses_calls(monkeypatch):
     ses_module._last_ses_send_monotonic = None

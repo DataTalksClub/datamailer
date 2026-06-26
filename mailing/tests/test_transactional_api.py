@@ -303,6 +303,8 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
             },
             "category_tag": "course-updates",
             "reply_to": "support@example.com",
+            "cc": ["mentor@example.com"],
+            "bcc": "audit@example.com",
             "metadata": {"user_id": "42"},
         },
     )
@@ -316,6 +318,8 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert response.json()["message"]["from_email"] == "newsletter"
     assert response.json()["message"]["from_email_address"] == "newsletter@example.com"
     assert response.json()["message"]["reply_to"] == "support@example.com"
+    assert response.json()["message"]["cc"] == ["mentor@example.com"]
+    assert response.json()["message"]["bcc"] == ["audit@example.com"]
     assert response.json()["message"]["status"] == TransactionalMessageStatus.QUEUED
     assert response.json()["idempotent_replay"] is False
     assert response.json()["enqueued"] is True
@@ -333,6 +337,8 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
         "user_id": "42",
         "category_tag": "course-updates",
         "reply_to": "support@example.com",
+        "cc": ["mentor@example.com"],
+        "bcc": ["audit@example.com"],
     }
     assert event.event_type == EmailEventType.QUEUED
     assert event.transactional_message == message
@@ -341,6 +347,8 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["contract"] == "transactional-email"
     assert enqueued[0]["transactional_message_id"] == message.id
     assert enqueued[0]["metadata"]["reply_to"] == "support@example.com"
+    assert enqueued[0]["metadata"]["cc"] == ["mentor@example.com"]
+    assert enqueued[0]["metadata"]["bcc"] == ["audit@example.com"]
     assert enqueued[0]["client_id"] == template.client_id
     assert enqueued[0]["contact_id"] == contact.id
     assert enqueued[0]["template_id"] == template.id
@@ -1220,6 +1228,8 @@ def test_inactive_transactional_template_returns_clear_404_without_mutation(
         ({"email": "person@example.com", "template_key": "email-verification", "context": []}, "context"),
         ({"email": "person@example.com", "template_key": "email-verification", "metadata": []}, "metadata"),
         ({"email": "person@example.com", "template_key": "email-verification", "reply_to": "not-email"}, "reply_to"),
+        ({"email": "person@example.com", "template_key": "email-verification", "cc": ["not-email"]}, "cc.0"),
+        ({"email": "person@example.com", "template_key": "email-verification", "bcc": {"email": "x@y.z"}}, "bcc"),
         (
             {"email": "person@example.com", "template_key": "email-verification", "idempotency_key": []},
             "idempotency_key",

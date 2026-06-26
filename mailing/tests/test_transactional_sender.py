@@ -73,8 +73,15 @@ def transactional_message(api_client_record, contact, template):
 
 
 @override_settings(DEFAULT_FROM_EMAIL="sender@example.com", AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
-def test_transactional_handler_forwards_reply_to_address(transactional_message, monkeypatch):
-    transactional_message.metadata = {"reply_to": "support@example.com"}
+def test_transactional_handler_forwards_extra_recipient_headers(
+    transactional_message,
+    monkeypatch,
+):
+    transactional_message.metadata = {
+        "reply_to": "support@example.com",
+        "cc": ["mentor@example.com"],
+        "bcc": ["audit@example.com"],
+    }
     transactional_message.save(update_fields=["metadata", "updated_at"])
     ses = boto3.client(
         "ses",
@@ -88,7 +95,11 @@ def test_transactional_handler_forwards_reply_to_address(transactional_message, 
             {"MessageId": "ses-message-123"},
             {
                 "Source": "courses@dtcdev.click",
-                "Destination": {"ToAddresses": ["person@example.com"]},
+                "Destination": {
+                    "ToAddresses": ["person@example.com"],
+                    "CcAddresses": ["mentor@example.com"],
+                    "BccAddresses": ["audit@example.com"],
+                },
                 "Message": {
                     "Subject": {"Charset": "UTF-8", "Data": "Persisted subject"},
                     "Body": {
