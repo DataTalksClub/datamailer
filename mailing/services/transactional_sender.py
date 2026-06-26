@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from mailing.aws import ses_client
 from mailing.models import EmailEvent, EmailEventType, TransactionalMessage, TransactionalMessageStatus
+from mailing.services.capture import capture_mode_enabled, capture_transactional_message
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.mock_inbox import is_mock_address
 from mailing.services.real_inbox import is_real_inbox_address
@@ -48,6 +49,9 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
 
         if message.status == TransactionalMessageStatus.SENDING and not getattr(message, "_claimed_for_send", False):
             raise TransientSendFailure(f"transactional message {message.id} is already sending")
+
+        if capture_mode_enabled():
+            return _mark_captured(message.id)
 
         # Real-inbox (SES inbound) test addresses must take the real SES send
         # path so the message can be received back from the inbound S3 bucket.
@@ -158,6 +162,38 @@ def _mark_sent(message_id, ses_message_id, metadata):
         message.last_error = ""
         message.save(update_fields=["status", "ses_message_id", "sent_at", "last_error", "updated_at"])
         _append_event(message, EmailEventType.SENT, metadata)
+        return message
+
+
+def _mark_captured(message_id):
+    with transaction.atomic():
+        message = (
+            TransactionalMessage.objects.select_for_update().select_related("client", "contact").get(id=message_id)
+        )
+        if message.status in TERMINAL_ACK_STATUSES:
+            return message
+
+        capture = capture_transactional_message(
+            message,
+            source="transactional",
+            metadata={"delivery_mode": "capture"},
+        )
+        sent_at = timezone.now()
+        message.status = TransactionalMessageStatus.SENT
+        message.ses_message_id = f"capture:{capture.id}"
+        message.sent_at = sent_at
+        message.last_error = ""
+        message.save(update_fields=["status", "ses_message_id", "sent_at", "last_error", "updated_at"])
+        _append_event(
+            message,
+            EmailEventType.SENT,
+            {
+                "captured": True,
+                "delivery_mode": "capture",
+                "captured_email_id": capture.id,
+                "sent_at": sent_at.isoformat(),
+            },
+        )
         return message
 
 

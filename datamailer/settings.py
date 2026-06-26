@@ -152,6 +152,11 @@ SES_WEBHOOKS_SIGNATURE_MODE = os.environ.get(
     "mock" if DEBUG or TESTING else "strict",
 )
 SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION = bool_env("SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION", default=False)
+DATAMAILER_DELIVERY_MODE = os.environ.get("DATAMAILER_DELIVERY_MODE", "send").strip().lower()
+DATAMAILER_CAPTURE_UI = bool_env(
+    "DATAMAILER_CAPTURE_UI",
+    default=DATAMAILER_DELIVERY_MODE == "capture" or TESTING,
+)
 
 # Mock inbox: capture-only test mailbox for e2e tests.
 # When enabled, transactional emails addressed to a recognized mock address are

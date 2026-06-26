@@ -65,6 +65,9 @@ API_DOC_PATHS = {
     "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
+    "mailing:api_testbed_runs": "/api/testbed/runs",
+    "mailing:api_testbed_run_detail": "/api/testbed/runs/{run_id}",
+    "mailing:api_testbed_run_message": "/api/testbed/runs/{run_id}/messages/{message_id}",
     "mailing:tracking_open": "/t/o/{tracking_token}.gif",
     "mailing:tracking_click": "/t/c/{tracking_token}",
     "mailing:public_unsubscribe": "/unsubscribe/{unsubscribe_token}",
@@ -767,6 +770,19 @@ def endpoint_groups():
             ],
         },
         {
+            "name": "Testbed",
+            "endpoints": [
+                ("GET", "/api/testbed/runs", "List captured rendered messages."),
+                ("GET", "/api/testbed/runs/{run_id}", "Get one captured rendered message."),
+                (
+                    "GET",
+                    "/api/testbed/runs/{run_id}/messages/{message_id}",
+                    "Get the message for one captured run.",
+                ),
+                ("DELETE", "/api/testbed/runs", "Clear captured rendered messages."),
+            ],
+        },
+        {
             "name": "Recipient Lists",
             "endpoints": [
                 ("PUT", "/api/recipient-lists/{list_key}", "Create or update a client-scoped recipient list."),
@@ -886,6 +902,15 @@ def route_path_map():
             "mailing:api_transactional_message_status",
             args=[123],
         ),
+        API_DOC_PATHS["mailing:api_testbed_runs"]: reverse("mailing:api_testbed_runs"),
+        API_DOC_PATHS["mailing:api_testbed_run_detail"]: reverse(
+            "mailing:api_testbed_run_detail",
+            args=[123],
+        ),
+        API_DOC_PATHS["mailing:api_testbed_run_message"]: reverse(
+            "mailing:api_testbed_run_message",
+            args=[123, 123],
+        ),
         API_DOC_PATHS["mailing:tracking_open"]: reverse("mailing:tracking_open", args=["tracking"]),
         API_DOC_PATHS["mailing:tracking_click"]: reverse("mailing:tracking_click", args=["tracking"]),
         API_DOC_PATHS["mailing:public_unsubscribe"]: reverse("mailing:public_unsubscribe", args=["unsubscribe"]),
@@ -923,6 +948,8 @@ def bearer_responses(success, *, accepted=False):
 
 
 CONTACT_ID_PARAM = {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+RUN_ID_PARAM = {"name": "run_id", "in": "path", "required": True, "schema": {"type": "integer"}}
+MESSAGE_ID_PARAM = {"name": "message_id", "in": "path", "required": True, "schema": {"type": "integer"}}
 TAG_SLUG_PARAM = {"name": "tag_slug", "in": "path", "required": True, "schema": {"type": "string"}}
 LIST_KEY_PARAM = {"name": "list_key", "in": "path", "required": True, "schema": {"type": "string"}}
 CAMPAIGN_EXTERNAL_KEY_PARAM = {
@@ -991,6 +1018,7 @@ OPENAPI_SPEC = {
         {"name": "State"},
         {"name": "Imports"},
         {"name": "Transactional"},
+        {"name": "Testbed"},
         {"name": "Public"},
         {"name": "Provider"},
     ],
@@ -1448,6 +1476,57 @@ OPENAPI_SPEC = {
                 | {"404": {"$ref": "#/components/responses/ValidationError"}},
             }
         },
+        "/api/testbed/runs": {
+            "get": {
+                "tags": ["Testbed"],
+                "summary": "List captured runs",
+                "description": "Lists rendered messages captured while delivery mode is capture.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {"name": "email", "in": "query", "schema": {"type": "string", "format": "email"}},
+                    {"name": "source", "in": "query", "schema": {"type": "string"}},
+                    {"name": "event", "in": "query", "schema": {"type": "string"}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1}},
+                ],
+                "responses": bearer_responses(
+                    json_response("Captured runs", "#/components/schemas/CapturedRunList")
+                ),
+            },
+            "delete": {
+                "tags": ["Testbed"],
+                "summary": "Clear captured runs",
+                "description": "Deletes captured rendered messages for the authenticated client.",
+                "security": [{"BearerAuth": []}],
+                "requestBody": json_body("#/components/schemas/CapturedRunClearRequest", required=False),
+                "responses": bearer_responses(
+                    json_response("Captured runs cleared", "#/components/schemas/CapturedRunClearResponse")
+                ),
+            },
+        },
+        "/api/testbed/runs/{run_id}": {
+            "get": {
+                "tags": ["Testbed"],
+                "summary": "Get captured run",
+                "security": [{"BearerAuth": []}],
+                "parameters": [RUN_ID_PARAM],
+                "responses": bearer_responses(
+                    json_response("Captured run", "#/components/schemas/CapturedRunResponse")
+                )
+                | {"404": {"$ref": "#/components/responses/ValidationError"}},
+            }
+        },
+        "/api/testbed/runs/{run_id}/messages/{message_id}": {
+            "get": {
+                "tags": ["Testbed"],
+                "summary": "Get captured run message",
+                "security": [{"BearerAuth": []}],
+                "parameters": [RUN_ID_PARAM, MESSAGE_ID_PARAM],
+                "responses": bearer_responses(
+                    json_response("Captured run message", "#/components/schemas/CapturedRunMessageResponse")
+                )
+                | {"404": {"$ref": "#/components/responses/ValidationError"}},
+            }
+        },
         "/t/o/{tracking_token}.gif": {
             "get": {
                 "tags": ["Public"],
@@ -1665,6 +1744,59 @@ OPENAPI_SPEC = {
                         },
                     },
                 },
+            },
+            "CapturedRun": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "email": {"type": "string", "format": "email"},
+                    "from_email": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "template_key": {"type": "string"},
+                    "source": {"type": "string"},
+                    "event": {"type": "string"},
+                    "idempotency_key": {"type": "string"},
+                    "created_at": {"type": "string", "format": "date-time"},
+                },
+            },
+            "CapturedRunDetail": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/CapturedRun"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "html_body": {"type": "string"},
+                            "text_body": {"type": "string"},
+                            "metadata": {"type": "object"},
+                            "transactional_message_id": {"type": ["integer", "null"]},
+                            "campaign_id": {"type": ["integer", "null"]},
+                            "campaign_recipient_id": {"type": ["integer", "null"]},
+                        },
+                    },
+                ]
+            },
+            "CapturedRunList": {
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer"},
+                    "runs": {"type": "array", "items": {"$ref": "#/components/schemas/CapturedRun"}},
+                },
+            },
+            "CapturedRunResponse": {
+                "type": "object",
+                "properties": {"run": {"$ref": "#/components/schemas/CapturedRunDetail"}},
+            },
+            "CapturedRunMessageResponse": {
+                "type": "object",
+                "properties": {"message": {"$ref": "#/components/schemas/CapturedRunDetail"}},
+            },
+            "CapturedRunClearRequest": {
+                "type": "object",
+                "properties": {"email": {"type": "string", "format": "email"}},
+            },
+            "CapturedRunClearResponse": {
+                "type": "object",
+                "properties": {"deleted_count": {"type": "integer"}},
             },
             "RecipientListType": {"type": "string", "enum": [choice.value for choice in RecipientListType]},
             "RecipientListInput": {

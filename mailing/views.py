@@ -70,6 +70,13 @@ from mailing.services.api_docs import (
 )
 from mailing.services.auth import authenticate_bearer_token
 from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
+from mailing.services.capture import (
+    capture_api_enabled,
+    clear_captured_emails,
+    get_captured_email,
+    get_captured_run_message,
+    list_captured_emails,
+)
 from mailing.services.contact_import_export import (
     bulk_import_contacts_for_client,
     csv_import_contacts_for_client,
@@ -1437,6 +1444,18 @@ def _mock_inbox_disabled_response():
     )
 
 
+def _capture_api_disabled_response():
+    return JsonResponse(
+        {
+            "error": {
+                "code": "capture_api_disabled",
+                "message": "The Datamailer capture API is not enabled on this deployment.",
+            }
+        },
+        status=404,
+    )
+
+
 @csrf_exempt
 def api_campaign(request, external_key):
     if request.method not in {"GET", "PUT"}:
@@ -1607,6 +1626,67 @@ def api_mock_inbox_message_detail(request, message_id):
 
     try:
         payload = get_mock_inbox_message(message_id, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_testbed_runs(request):
+    if request.method not in {"GET", "DELETE"}:
+        return method_not_allowed_response(["GET", "DELETE"])
+
+    if not capture_api_enabled():
+        return _capture_api_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = list_captured_emails(request.GET, client)
+        else:
+            payload = clear_captured_emails(api_request_data(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_testbed_run_detail(request, run_id):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    if not capture_api_enabled():
+        return _capture_api_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_captured_email(run_id, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+def api_testbed_run_message(request, run_id, message_id):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    if not capture_api_enabled():
+        return _capture_api_disabled_response()
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_captured_run_message(run_id, message_id, client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

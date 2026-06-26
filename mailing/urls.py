@@ -128,6 +128,13 @@ urlpatterns = [
         views.api_mock_inbox_message_detail,
         name="api_mock_inbox_message_detail",
     ),
+    path("api/testbed/runs", views.api_testbed_runs, name="api_testbed_runs"),
+    path("api/testbed/runs/<int:run_id>", views.api_testbed_run_detail, name="api_testbed_run_detail"),
+    path(
+        "api/testbed/runs/<int:run_id>/messages/<int:message_id>",
+        views.api_testbed_run_message,
+        name="api_testbed_run_message",
+    ),
     path("api/inbox/messages", views.api_real_inbox_messages, name="api_real_inbox_messages"),
     path(
         "api/inbox/messages/<path:s3_key>",
