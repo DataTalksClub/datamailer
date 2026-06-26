@@ -221,7 +221,20 @@ def test_real_inbox_address_takes_real_ses_path(template, monkeypatch):
 
     sent = {}
 
-    def fake_send_email(*, ses_client, source, to_email, subject, html_body, text_body=""):
+    def fake_send_email(
+        *,
+        ses_client,
+        source,
+        to_email,
+        subject,
+        html_body,
+        text_body="",
+        reply_to="",
+        cc=None,
+        bcc=None,
+        headers=None,
+        message_parts=None,
+    ):
         sent["to"] = to_email
         sent["source"] = source
         return "ses-real-123"

@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 
 from mailing.models import CapturedEmail
+from mailing.services.api_errors import ApiValidationError
 from mailing.services.contacts import normalize_email
 
 DEFAULT_LIST_LIMIT = 25
@@ -117,21 +118,15 @@ def list_captured_emails(data, authenticated_client):
 def get_captured_email(capture_id, authenticated_client):
     capture = CapturedEmail.objects.filter(id=capture_id, client=authenticated_client).first()
     if capture is None:
-        from mailing.services.api import ApiValidationError
-
         raise ApiValidationError({"run_id": "not_found"}, status_code=404)
     return {"run": captured_email_detail(capture)}
 
 
 def get_captured_run_message(run_id, message_id, authenticated_client):
     if run_id != message_id:
-        from mailing.services.api import ApiValidationError
-
         raise ApiValidationError({"message_id": "not_found"}, status_code=404)
     capture = CapturedEmail.objects.filter(id=run_id, client=authenticated_client).first()
     if capture is None:
-        from mailing.services.api import ApiValidationError
-
         raise ApiValidationError({"run_id": "not_found"}, status_code=404)
     return {"message": captured_email_detail(capture)}
 
@@ -158,12 +153,8 @@ def _validate_limit(raw_limit):
     try:
         limit = int(raw_limit)
     except (TypeError, ValueError) as exc:
-        from mailing.services.api import ApiValidationError
-
         raise ApiValidationError({"limit": "must_be_integer"}) from exc
     if limit < 1:
-        from mailing.services.api import ApiValidationError
-
         raise ApiValidationError({"limit": "must_be_positive"})
     return min(limit, MAX_LIST_LIMIT)
 

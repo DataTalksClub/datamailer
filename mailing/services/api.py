@@ -27,9 +27,12 @@ from mailing.models import (
     Subscription,
     SubscriptionStatus,
     TransactionalMessage,
-    normalize_category_tag as normalize_campaign_category_tag,
     normalize_tag_filter,
 )
+from mailing.models import (
+    normalize_category_tag as normalize_campaign_category_tag,
+)
+from mailing.services.api_errors import ApiValidationError
 from mailing.services.campaign_sender import render_campaign_message, send_campaign_test_message
 from mailing.services.campaigns import queue_campaign
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
@@ -44,13 +47,6 @@ from mailing.services.contacts import (
     unsubscribe_contact,
     upsert_contact,
 )
-
-
-class ApiValidationError(Exception):
-    def __init__(self, errors, *, status_code=400):
-        self.errors = errors
-        self.status_code = status_code
-        super().__init__("api_validation_error")
 
 
 @dataclass(frozen=True)

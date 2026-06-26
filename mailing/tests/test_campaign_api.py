@@ -14,8 +14,8 @@ from mailing.models import (
     Subscription,
     SubscriptionStatus,
 )
-from mailing.services.campaign_sender import send_campaign_batch
 from mailing.services.auth import create_client_api_key
+from mailing.services.campaign_sender import send_campaign_batch
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

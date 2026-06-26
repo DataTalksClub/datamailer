@@ -1,7 +1,6 @@
 import threading
 import time
-from email.message import EmailMessage
-from email.message import Message
+from email.message import EmailMessage, Message
 
 from django.conf import settings
 

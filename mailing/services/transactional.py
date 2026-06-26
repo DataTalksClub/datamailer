@@ -1,6 +1,6 @@
+import re
 from dataclasses import dataclass
 from email.message import Message
-import re
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
