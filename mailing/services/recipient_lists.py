@@ -613,7 +613,8 @@ def reconcile_recipient_list_for_client(list_key, data, authenticated_client):
         defaults=defaults,
     )
     for source_object_key, member_data in parsed_members:
-        upsert_member(recipient_list, source_object_key, member_data)
+        member, _ = upsert_member(recipient_list, source_object_key, member_data)
+        upsert_cascade_memberships(recipient_list, member)
 
     removed_count = 0
     if remove_absent:

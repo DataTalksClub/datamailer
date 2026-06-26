@@ -367,6 +367,56 @@ def test_recipient_list_reconcile_removes_cascaded_parent_reason(client, audienc
     assert course_member.metadata["membership_reasons"] == []
 
 
+def test_recipient_list_reconcile_upserts_cascaded_parent_reason(client, audience, api_client_record):
+    list_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "ML Zoomcamp 2026 Homework 1 submitters",
+        },
+        "members": [
+            {
+                "source_object_key": "homework-submission:1",
+                "email": "learner@example.com",
+                "metadata": {"submission_id": 1},
+            }
+        ],
+        "remove_absent": True,
+    }
+
+    response = client.post(
+        reverse("mailing:api_recipient_list_reconcile", args=[list_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["upsert_count"] == 1
+    assert response.json()["recipient_list"]["active_member_count"] == 1
+
+    expected_ancestor_keys = [
+        "ml-zoomcamp-2026:@e:@homework",
+        "ml-zoomcamp-2026:@e",
+        "ml-zoomcamp-2026",
+        "<all>",
+    ]
+    for ancestor_key in expected_ancestor_keys:
+        ancestor = RecipientList.objects.get(key=ancestor_key)
+        member = RecipientListMember.objects.get(recipient_list=ancestor)
+        assert ancestor.active_member_count == 1
+        assert member.active is True
+        assert member.source_object_key.startswith("cascade-contact:")
+        assert member.metadata["membership_reasons"] == [
+            {
+                "list_key": list_key,
+                "source_object_key": "homework-submission:1",
+            }
+        ]
+
+
 def test_recipient_list_member_delete_removes_cascaded_parent_reason(client, audience, api_client_record):
     list_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
     source_key = "homework-submission:1"
