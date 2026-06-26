@@ -269,8 +269,14 @@ def test_campaign_api_queue_snapshots_and_enqueues_pending_recipients(
         {"audience": audience.slug, "client": api_client_record.slug},
     )
 
-    assert replay.status_code == 409
-    assert replay.json()["error"]["fields"] == {"status": "not_queueable"}
+    assert replay.status_code == 202
+    replay_body = replay.json()
+    assert replay_body["queued"] is False
+    assert replay_body["batch_count"] == 0
+    assert replay_body["recipient_count"] == 1
+    assert replay_body["skipped_count"] == 0
+    assert replay_body["campaign"]["status"] == CampaignStatus.QUEUED
+    assert len(enqueued) == 1
 
 
 def test_campaign_api_cancels_draft_campaign(client, audience, api_client_record):

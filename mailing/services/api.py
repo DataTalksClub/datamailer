@@ -373,9 +373,6 @@ def upsert_campaign_for_client(external_key, data, authenticated_client):
 
 def queue_campaign_for_client(external_key, data, authenticated_client):
     campaign = campaign_for_client(external_key, data, authenticated_client)
-    if campaign.status != CampaignStatus.DRAFT:
-        raise ApiValidationError({"status": "not_queueable"}, status_code=409)
-
     result = queue_campaign(campaign)
     campaign.refresh_from_db()
     return {
