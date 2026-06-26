@@ -301,7 +301,9 @@ def apply_correlated_updates(payload, source, event):
     elif isinstance(source, TransactionalMessage):
         apply_transactional_message_update(source, notification_type, occurred_at, metadata)
 
-    if notification_type == "complaint" or (notification_type == "bounce" and is_hard_bounce(metadata)):
+    if notification_type in {"delivery", "open", "click", "complaint"} or (
+        notification_type == "bounce" and is_hard_bounce(metadata)
+    ):
         emit_cmp_contact_event(event)
 
 

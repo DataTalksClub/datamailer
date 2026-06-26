@@ -262,6 +262,26 @@ def test_worker_delivery_updates_transactional_message(transactional_message):
     )
 
 
+@override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
+def test_worker_delivery_emits_cmp_callback(recipient, monkeypatch):
+    monkeypatch.setattr(
+        "mailing.services.cmp_callbacks.transaction.on_commit",
+        lambda callback: callback(),
+    )
+
+    response = ses_webhooks_handler(
+        records_from_payloads([("message-1", webhook_payload("delivery", "sns-cmp-delivery", "ses-campaign-1"))]),
+        None,
+    )
+
+    assert response == {"batchItemFailures": []}
+    callback = CmpCallback.objects.get()
+    assert callback.status == CmpCallbackStatus.PENDING
+    assert callback.event_type == "message.delivered"
+    assert callback.payload["event_type"] == "message.delivered"
+    assert callback.payload["email"] == recipient.contact.normalized_email
+
+
 def test_worker_hard_bounce_suppresses_campaign_contact(recipient, audience, app_client):
     payload = webhook_payload(
         "bounce",

@@ -48,7 +48,8 @@ def record_open(raw_token):
         recipient.first_opened_at = now
         update_fields.append("first_opened_at")
     recipient.save(update_fields=update_fields)
-    _create_campaign_event(recipient, EmailEventType.OPEN)
+    event = _create_campaign_event(recipient, EmailEventType.OPEN)
+    emit_cmp_contact_event(event)
     refresh_campaign_engagement_counts(recipient.campaign)
     return recipient
 
@@ -78,7 +79,8 @@ def record_click(raw_token, destination_url):
         recipient.first_clicked_at = now
         update_fields.append("first_clicked_at")
     recipient.save(update_fields=update_fields)
-    _create_campaign_event(recipient, EmailEventType.CLICK, url=destination_url)
+    event = _create_campaign_event(recipient, EmailEventType.CLICK, url=destination_url)
+    emit_cmp_contact_event(event)
     refresh_campaign_engagement_counts(recipient.campaign)
     return recipient
 

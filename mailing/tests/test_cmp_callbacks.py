@@ -90,6 +90,36 @@ def test_enqueue_cmp_callback_is_idempotent(contact, app_client, audience):
     assert callback.payload["client"] == "dtc-courses"
 
 
+@pytest.mark.parametrize(
+    ("email_event_type", "callback_event_type"),
+    [
+        (EmailEventType.DELIVERED, "message.delivered"),
+        (EmailEventType.OPEN, "message.opened"),
+        (EmailEventType.CLICK, "message.clicked"),
+    ],
+)
+def test_enqueue_cmp_callback_supports_lifecycle_events(
+    contact,
+    app_client,
+    audience,
+    email_event_type,
+    callback_event_type,
+):
+    event = callback_event(
+        contact,
+        app_client,
+        audience,
+        event_type=email_event_type,
+    )
+
+    enqueue_cmp_contact_event(event.id)
+
+    callback = CmpCallback.objects.get()
+    assert callback.event_type == callback_event_type
+    assert callback.payload["event_type"] == callback_event_type
+    assert callback.payload["email"] == "learner@example.com"
+
+
 def test_process_due_cmp_callbacks_delivers_pending_callback(monkeypatch, contact, app_client, audience):
     event = callback_event(contact, app_client, audience)
     enqueue_cmp_contact_event(event.id)

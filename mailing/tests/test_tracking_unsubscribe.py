@@ -215,6 +215,28 @@ def test_click_redirect_records_repeated_clicks_and_redirects(client, recipient)
     ]
 
 
+@override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
+def test_tracking_open_and_click_emit_cmp_callbacks(client, recipient, monkeypatch):
+    monkeypatch.setattr(
+        "mailing.services.cmp_callbacks.transaction.on_commit",
+        lambda callback: callback(),
+    )
+    token = ensure_campaign_recipient_tokens(recipient).tracking_token
+
+    open_response = client.get(reverse("mailing:tracking_open", args=[token]))
+    click_response = client.get(
+        reverse("mailing:tracking_click", args=[token]),
+        {"u": "https://example.com/path"},
+    )
+
+    assert open_response.status_code == 200
+    assert click_response.status_code == 302
+    assert list(CmpCallback.objects.order_by("id").values_list("event_type", flat=True)) == [
+        "message.opened",
+        "message.clicked",
+    ]
+
+
 @pytest.mark.parametrize(
     "destination", ["", "mailto:person@example.com", "javascript:alert(1)", "/relative", "https://"]
 )
