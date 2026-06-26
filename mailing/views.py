@@ -148,6 +148,7 @@ from mailing.services.recipient_lists import (
     get_recipient_list_for_client,
     get_recipient_list_import_job_for_client,
     reconcile_recipient_list_for_client,
+    remove_recipient_list_member_for_client,
     upsert_recipient_list_for_client,
     upsert_recipient_list_member_for_client,
 )
@@ -1316,20 +1317,28 @@ def api_recipient_list(request, list_key):
 
 @csrf_exempt
 def api_recipient_list_member(request, list_key, source_object_key):
-    if request.method != "PUT":
-        return method_not_allowed_response(["PUT"])
+    if request.method not in {"DELETE", "PUT"}:
+        return method_not_allowed_response(["DELETE", "PUT"])
 
     client, error_response = authenticate_api_request(request)
     if error_response:
         return error_response
 
     try:
-        payload = upsert_recipient_list_member_for_client(
-            list_key,
-            source_object_key,
-            json_request_body(request),
-            client,
-        )
+        if request.method == "PUT":
+            payload = upsert_recipient_list_member_for_client(
+                list_key,
+                source_object_key,
+                json_request_body(request),
+                client,
+            )
+        else:
+            payload = remove_recipient_list_member_for_client(
+                list_key,
+                source_object_key,
+                json_request_body(request),
+                client,
+            )
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

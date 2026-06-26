@@ -1364,7 +1364,18 @@ OPENAPI_SPEC = {
                 "responses": bearer_responses(
                     json_response("Recipient list member", "#/components/schemas/RecipientListMemberUpsertResponse")
                 ),
-            }
+            },
+            "delete": {
+                "tags": ["Recipient Lists"],
+                "summary": "Remove recipient list member",
+                "description": "Idempotently marks one source membership removed and updates cascade membership reasons on ancestor lists.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM, SOURCE_OBJECT_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/ScopedMutationRequest"),
+                "responses": bearer_responses(
+                    json_response("Recipient list member removed", "#/components/schemas/RecipientListMemberRemoveResponse")
+                ),
+            },
         },
         "/api/recipient-lists/{list_key}/members/bulk-upsert": {
             "post": {
@@ -2325,6 +2336,14 @@ OPENAPI_SPEC = {
                     "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
                     "member": {"$ref": "#/components/schemas/RecipientListMember"},
                     "created": {"type": "boolean"},
+                },
+            },
+            "RecipientListMemberRemoveResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
+                    "member": {"$ref": "#/components/schemas/RecipientListMember"},
+                    "removed": {"type": "boolean"},
                 },
             },
             "RecipientListBulkUpsertResponse": {

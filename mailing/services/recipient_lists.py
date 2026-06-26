@@ -108,6 +108,20 @@ def recipient_list_member_payload(member):
     }
 
 
+def removed_recipient_list_member_preview_payload(source_object_key):
+    return {
+        "source_object_key": source_object_key,
+        "email": "",
+        "contact_id": None,
+        "status": "removed",
+        "active": False,
+        "removed_at": None,
+        "metadata": {},
+        "created_at": None,
+        "updated_at": None,
+    }
+
+
 def recipient_list_import_job_payload(job):
     return {
         "id": job.id,
@@ -415,6 +429,53 @@ def upsert_recipient_list_member_for_client(list_key, source_object_key, data, a
         "recipient_list": recipient_list_payload(recipient_list),
         "member": recipient_list_member_payload(member),
         "created": created,
+    }
+
+
+@transaction.atomic
+def remove_recipient_list_member_for_client(list_key, source_object_key, data, authenticated_client):
+    list_key = validate_path_key(list_key, "list_key")
+    source_object_key = validate_path_key(source_object_key, "source_object_key")
+    scope = validate_recipient_list_scope(data, authenticated_client)
+    defaults = validate_list_defaults(data, list_key)
+    recipient_list = RecipientList.objects.filter(
+        client=scope.client,
+        audience=scope.audience,
+        key=list_key,
+    ).first()
+    if recipient_list is None:
+        return {
+            "recipient_list": recipient_list_preview_payload(scope, list_key, defaults),
+            "member": removed_recipient_list_member_preview_payload(source_object_key),
+            "removed": False,
+        }
+
+    member = recipient_list.members.filter(source_object_key=source_object_key).first()
+    if member is None:
+        refresh_recipient_list_counts(recipient_list)
+        return {
+            "recipient_list": recipient_list_payload(recipient_list),
+            "member": removed_recipient_list_member_preview_payload(source_object_key),
+            "removed": False,
+        }
+
+    was_active = member.active
+    if member.active:
+        reasons = cascade_reasons(member.metadata)
+        if reasons:
+            member.metadata = {"membership_reasons": reasons}
+            member.removed_at = None
+        else:
+            member.active = False
+            member.removed_at = timezone.now()
+        member.save(update_fields=["active", "removed_at", "metadata", "updated_at"])
+        upsert_cascade_memberships(recipient_list, member)
+    refresh_recipient_list_counts(recipient_list)
+    member.refresh_from_db()
+    return {
+        "recipient_list": recipient_list_payload(recipient_list),
+        "member": recipient_list_member_payload(member),
+        "removed": was_active,
     }
 
 

@@ -307,6 +307,50 @@ def test_recipient_list_reconcile_removes_cascaded_parent_reason(client, audienc
     assert course_member.metadata["membership_reasons"] == []
 
 
+def test_recipient_list_member_delete_removes_cascaded_parent_reason(client, audience, api_client_record):
+    list_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
+    source_key = "homework-submission:1"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "ML Zoomcamp 2026 Homework 1 submitters",
+        },
+        "member": {
+            "email": "learner@example.com",
+            "metadata": {"submission_id": 1},
+        },
+    }
+    assert put_json(client, "mailing:api_recipient_list_member", payload, list_key, source_key).status_code == 200
+
+    response = delete_json(
+        client,
+        "mailing:api_recipient_list_member",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        list_key,
+        source_key,
+    )
+    second_response = delete_json(
+        client,
+        "mailing:api_recipient_list_member",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        list_key,
+        source_key,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["removed"] is True
+    assert response.json()["member"]["status"] == "removed"
+    assert second_response.status_code == 200
+    assert second_response.json()["removed"] is False
+    leaf_member = RecipientListMember.objects.get(recipient_list__key=list_key)
+    course_member = RecipientListMember.objects.get(recipient_list__key="ml-zoomcamp-2026")
+    assert leaf_member.active is False
+    assert course_member.active is False
+    assert course_member.metadata["membership_reasons"] == []
+
+
 def test_parent_membership_removal_preserves_active_child_cascade_reason(client, audience, api_client_record):
     parent_key = "ml-zoomcamp-2026"
     child_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
@@ -348,6 +392,60 @@ def test_parent_membership_removal_preserves_active_child_cascade_reason(client,
     response = put_json(client, "mailing:api_recipient_list_member", remove_payload, parent_key, registration_key)
 
     assert response.status_code == 200
+    parent_member = RecipientListMember.objects.get(recipient_list__key=parent_key)
+    assert parent_member.active is True
+    assert parent_member.removed_at is None
+    assert parent_member.metadata["membership_reasons"] == [
+        {
+            "list_key": child_key,
+            "source_object_key": submission_key,
+        }
+    ]
+
+
+def test_parent_membership_delete_preserves_active_child_cascade_reason(client, audience, api_client_record):
+    parent_key = "ml-zoomcamp-2026"
+    child_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
+    registration_key = "registration:1"
+    submission_key = "homework-submission:1"
+    parent_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "registrants",
+            "name": "ML Zoomcamp 2026 registrants",
+        },
+        "member": {
+            "email": "learner@example.com",
+            "metadata": {"registration_id": 1},
+        },
+    }
+    child_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "Homework 1 submitters",
+        },
+        "member": {
+            "email": "learner@example.com",
+            "metadata": {"submission_id": 1},
+        },
+    }
+
+    assert put_json(client, "mailing:api_recipient_list_member", parent_payload, parent_key, registration_key).status_code == 200
+    assert put_json(client, "mailing:api_recipient_list_member", child_payload, child_key, submission_key).status_code == 200
+
+    response = delete_json(
+        client,
+        "mailing:api_recipient_list_member",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        parent_key,
+        registration_key,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["removed"] is True
     parent_member = RecipientListMember.objects.get(recipient_list__key=parent_key)
     assert parent_member.active is True
     assert parent_member.removed_at is None
@@ -406,6 +504,25 @@ def test_child_membership_removal_preserves_explicit_parent_membership(client, a
     assert parent_member.active is True
     assert parent_member.source_object_key == registration_key
     assert parent_member.metadata["membership_reasons"] == []
+
+
+def test_missing_recipient_list_member_delete_is_idempotent(client, audience, api_client_record):
+    response = delete_json(
+        client,
+        "mailing:api_recipient_list_member",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        "ml-zoomcamp-2026:@e",
+        "enrollment:1",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["removed"] is False
+    assert body["recipient_list"]["key"] == "ml-zoomcamp-2026:@e"
+    assert body["member"]["source_object_key"] == "enrollment:1"
+    assert body["member"]["status"] == "removed"
+    assert RecipientList.objects.count() == 0
+    assert RecipientListMember.objects.count() == 0
 
 
 def test_recipient_list_keys_are_scoped_to_authenticated_client(
