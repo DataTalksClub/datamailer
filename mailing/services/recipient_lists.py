@@ -365,6 +365,51 @@ def get_recipient_list_for_client(list_key, data, authenticated_client):
     return {"recipient_list": recipient_list_payload(recipient_list)}
 
 
+def get_recipient_list_members_for_client(list_key, data, authenticated_client):
+    list_key = validate_path_key(list_key, "list_key")
+    scope = validate_recipient_list_scope(data, authenticated_client)
+    recipient_list = RecipientList.objects.filter(
+        client=scope.client,
+        audience=scope.audience,
+        key=list_key,
+    ).first()
+    if recipient_list is None:
+        raise ApiValidationError({"list_key": "not_found"}, status_code=404)
+
+    include_removed = data.get("include_removed", "false")
+    if include_removed in ("", None, "false", "0", "no"):
+        include_removed = False
+    elif include_removed in ("true", "1", "yes"):
+        include_removed = True
+    else:
+        raise ApiValidationError({"include_removed": "must_be_boolean"})
+
+    limit = data.get("limit", 1000)
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise ApiValidationError({"limit": "must_be_integer"}) from exc
+    if limit <= 0 or limit > 10000:
+        raise ApiValidationError({"limit": "must_be_between_1_and_10000"})
+
+    queryset = (
+        recipient_list.members.select_related("contact")
+        .order_by("source_object_key", "id")
+    )
+    if not include_removed:
+        queryset = queryset.filter(active=True)
+
+    members = list(queryset[: limit + 1])
+    has_more = len(members) > limit
+    members = members[:limit]
+    return {
+        "recipient_list": recipient_list_payload(recipient_list),
+        "members": [recipient_list_member_payload(member) for member in members],
+        "count": len(members),
+        "has_more": has_more,
+    }
+
+
 def upsert_member(recipient_list, source_object_key, member_data):
     contact, _ = upsert_contact(member_data["email"])
     existing_by_source = RecipientListMember.objects.filter(

@@ -147,6 +147,7 @@ from mailing.services.recipient_lists import (
     create_recipient_list_import_job_for_client,
     get_recipient_list_for_client,
     get_recipient_list_import_job_for_client,
+    get_recipient_list_members_for_client,
     reconcile_recipient_list_for_client,
     remove_recipient_list_member_for_client,
     upsert_recipient_list_for_client,
@@ -1339,6 +1340,27 @@ def api_recipient_list_member(request, list_key, source_object_key):
                 json_request_body(request),
                 client,
             )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list_members(request, list_key):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_recipient_list_members_for_client(
+            list_key,
+            request.GET,
+            client,
+        )
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

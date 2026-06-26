@@ -93,6 +93,11 @@ urlpatterns = [
     path("api/subscriptions/unsubscribe", views.api_unsubscribe, name="api_unsubscribe"),
     path("api/recipient-lists/<str:list_key>", views.api_recipient_list, name="api_recipient_list"),
     path(
+        "api/recipient-lists/<str:list_key>/members",
+        views.api_recipient_list_members,
+        name="api_recipient_list_members",
+    ),
+    path(
         "api/recipient-lists/<str:list_key>/members/bulk-upsert",
         views.api_recipient_list_bulk_upsert,
         name="api_recipient_list_bulk_upsert",

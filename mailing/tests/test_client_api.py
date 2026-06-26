@@ -266,6 +266,66 @@ def test_recipient_list_member_upsert_creates_list_and_member_idempotently(clien
     assert get_response.json()["recipient_list"]["member_count"] == 1
 
 
+def test_recipient_list_members_endpoint_lists_scoped_members(client, audience, api_client_record):
+    list_key = "ml-zoomcamp-2026:@e"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {"name": "ML Zoomcamp 2026 enrolled"},
+        "member": {
+            "email": "learner@example.com",
+            "metadata": {"enrollment_id": 1},
+        },
+    }
+    removed_payload = {
+        **payload,
+        "member": {
+            "email": "removed@example.com",
+            "metadata": {"enrollment_id": 2},
+        },
+    }
+    assert put_json(client, "mailing:api_recipient_list_member", payload, list_key, "enrollment:1").status_code == 200
+    assert put_json(client, "mailing:api_recipient_list_member", removed_payload, list_key, "enrollment:2").status_code == 200
+    assert delete_json(
+        client,
+        "mailing:api_recipient_list_member",
+        {"audience": audience.slug, "client": api_client_record.slug},
+        list_key,
+        "enrollment:2",
+    ).status_code == 200
+
+    active_response = client.get(
+        reverse("mailing:api_recipient_list_members", args=[list_key]),
+        {"audience": audience.slug, "client": api_client_record.slug},
+        **auth_headers(),
+    )
+    all_response = client.get(
+        reverse("mailing:api_recipient_list_members", args=[list_key]),
+        {
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "include_removed": "true",
+            "limit": "1",
+        },
+        **auth_headers(),
+    )
+
+    assert active_response.status_code == 200
+    active_body = active_response.json()
+    assert active_body["recipient_list"]["key"] == list_key
+    assert active_body["count"] == 1
+    assert active_body["has_more"] is False
+    assert [member["source_object_key"] for member in active_body["members"]] == ["enrollment:1"]
+    assert active_body["members"][0]["email"] == "learner@example.com"
+    assert active_body["members"][0]["metadata"] == {"enrollment_id": 1}
+
+    assert all_response.status_code == 200
+    all_body = all_response.json()
+    assert all_body["count"] == 1
+    assert all_body["has_more"] is True
+    assert all_body["members"][0]["source_object_key"] == "enrollment:1"
+
+
 def test_recipient_list_reconcile_removes_cascaded_parent_reason(client, audience, api_client_record):
     list_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
     payload = {

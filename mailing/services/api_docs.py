@@ -62,6 +62,7 @@ API_DOC_PATHS = {
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
     "mailing:api_recipient_list": "/api/recipient-lists/{list_key}",
+    "mailing:api_recipient_list_members": "/api/recipient-lists/{list_key}/members",
     "mailing:api_recipient_list_member": "/api/recipient-lists/{list_key}/members/{source_object_key}",
     "mailing:api_recipient_list_bulk_upsert": "/api/recipient-lists/{list_key}/members/bulk-upsert",
     "mailing:api_recipient_list_reconcile": "/api/recipient-lists/{list_key}/members/reconcile",
@@ -797,6 +798,7 @@ def endpoint_groups():
             "endpoints": [
                 ("PUT", "/api/recipient-lists/{list_key}", "Create or update a client-scoped recipient list."),
                 ("GET", "/api/recipient-lists/{list_key}", "Get recipient list metadata and counts."),
+                ("GET", "/api/recipient-lists/{list_key}/members", "List recipient-list members for audit."),
                 (
                     "PUT",
                     "/api/recipient-lists/{list_key}/members/{source_object_key}",
@@ -893,6 +895,10 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
         API_DOC_PATHS["mailing:api_recipient_list"]: reverse(
             "mailing:api_recipient_list",
+            args=["ml-zoomcamp-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_recipient_list_members"]: reverse(
+            "mailing:api_recipient_list_members",
             args=["ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_member"]: reverse(
@@ -1351,6 +1357,24 @@ OPENAPI_SPEC = {
                 "requestBody": json_body("#/components/schemas/RecipientListUpsertRequest"),
                 "responses": bearer_responses(
                     json_response("Recipient list", "#/components/schemas/RecipientListUpsertResponse")
+                ),
+            },
+        },
+        "/api/recipient-lists/{list_key}/members": {
+            "get": {
+                "tags": ["Recipient Lists"],
+                "summary": "List recipient list members",
+                "description": "Returns client-scoped list members for audit and drift checks. Active members are returned by default.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    LIST_KEY_PARAM,
+                    {"name": "audience", "in": "query", "required": True, "schema": {"type": "string"}},
+                    {"name": "client", "in": "query", "required": True, "schema": {"type": "string"}},
+                    {"name": "include_removed", "in": "query", "required": False, "schema": {"type": "boolean", "default": False}},
+                    {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1000}},
+                ],
+                "responses": bearer_responses(
+                    json_response("Recipient list members", "#/components/schemas/RecipientListMembersResponse")
                 ),
             },
         },
@@ -2322,6 +2346,18 @@ OPENAPI_SPEC = {
             "RecipientListResponse": {
                 "type": "object",
                 "properties": {"recipient_list": {"$ref": "#/components/schemas/RecipientList"}},
+            },
+            "RecipientListMembersResponse": {
+                "type": "object",
+                "properties": {
+                    "recipient_list": {"$ref": "#/components/schemas/RecipientList"},
+                    "members": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/RecipientListMember"},
+                    },
+                    "count": {"type": "integer"},
+                    "has_more": {"type": "boolean"},
+                },
             },
             "RecipientListUpsertResponse": {
                 "type": "object",
