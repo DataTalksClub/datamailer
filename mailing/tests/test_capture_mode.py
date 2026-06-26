@@ -164,8 +164,12 @@ def test_capture_api_lists_details_and_clears_runs(client, api_client_record):
         email="learner@example.com",
         from_email="courses@dtcdev.click",
         subject="Captured",
-        html_body="<p>Captured</p>",
-        text_body="Captured",
+        html_body=(
+            '<a href="/relative-profile">Profile</a>'
+            '<a href="javascript:alert(1)">Bad</a>'
+            '<img src="https://cdn.example.com/banner.png">'
+        ),
+        text_body="Unsubscribe: https://mail.example.com/unsubscribe/token",
         source="transactional",
         event="homework_submission",
         idempotency_key="homework:42",
@@ -187,10 +191,25 @@ def test_capture_api_lists_details_and_clears_runs(client, api_client_record):
     )
 
     assert detail_response.status_code == 200
-    assert detail_response.json()["run"]["html_body"] == "<p>Captured</p>"
+    run = detail_response.json()["run"]
+    assert run["html_body"] == (
+        '<a href="/relative-profile">Profile</a>'
+        '<a href="javascript:alert(1)">Bad</a>'
+        '<img src="https://cdn.example.com/banner.png">'
+    )
     assert detail_response.json()["run"]["metadata"] == {
         "course_slug": "ml-zoomcamp-2026",
     }
+    diagnostics = run["link_diagnostics"]
+    assert diagnostics["counts"] == {
+        "total": 4,
+        "relative": 1,
+        "unsupported_scheme": 1,
+    }
+    assert diagnostics["has_unsubscribe_link"] is True
+    assert diagnostics["missing_unsubscribe_link"] is False
+    assert diagnostics["links"][0]["issue"] == "relative_url"
+    assert diagnostics["links"][1]["issue"] == "unsupported_scheme"
 
     message_response = client.get(
         reverse("mailing:api_testbed_run_message", args=[capture.id, capture.id]),

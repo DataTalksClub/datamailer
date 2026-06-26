@@ -1,3 +1,7 @@
+import re
+from html.parser import HTMLParser
+from urllib.parse import urlparse
+
 from django.conf import settings
 
 from mailing.models import CapturedEmail
@@ -5,6 +9,9 @@ from mailing.services.contacts import normalize_email
 
 DEFAULT_LIST_LIMIT = 25
 MAX_LIST_LIMIT = 200
+TEXT_URL_RE = re.compile(r"https?://[^\s<>\"]+")
+LINK_ATTRIBUTES = {"href", "src", "action"}
+SUPPORTED_LINK_SCHEMES = {"http", "https", "mailto"}
 
 
 def capture_mode_enabled():
@@ -80,6 +87,7 @@ def captured_email_detail(capture):
         "html_body": capture.html_body,
         "text_body": capture.text_body,
         "metadata": capture.metadata,
+        "link_diagnostics": link_diagnostics(capture),
         "transactional_message_id": capture.transactional_message_id,
         "campaign_id": capture.campaign_id,
         "campaign_recipient_id": capture.campaign_recipient_id,
@@ -158,6 +166,81 @@ def _validate_limit(raw_limit):
 
         raise ApiValidationError({"limit": "must_be_positive"})
     return min(limit, MAX_LIST_LIMIT)
+
+
+class _LinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if name in LINK_ATTRIBUTES and value:
+                self.links.append(
+                    {
+                        "source": "html",
+                        "tag": tag,
+                        "attribute": name,
+                        "url": value,
+                    }
+                )
+
+
+def html_links(html_body):
+    parser = _LinkParser()
+    parser.feed(html_body or "")
+    return parser.links
+
+
+def text_links(text_body):
+    return [
+        {
+            "source": "text",
+            "tag": "",
+            "attribute": "",
+            "url": match.group(0).rstrip(".,);"),
+        }
+        for match in TEXT_URL_RE.finditer(text_body or "")
+    ]
+
+
+def classify_link(link):
+    parsed = urlparse(link["url"])
+    scheme = parsed.scheme.lower()
+    issue = ""
+    if not scheme:
+        issue = "relative_url"
+    elif scheme not in SUPPORTED_LINK_SCHEMES:
+        issue = "unsupported_scheme"
+
+    return link | {
+        "scheme": scheme,
+        "ok": issue == "",
+        "issue": issue,
+    }
+
+
+def link_diagnostics(capture):
+    links = [classify_link(link) for link in html_links(capture.html_body)]
+    links.extend(classify_link(link) for link in text_links(capture.text_body))
+    relative_count = sum(1 for link in links if link["issue"] == "relative_url")
+    unsupported_scheme_count = sum(
+        1 for link in links if link["issue"] == "unsupported_scheme"
+    )
+    has_unsubscribe_link = any(
+        "unsubscribe" in link["url"] or "preferences" in link["url"]
+        for link in links
+    )
+    return {
+        "links": links,
+        "counts": {
+            "total": len(links),
+            "relative": relative_count,
+            "unsupported_scheme": unsupported_scheme_count,
+        },
+        "has_unsubscribe_link": has_unsubscribe_link,
+        "missing_unsubscribe_link": not has_unsubscribe_link,
+    }
 
 
 def isoformat(value):
