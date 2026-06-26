@@ -169,6 +169,7 @@ def test_transactional_template_api_upserts_and_returns_client_template(
         "text_body": "{{ homework_title }} was saved.",
         "required_context": [{"name": "homework_title", "description": "Homework title."}],
         "example_context": {"homework_title": "Homework 1"},
+        "default_sender_id": "newsletter",
     }
 
     response = put_transactional_template(
@@ -185,12 +186,14 @@ def test_transactional_template_api_upserts_and_returns_client_template(
     assert body["template"]["subject"] == "Homework submission received: {{ homework_title }}"
     assert body["template"]["required_context"] == payload["required_context"]
     assert body["template"]["example_context"] == payload["example_context"]
+    assert body["template"]["default_sender_id"] == "newsletter"
     assert body["template"]["is_transactional"] is True
     assert body["template"]["is_active"] is True
 
     template = EmailTemplate.objects.get()
     assert template.client == api_client_record
     assert template.key == "homework-submission-confirmation"
+    assert template.default_sender_id == "newsletter"
 
     get_response = client.get(
         reverse("mailing:api_transactional_template", args=[template.key]),
@@ -200,6 +203,7 @@ def test_transactional_template_api_upserts_and_returns_client_template(
     assert get_response.status_code == 200
     assert get_response.json()["key"] == template.key
     assert get_response.json()["name"] == payload["name"]
+    assert get_response.json()["default_sender_id"] == "newsletter"
 
 
 def test_transactional_template_api_updates_existing_template(client, template):
@@ -224,6 +228,26 @@ def test_transactional_template_api_updates_existing_template(client, template):
     assert template.name == "Updated Email Verification"
     assert template.subject == "Updated {{ product }}"
     assert template.is_active is False
+
+
+def test_transactional_template_api_rejects_unconfigured_default_sender(
+    client,
+    template,
+):
+    response = put_transactional_template(
+        client,
+        template.key,
+        {
+            "name": "Updated Email Verification",
+            "subject": "Updated {{ product }}",
+            "default_sender_id": "courses",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {
+        "default_sender_id": "not_configured"
+    }
 
 
 def test_transactional_template_api_is_scoped_to_authenticated_client(
@@ -694,6 +718,41 @@ def test_transactional_send_uses_client_default_sender(client, api_client_record
         {"id": "no-reply", "email": "no-reply@dtcdev.click"},
     ]
     api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "context": {"product": "Datamailer"},
+        },
+    )
+
+    assert response.status_code == 202
+    message = TransactionalMessage.objects.get()
+    assert message.from_email_id == "courses"
+    assert message.from_email == "courses@dtcdev.click"
+    assert response.json()["message"]["from_email"] == "courses"
+    assert response.json()["message"]["from_email_address"] == "courses@dtcdev.click"
+    assert len(enqueued) == 1
+
+
+def test_transactional_send_uses_template_default_sender(
+    client,
+    api_client_record,
+    template,
+    monkeypatch,
+):
+    api_client_record.default_sender_id = "newsletter"
+    api_client_record.sender_emails = [
+        {"id": "newsletter", "email": "newsletter@example.com"},
+        {"id": "courses", "email": "courses@dtcdev.click"},
+    ]
+    api_client_record.save(update_fields=["default_sender_id", "sender_emails", "updated_at"])
+    template.default_sender_id = "courses"
+    template.save(update_fields=["default_sender_id", "updated_at"])
     enqueued = []
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
 

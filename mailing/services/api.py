@@ -26,8 +26,8 @@ from mailing.models import (
     TransactionalMessage,
     normalize_tag_filter,
 )
-from mailing.services.campaigns import queue_campaign
 from mailing.services.campaign_sender import render_campaign_message, send_campaign_test_message
+from mailing.services.campaigns import queue_campaign
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import (
     assign_tag,
@@ -67,6 +67,7 @@ def template_payload(template):
         "text_body": template.text_body,
         "required_context": template.required_context,
         "example_context": template.example_context,
+        "default_sender_id": template.default_sender_id,
         "is_transactional": template.is_transactional,
         "is_active": template.is_active,
         "created_at": isoformat(template.created_at),
@@ -476,6 +477,18 @@ def validate_transactional_template_payload(data, template_key):
     if not isinstance(is_active, bool):
         errors["is_active"] = "must_be_boolean"
 
+    default_sender_id = data.get("default_sender_id", "")
+    if default_sender_id in (None, ""):
+        default_sender_id = ""
+    elif not isinstance(default_sender_id, str) or not default_sender_id.strip():
+        errors["default_sender_id"] = "must_be_non_empty_string"
+    else:
+        try:
+            default_sender_id = default_sender_id.strip()
+            validate_slug(default_sender_id)
+        except ValidationError:
+            errors["default_sender_id"] = "invalid"
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -487,6 +500,7 @@ def validate_transactional_template_payload(data, template_key):
         "text_body": fields["text_body"],
         "required_context": required_context,
         "example_context": example_context,
+        "default_sender_id": default_sender_id,
         "is_transactional": True,
         "is_active": is_active,
     }
@@ -506,6 +520,16 @@ def get_transactional_template_for_client(template_key, authenticated_client):
 @transaction.atomic
 def upsert_transactional_template_for_client(template_key, data, authenticated_client):
     defaults = validate_transactional_template_payload(data, template_key)
+    configured_sender_ids = {
+        sender.get("id")
+        for sender in authenticated_client.sender_emails or []
+        if isinstance(sender, dict)
+    }
+    if (
+        defaults["default_sender_id"]
+        and defaults["default_sender_id"] not in configured_sender_ids
+    ):
+        raise ApiValidationError({"default_sender_id": "not_configured"})
     template, created = EmailTemplate.objects.update_or_create(
         client=authenticated_client,
         key=template_key,

@@ -489,6 +489,7 @@ class EmailTemplate(TimeStampedModel):
     text_body = models.TextField(blank=True)
     required_context = models.JSONField(default=list, blank=True)
     example_context = models.JSONField(default=dict, blank=True)
+    default_sender_id = models.CharField(max_length=80, blank=True)
     is_transactional = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
 

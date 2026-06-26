@@ -54,7 +54,10 @@ def send_transactional_email_for_client(data, authenticated_client):
     if existing is not None:
         return response_payload(TransactionalSendResult(existing, idempotent_replay=True, enqueued=False))
 
-    sender = resolve_sender_email(authenticated_client, payload["from_email"])
+    sender = resolve_sender_email(
+        authenticated_client,
+        sender_id_for_payload(payload, template),
+    )
     validate_template_context(template, payload["context"])
 
     with transaction.atomic():
@@ -104,7 +107,10 @@ def send_transactional_email_for_client(data, authenticated_client):
 def send_transactional_email_to_recipient_list_for_client(list_key, data, authenticated_client):
     payload = validate_recipient_list_send_payload(data, authenticated_client)
     template = get_transactional_template(authenticated_client, payload["template_key"])
-    sender = resolve_sender_email(authenticated_client, payload["from_email"])
+    sender = resolve_sender_email(
+        authenticated_client,
+        sender_id_for_payload(payload, template),
+    )
 
     queue_payloads = []
     created_count = 0
@@ -233,7 +239,10 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
 def send_transactional_email_to_transient_recipient_list_for_client(data, authenticated_client):
     payload = validate_transient_recipient_list_send_payload(data, authenticated_client)
     template = get_transactional_template(authenticated_client, payload["template_key"])
-    sender = resolve_sender_email(authenticated_client, payload["from_email"])
+    sender = resolve_sender_email(
+        authenticated_client,
+        sender_id_for_payload(payload, template),
+    )
 
     active_members = [member for member in payload["members"] if member["active"]]
     member_contexts = [
@@ -363,6 +372,10 @@ def recipient_list_member_context(base_context, member_metadata):
     context.update(base_context)
     context["member"] = member.copy()
     return context
+
+
+def sender_id_for_payload(payload, template):
+    return payload["from_email"] or template.default_sender_id
 
 
 def validate_transactional_send_payload(data, authenticated_client):

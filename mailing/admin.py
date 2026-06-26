@@ -196,7 +196,15 @@ class CampaignRecipientAdmin(admin.ModelAdmin):
 @admin.register(EmailTemplate)
 class EmailTemplateAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
-    list_display = ("key", "name", "client", "is_transactional", "is_active", "updated_at")
+    list_display = (
+        "key",
+        "name",
+        "client",
+        "default_sender_id",
+        "is_transactional",
+        "is_active",
+        "updated_at",
+    )
     list_filter = ("client", "is_transactional", "is_active")
     search_fields = ("key", "name", "description", "subject", "client__name", "client__slug")
     autocomplete_fields = ("client",)
