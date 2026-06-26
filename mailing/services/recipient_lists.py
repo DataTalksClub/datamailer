@@ -7,6 +7,9 @@ from mailing.models import RecipientList, RecipientListMember, RecipientListType
 from mailing.services.api import ApiValidationError, isoformat, validate_contact_scope
 from mailing.services.contacts import normalize_email, upsert_contact
 
+ROOT_LIST_KEY = "<all>"
+CASCADE_SOURCE_PREFIX = "cascade-contact:"
+
 
 def validate_path_key(value, field):
     if not isinstance(value, str) or not value.strip():
@@ -142,6 +145,113 @@ def refresh_recipient_list_counts(recipient_list):
     return recipient_list
 
 
+def ancestor_list_keys(list_key):
+    if list_key == ROOT_LIST_KEY:
+        return []
+    segments = list_key.split(":")
+    ancestors = [":".join(segments[:index]) for index in range(len(segments) - 1, 0, -1)]
+    ancestors.append(ROOT_LIST_KEY)
+    return ancestors
+
+
+def cascade_reason_for_member(recipient_list, member):
+    return {
+        "list_key": recipient_list.key,
+        "source_object_key": member.source_object_key,
+    }
+
+
+def cascade_reasons(metadata):
+    reasons = metadata.get("membership_reasons", []) if isinstance(metadata, dict) else []
+    if not isinstance(reasons, list):
+        return []
+    return [
+        reason
+        for reason in reasons
+        if isinstance(reason, dict)
+        and isinstance(reason.get("list_key"), str)
+        and isinstance(reason.get("source_object_key"), str)
+    ]
+
+
+def ancestor_list_defaults(list_key):
+    return {
+        "type": RecipientListType.CUSTOM,
+        "name": ROOT_LIST_KEY if list_key == ROOT_LIST_KEY else list_key,
+        "metadata": {"tree_node": True},
+    }
+
+
+def get_or_create_ancestor_list(scope_list, list_key):
+    recipient_list, _ = RecipientList.objects.get_or_create(
+        client=scope_list.client,
+        audience=scope_list.audience,
+        key=list_key,
+        defaults=ancestor_list_defaults(list_key),
+    )
+    return recipient_list
+
+
+def upsert_cascade_memberships(recipient_list, member):
+    reason = cascade_reason_for_member(recipient_list, member)
+    for ancestor_key in ancestor_list_keys(recipient_list.key):
+        if member.active:
+            ancestor = get_or_create_ancestor_list(recipient_list, ancestor_key)
+        else:
+            ancestor = RecipientList.objects.filter(
+                client=recipient_list.client,
+                audience=recipient_list.audience,
+                key=ancestor_key,
+            ).first()
+            if ancestor is None:
+                continue
+        ancestor_member = RecipientListMember.objects.filter(
+            recipient_list=ancestor,
+            contact=member.contact,
+        ).first()
+        if ancestor_member is None:
+            if not member.active:
+                refresh_recipient_list_counts(ancestor)
+                continue
+            RecipientListMember.objects.create(
+                recipient_list=ancestor,
+                contact=member.contact,
+                email=member.email,
+                source_object_key=f"{CASCADE_SOURCE_PREFIX}{member.contact_id}",
+                metadata={"membership_reasons": [reason]},
+                active=True,
+                removed_at=None,
+            )
+            refresh_recipient_list_counts(ancestor)
+            continue
+
+        metadata = ancestor_member.metadata if isinstance(ancestor_member.metadata, dict) else {}
+        reasons = [
+            existing
+            for existing in cascade_reasons(metadata)
+            if existing != reason
+        ]
+        if member.active:
+            reasons.append(reason)
+
+        metadata = metadata | {"membership_reasons": reasons}
+        updates = {
+            "email": member.email,
+            "metadata": metadata,
+        }
+        if reasons:
+            updates["active"] = True
+            updates["removed_at"] = None
+        elif ancestor_member.source_object_key.startswith(CASCADE_SOURCE_PREFIX):
+            updates["active"] = False
+            updates["removed_at"] = timezone.now()
+
+        for field, value in updates.items():
+            setattr(ancestor_member, field, value)
+        ancestor_member.save(update_fields=[*updates.keys(), "updated_at"])
+        refresh_recipient_list_counts(ancestor)
+
+
 @transaction.atomic
 def upsert_recipient_list_for_client(list_key, data, authenticated_client):
     list_key = validate_path_key(list_key, "list_key")
@@ -227,6 +337,7 @@ def upsert_recipient_list_member_for_client(list_key, source_object_key, data, a
 
     member, created = upsert_member(recipient_list, source_object_key, member_data)
     refresh_recipient_list_counts(recipient_list)
+    upsert_cascade_memberships(recipient_list, member)
     return {
         "recipient_list": recipient_list_payload(recipient_list),
         "member": recipient_list_member_payload(member),
@@ -255,6 +366,7 @@ def bulk_upsert_recipient_list_members_for_client(list_key, data, authenticated_
             raise ApiValidationError({f"members.{index}": "must_be_object"})
         source_object_key = validate_path_key(raw_member.get("source_object_key"), f"members.{index}.source_object_key")
         member, created = upsert_member(recipient_list, source_object_key, validate_member_payload(raw_member))
+        upsert_cascade_memberships(recipient_list, member)
         if created:
             created_count += 1
         else:
@@ -326,8 +438,18 @@ def reconcile_recipient_list_for_client(list_key, data, authenticated_client):
 
     removed_count = 0
     if remove_absent:
-        absent = recipient_list.members.filter(active=True).exclude(source_object_key__in=incoming_keys)
-        removed_count = absent.update(active=False, removed_at=timezone.now(), updated_at=timezone.now())
+        absent = list(
+            recipient_list.members.select_related("contact")
+            .filter(active=True)
+            .exclude(source_object_key__in=incoming_keys)
+        )
+        removed_at = timezone.now()
+        for member in absent:
+            member.active = False
+            member.removed_at = removed_at
+            member.save(update_fields=["active", "removed_at", "updated_at"])
+            upsert_cascade_memberships(recipient_list, member)
+        removed_count = len(absent)
 
     recipient_list.last_reconciled_at = timezone.now()
     recipient_list.save(update_fields=["last_reconciled_at", "updated_at"])

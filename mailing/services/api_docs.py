@@ -809,23 +809,23 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
         API_DOC_PATHS["mailing:api_recipient_list"]: reverse(
             "mailing:api_recipient_list",
-            args=["course-registrants:ml-zoomcamp-2026"],
+            args=["ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_member"]: reverse(
             "mailing:api_recipient_list_member",
-            args=["homework-submitters:ml-zoomcamp-2026:homework-1", "homework-submission:42"],
+            args=["ml-zoomcamp-2026:@e:@homework:homework-1", "homework-submission:42"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_bulk_upsert"]: reverse(
             "mailing:api_recipient_list_bulk_upsert",
-            args=["course-registrants:ml-zoomcamp-2026"],
+            args=["ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_reconcile"]: reverse(
             "mailing:api_recipient_list_reconcile",
-            args=["course-registrants:ml-zoomcamp-2026"],
+            args=["ml-zoomcamp-2026"],
         ),
         API_DOC_PATHS["mailing:api_recipient_list_transactional_send"]: reverse(
             "mailing:api_recipient_list_transactional_send",
-            args=["homework-submitters:ml-zoomcamp-2026:homework-1"],
+            args=["ml-zoomcamp-2026:@e:@homework:homework-1"],
         ),
         API_DOC_PATHS["mailing:api_transactional_template"]: reverse(
             "mailing:api_transactional_template",

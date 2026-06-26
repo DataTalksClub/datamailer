@@ -279,6 +279,14 @@ def validate_transactional_send_payload(data):
     elif not isinstance(metadata, dict):
         errors["metadata"] = "must_be_object"
 
+    category_tag = data.get("category_tag", "")
+    if category_tag in (None, ""):
+        category_tag = ""
+    elif not isinstance(category_tag, str) or not category_tag.strip():
+        errors["category_tag"] = "must_be_non_empty_string"
+    else:
+        category_tag = category_tag.strip()
+
     from_email = ""
     if "from_email" in data and data.get("from_email") not in (None, ""):
         try:
@@ -294,7 +302,8 @@ def validate_transactional_send_payload(data):
         "template_key": template_key.strip(),
         "idempotency_key": idempotency_key,
         "context": context,
-        "metadata": metadata,
+        "metadata": metadata | ({"category_tag": category_tag} if category_tag else {}),
+        "category_tag": category_tag,
         "from_email": from_email,
     }
 
@@ -322,6 +331,14 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         metadata = {}
     elif not isinstance(metadata, dict):
         errors["metadata"] = "must_be_object"
+
+    category_tag = data.get("category_tag", "")
+    if category_tag in (None, ""):
+        category_tag = ""
+    elif not isinstance(category_tag, str) or not category_tag.strip():
+        errors["category_tag"] = "must_be_non_empty_string"
+    else:
+        category_tag = category_tag.strip()
 
     members = data.get("members")
     if members is None:
@@ -362,7 +379,8 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         "template_key": template_key.strip(),
         "idempotency_key": idempotency_key.strip(),
         "context": context,
-        "metadata": metadata,
+        "metadata": metadata | ({"category_tag": category_tag} if category_tag else {}),
+        "category_tag": category_tag,
         "members": members,
         "member_sync": member_sync,
         "remove_absent_members": remove_absent_members,

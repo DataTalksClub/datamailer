@@ -287,6 +287,7 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
                 "product": "Datamailer",
                 "verification_url": "https://example.com/verify/token",
             },
+            "category_tag": "course-updates",
             "metadata": {"user_id": "42"},
         },
     )
@@ -312,7 +313,7 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert message.html_body == "<p>Verify at https://example.com/verify/token</p>"
     assert message.text_body == "Verify at https://example.com/verify/token"
     assert message.context["verification_url"] == "https://example.com/verify/token"
-    assert message.metadata == {"user_id": "42"}
+    assert message.metadata == {"user_id": "42", "category_tag": "course-updates"}
     assert event.event_type == EmailEventType.QUEUED
     assert event.transactional_message == message
     assert len(enqueued) == 1
@@ -345,7 +346,7 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     recipient_list = RecipientList.objects.create(
         client=api_client_record,
         audience=audience,
-        key="homework-submitters:ml-zoomcamp-2026:homework-1",
+        key="ml-zoomcamp-2026:@e:@homework:homework-1",
         type="homework_submitters",
         name="Homework 1 submitters",
         member_count=2,
@@ -373,6 +374,7 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
             "product": "ML Zoomcamp",
             "verification_url": "https://courses.example.com/scores",
         },
+        "category_tag": "submission-results",
         "metadata": {"source": "score-publication"},
     }
 
@@ -389,6 +391,7 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     assert messages[0].idempotency_key == "homework-score:homework-1:homework-submission:1"
     assert messages[0].status == TransactionalMessageStatus.QUEUED
     assert messages[0].metadata["recipient_list_key"] == recipient_list.key
+    assert messages[0].metadata["category_tag"] == "submission-results"
     assert messages[1].idempotency_key == "homework-score:homework-1:homework-submission:2"
     assert messages[1].status == TransactionalMessageStatus.SKIPPED
     assert messages[1].last_error == "hard_bounce"
@@ -439,7 +442,7 @@ def test_recipient_list_send_can_sync_members_and_render_member_context(
     recipient_list = RecipientList.objects.create(
         client=api_client_record,
         audience=audience,
-        key="homework-submitters:ml-zoomcamp-2026:homework-1",
+        key="ml-zoomcamp-2026:@e:@homework:homework-1",
         type="homework_submitters",
         name="Homework 1 submitters",
         member_count=1,
@@ -1063,4 +1066,3 @@ def test_transactional_models_are_available_in_admin():
     assert isinstance(admin.site._registry[EmailTemplate], EmailTemplateAdmin)
     assert isinstance(admin.site._registry[TransactionalMessage], TransactionalMessageAdmin)
     assert isinstance(admin.site._registry[EmailEvent], EmailEventAdmin)
-

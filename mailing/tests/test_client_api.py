@@ -201,7 +201,7 @@ def test_contact_upsert_is_idempotent_and_scoped_to_authenticated_client(client,
 
 
 def test_recipient_list_member_upsert_creates_list_and_member_idempotently(client, audience, api_client_record):
-    list_key = "homework-submitters:ml-zoomcamp-2026:homework-1"
+    list_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
     source_key = "homework-submission:42"
     payload = {
         "audience": audience.slug,
@@ -230,8 +230,23 @@ def test_recipient_list_member_upsert_creates_list_and_member_idempotently(clien
     assert body["member"]["source_object_key"] == source_key
     assert body["member"]["email"] == "learner@example.com"
     assert Contact.objects.count() == 1
-    assert RecipientList.objects.count() == 1
-    assert RecipientListMember.objects.count() == 1
+    assert set(RecipientList.objects.values_list("key", flat=True)) == {
+        list_key,
+        "ml-zoomcamp-2026:@e:@homework",
+        "ml-zoomcamp-2026:@e",
+        "ml-zoomcamp-2026",
+        "<all>",
+    }
+    assert RecipientListMember.objects.count() == 5
+    course_member = RecipientListMember.objects.get(recipient_list__key="ml-zoomcamp-2026")
+    assert course_member.active is True
+    assert course_member.source_object_key.startswith("cascade-contact:")
+    assert course_member.metadata["membership_reasons"] == [
+        {
+            "list_key": list_key,
+            "source_object_key": source_key,
+        }
+    ]
 
     get_response = client.get(
         reverse("mailing:api_recipient_list", args=[list_key]),
@@ -240,6 +255,47 @@ def test_recipient_list_member_upsert_creates_list_and_member_idempotently(clien
     )
     assert get_response.status_code == 200
     assert get_response.json()["recipient_list"]["member_count"] == 1
+
+
+def test_recipient_list_reconcile_removes_cascaded_parent_reason(client, audience, api_client_record):
+    list_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "ML Zoomcamp 2026 Homework 1 submitters",
+        },
+        "members": [
+            {
+                "source_object_key": "homework-submission:1",
+                "email": "learner@example.com",
+                "metadata": {"submission_id": 1},
+            }
+        ],
+    }
+    bulk_response = client.post(
+        reverse("mailing:api_recipient_list_bulk_upsert", args=[list_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+    assert bulk_response.status_code == 200
+
+    reconcile_response = client.post(
+        reverse("mailing:api_recipient_list_reconcile", args=[list_key]),
+        data={**payload, "members": [], "remove_absent": True},
+        content_type="application/json",
+        **auth_headers(),
+    )
+
+    assert reconcile_response.status_code == 200
+    assert reconcile_response.json()["removed_count"] == 1
+    leaf_member = RecipientListMember.objects.get(recipient_list__key=list_key)
+    course_member = RecipientListMember.objects.get(recipient_list__key="ml-zoomcamp-2026")
+    assert leaf_member.active is False
+    assert course_member.active is False
+    assert course_member.metadata["membership_reasons"] == []
 
 
 def test_recipient_list_keys_are_scoped_to_authenticated_client(
