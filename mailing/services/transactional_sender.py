@@ -77,6 +77,7 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
                 subject=message.subject,
                 html_body=message.html_body,
                 text_body=message.text_body,
+                reply_to=message.metadata.get("reply_to", ""),
             )
         except ClientError as exc:
             if _is_permanent_client_error(exc):

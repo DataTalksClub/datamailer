@@ -7,7 +7,16 @@ _rate_limit_lock = threading.Lock()
 _last_ses_send_monotonic = None
 
 
-def send_email(*, ses_client, source, to_email, subject, html_body, text_body=""):
+def send_email(
+    *,
+    ses_client,
+    source,
+    to_email,
+    subject,
+    html_body,
+    text_body="",
+    reply_to="",
+):
     throttle_ses_send()
 
     body = {"Html": {"Charset": "UTF-8", "Data": html_body}}
@@ -24,6 +33,8 @@ def send_email(*, ses_client, source, to_email, subject, html_body, text_body=""
     }
     if settings.AWS_SES_CONFIGURATION_SET:
         params["ConfigurationSetName"] = settings.AWS_SES_CONFIGURATION_SET
+    if reply_to:
+        params["ReplyToAddresses"] = [reply_to]
 
     return ses_client.send_email(**params)["MessageId"]
 

@@ -157,6 +157,7 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                     "audience": recipient_list.audience.slug,
                 },
                 "from_email": payload["from_email"],
+                "reply_to": payload["reply_to"],
             }
 
             delivery_decision = transactional_delivery_decision(member.contact, payload)
@@ -268,6 +269,7 @@ def send_transactional_email_to_transient_recipient_list_for_client(data, authen
                     "audience": payload["audience"].slug,
                 },
                 "from_email": payload["from_email"],
+                "reply_to": payload["reply_to"],
             }
 
             delivery_decision = transactional_delivery_decision(contact, payload)
@@ -410,6 +412,8 @@ def validate_transactional_send_payload(data, authenticated_client):
         except ApiValidationError as exc:
             errors.update(exc.errors)
 
+    reply_to = validate_optional_email_address(data, "reply_to", errors)
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -427,6 +431,7 @@ def validate_transactional_send_payload(data, authenticated_client):
         "audience": scope.audience if scope else None,
         "client": scope.client if scope else authenticated_client,
         "from_email": from_email,
+        "reply_to": reply_to,
     }
 
 
@@ -492,6 +497,8 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         except ApiValidationError as exc:
             errors.update(exc.errors)
 
+    reply_to = validate_optional_email_address(data, "reply_to", errors)
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -508,6 +515,7 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         "remove_absent_members": remove_absent_members,
         "list": list_data,
         "from_email": from_email,
+        "reply_to": reply_to,
     }
 
 
@@ -597,6 +605,21 @@ def get_transactional_template(client, template_key):
     return template
 
 
+def validate_optional_email_address(data, field, errors):
+    value = data.get(field, "")
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str) or not value.strip():
+        errors[field] = "must_be_non_empty_string"
+        return ""
+    value = value.strip()
+    try:
+        validate_email(value)
+    except ValidationError:
+        errors[field] = "invalid"
+    return value
+
+
 def find_existing_message(client, idempotency_key):
     if not idempotency_key:
         return None
@@ -640,6 +663,9 @@ def transactional_delivery_decision(contact, payload):
 
 def create_transactional_message(*, client, contact, template, payload, sender, idempotency_key, status, last_error=""):
     context = payload["context"]
+    metadata = payload["metadata"]
+    if payload.get("reply_to"):
+        metadata = metadata | {"reply_to": payload["reply_to"]}
     return TransactionalMessage.objects.create(
         client=client,
         contact=contact,
@@ -654,7 +680,7 @@ def create_transactional_message(*, client, contact, template, payload, sender, 
         html_body=render_template_string(template.html_body, context),
         text_body=render_template_string(template.text_body, context),
         context=context,
-        metadata=payload["metadata"],
+        metadata=metadata,
         last_error=last_error,
     )
 
@@ -702,6 +728,7 @@ def response_payload(result):
             "email": message.email,
             "from_email": message.from_email_id,
             "from_email_address": message.from_email,
+            "reply_to": message.metadata.get("reply_to", ""),
             "status": message.status,
             "template_key": message.template_key,
             "idempotency_key": message.idempotency_key,

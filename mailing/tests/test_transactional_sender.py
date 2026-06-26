@@ -72,6 +72,45 @@ def transactional_message(api_client_record, contact, template):
     )
 
 
+@override_settings(DEFAULT_FROM_EMAIL="sender@example.com", AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
+def test_transactional_handler_forwards_reply_to_address(transactional_message, monkeypatch):
+    transactional_message.metadata = {"reply_to": "support@example.com"}
+    transactional_message.save(update_fields=["metadata", "updated_at"])
+    ses = boto3.client(
+        "ses",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    with Stubber(ses) as stubber:
+        stubber.add_response(
+            "send_email",
+            {"MessageId": "ses-message-123"},
+            {
+                "Source": "courses@dtcdev.click",
+                "Destination": {"ToAddresses": ["person@example.com"]},
+                "Message": {
+                    "Subject": {"Charset": "UTF-8", "Data": "Persisted subject"},
+                    "Body": {
+                        "Html": {"Charset": "UTF-8", "Data": "<p>Persisted body</p>"},
+                        "Text": {"Charset": "UTF-8", "Data": "Persisted body"},
+                    },
+                },
+                "ReplyToAddresses": ["support@example.com"],
+            },
+        )
+        monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: ses)
+
+        response = transactional_email_handler(
+            _event("message-1", build_transactional_queue_payload(transactional_message))
+        )
+
+    transactional_message.refresh_from_db()
+    assert response == {"batchItemFailures": []}
+    assert transactional_message.status == TransactionalMessageStatus.SENT
+    assert transactional_message.ses_message_id == "ses-message-123"
+
+
 class CallbackResponse:
     def __enter__(self):
         return self

@@ -1890,6 +1890,7 @@ OPENAPI_SPEC = {
                                 "default": True,
                             },
                             "from_email": {"type": "string"},
+                            "reply_to": {"type": "string", "format": "email"},
                         },
                     },
                 ]
@@ -1919,6 +1920,7 @@ OPENAPI_SPEC = {
                                 "items": {"$ref": "#/components/schemas/RecipientListMemberInput"},
                             },
                             "from_email": {"type": "string"},
+                            "reply_to": {"type": "string", "format": "email"},
                         },
                     },
                 ]
@@ -2321,6 +2323,7 @@ OPENAPI_SPEC = {
                         "type": "string",
                         "description": "Optional configured sender ID, such as courses. If omitted, Datamailer uses the client's default sender ID. Raw email addresses are rejected.",
                     },
+                    "reply_to": {"type": "string", "format": "email"},
                     "template_key": {"type": "string"},
                     "idempotency_key": {"type": "string"},
                     "category_tag": {"type": "string"},
