@@ -107,9 +107,10 @@ def test_openapi_uses_bearer_auth_only_and_omits_forbidden_strings():
     assert '"scheme": "bearer"' in spec_text
 
 
-def test_openapi_paths_do_not_include_unimplemented_public_campaign_api():
+def test_openapi_includes_public_campaign_api():
     spec = build_openapi_spec()
-    assert all(not path.startswith("/api/campaign") for path in spec["paths"])
+    assert "/api/campaigns/{external_key}" in spec["paths"]
+    assert "/api/campaigns/{external_key}/queue" in spec["paths"]
     assert all("/api/v1" not in path for path in spec["paths"])
 
 
@@ -231,5 +232,4 @@ def test_api_docs_endpoint_reference_matches_openapi_paths(client, staff_user):
     for path in spec["paths"]:
         assert path in page
 
-    assert "/api/campaigns" not in page
     assert "/api/v1" not in page

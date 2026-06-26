@@ -4,7 +4,7 @@ from copy import deepcopy
 from django.conf import settings
 from django.urls import reverse
 
-from mailing.models import EmailValidationStatus, RecipientListType, SubscriptionStatus
+from mailing.models import CampaignStatus, EmailValidationStatus, RecipientListType, SubscriptionStatus
 
 DEMO_API_KEYS = [
     {
@@ -47,6 +47,8 @@ API_DOC_PATHS = {
     "mailing:api_contact_suppression": "/api/contacts/{contact_id}/suppression",
     "mailing:api_contact_history": "/api/contacts/{contact_id}/history",
     "mailing:api_client_senders": "/api/client/senders",
+    "mailing:api_campaign": "/api/campaigns/{external_key}",
+    "mailing:api_campaign_queue": "/api/campaigns/{external_key}/queue",
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
     "mailing:api_recipient_list": "/api/recipient-lists/{list_key}",
@@ -751,6 +753,14 @@ def endpoint_groups():
             ],
         },
         {
+            "name": "Campaigns",
+            "endpoints": [
+                ("PUT", "/api/campaigns/{external_key}", "Create or update one draft campaign."),
+                ("GET", "/api/campaigns/{external_key}", "Get one campaign by external key."),
+                ("POST", "/api/campaigns/{external_key}/queue", "Snapshot and queue one draft campaign."),
+            ],
+        },
+        {
             "name": "Recipient Lists",
             "endpoints": [
                 ("PUT", "/api/recipient-lists/{list_key}", "Create or update a client-scoped recipient list."),
@@ -816,6 +826,14 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_contact_suppression"]: reverse("mailing:api_contact_suppression", args=[123]),
         API_DOC_PATHS["mailing:api_contact_history"]: reverse("mailing:api_contact_history", args=[123]),
         API_DOC_PATHS["mailing:api_client_senders"]: reverse("mailing:api_client_senders"),
+        API_DOC_PATHS["mailing:api_campaign"]: reverse(
+            "mailing:api_campaign",
+            args=["cmp-course-start-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_campaign_queue"]: reverse(
+            "mailing:api_campaign_queue",
+            args=["cmp-course-start-2026"],
+        ),
         API_DOC_PATHS["mailing:api_subscribe"]: reverse("mailing:api_subscribe"),
         API_DOC_PATHS["mailing:api_unsubscribe"]: reverse("mailing:api_unsubscribe"),
         API_DOC_PATHS["mailing:api_recipient_list"]: reverse(
@@ -889,6 +907,12 @@ def bearer_responses(success, *, accepted=False):
 CONTACT_ID_PARAM = {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
 TAG_SLUG_PARAM = {"name": "tag_slug", "in": "path", "required": True, "schema": {"type": "string"}}
 LIST_KEY_PARAM = {"name": "list_key", "in": "path", "required": True, "schema": {"type": "string"}}
+CAMPAIGN_EXTERNAL_KEY_PARAM = {
+    "name": "external_key",
+    "in": "path",
+    "required": True,
+    "schema": {"type": "string", "maxLength": 180},
+}
 SOURCE_OBJECT_KEY_PARAM = {
     "name": "source_object_key",
     "in": "path",
@@ -900,6 +924,11 @@ UNSUBSCRIBE_PARAM = {"name": "unsubscribe_token", "in": "path", "required": True
 
 SCOPE_QUERY_PARAMS = [
     {"name": "email", "in": "query", "required": True, "schema": {"type": "string", "format": "email"}},
+    {"name": "audience", "in": "query", "required": True, "schema": {"type": "string"}},
+    {"name": "client", "in": "query", "required": True, "schema": {"type": "string"}},
+]
+
+SCOPE_ONLY_QUERY_PARAMS = [
     {"name": "audience", "in": "query", "required": True, "schema": {"type": "string"}},
     {"name": "client", "in": "query", "required": True, "schema": {"type": "string"}},
 ]
@@ -1129,6 +1158,43 @@ OPENAPI_SPEC = {
                 "security": [{"BearerAuth": []}],
                 "requestBody": json_body("#/components/schemas/UnsubscribeRequest"),
                 "responses": bearer_responses(json_response("Contact state", "#/components/schemas/ContactStatus")),
+            }
+        },
+        "/api/campaigns/{external_key}": {
+            "get": {
+                "tags": ["Campaigns"],
+                "summary": "Get campaign",
+                "description": "Returns one campaign scoped to the authenticated client by external key.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [CAMPAIGN_EXTERNAL_KEY_PARAM] + SCOPE_ONLY_QUERY_PARAMS,
+                "responses": bearer_responses(json_response("Campaign", "#/components/schemas/CampaignResponse")),
+            },
+            "put": {
+                "tags": ["Campaigns"],
+                "summary": "Create or update draft campaign",
+                "description": "Creates or updates one draft campaign scoped to the authenticated client by external key.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [CAMPAIGN_EXTERNAL_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/CampaignUpsertRequest"),
+                "responses": bearer_responses(
+                    json_response("Campaign", "#/components/schemas/CampaignUpsertResponse")
+                )
+                | {"201": json_response("Campaign created", "#/components/schemas/CampaignUpsertResponse")},
+            },
+        },
+        "/api/campaigns/{external_key}/queue": {
+            "post": {
+                "tags": ["Campaigns"],
+                "summary": "Queue draft campaign",
+                "description": "Snapshots eligible contacts and queues one draft campaign for delivery.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [CAMPAIGN_EXTERNAL_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/ScopedMutationRequest"),
+                "responses": bearer_responses(
+                    json_response("Campaign queued", "#/components/schemas/CampaignQueueResponse"),
+                    accepted=True,
+                )
+                | {"409": {"$ref": "#/components/responses/ValidationError"}},
             }
         },
         "/api/recipient-lists/{list_key}": {
@@ -1412,6 +1478,76 @@ OPENAPI_SPEC = {
                 "type": "object",
                 "required": ["audience", "client"],
                 "properties": {"audience": {"type": "string"}, "client": {"type": "string"}},
+            },
+            "CampaignStatus": {"type": "string", "enum": [choice.value for choice in CampaignStatus]},
+            "CampaignUpsertRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["subject"],
+                        "properties": {
+                            "subject": {"type": "string", "maxLength": 255},
+                            "preview_text": {"type": "string", "maxLength": 255},
+                            "html_body": {"type": "string"},
+                            "text_body": {"type": "string"},
+                            "scheduled_at": {"type": ["string", "null"], "format": "date-time"},
+                            "include_tags": {"type": "array", "items": {"type": "string"}},
+                            "exclude_tags": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                ]
+            },
+            "Campaign": {
+                "type": "object",
+                "properties": {
+                    "external_key": {"type": "string"},
+                    "audience": {"type": "string"},
+                    "client": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "preview_text": {"type": "string"},
+                    "html_body": {"type": "string"},
+                    "text_body": {"type": "string"},
+                    "status": {"$ref": "#/components/schemas/CampaignStatus"},
+                    "scheduled_at": {"type": ["string", "null"], "format": "date-time"},
+                    "sent_at": {"type": ["string", "null"], "format": "date-time"},
+                    "include_tags": {"type": "array", "items": {"type": "string"}},
+                    "exclude_tags": {"type": "array", "items": {"type": "string"}},
+                    "recipient_count": {"type": "integer"},
+                    "sent_count": {"type": "integer"},
+                    "skipped_count": {"type": "integer"},
+                    "delivered_count": {"type": "integer"},
+                    "unique_open_count": {"type": "integer"},
+                    "open_count": {"type": "integer"},
+                    "unique_click_count": {"type": "integer"},
+                    "click_count": {"type": "integer"},
+                    "unsubscribe_count": {"type": "integer"},
+                    "bounce_count": {"type": "integer"},
+                    "complaint_count": {"type": "integer"},
+                    "created_at": {"type": "string", "format": "date-time"},
+                    "updated_at": {"type": "string", "format": "date-time"},
+                },
+            },
+            "CampaignResponse": {
+                "type": "object",
+                "properties": {"campaign": {"$ref": "#/components/schemas/Campaign"}},
+            },
+            "CampaignUpsertResponse": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"$ref": "#/components/schemas/Campaign"},
+                    "created": {"type": "boolean"},
+                },
+            },
+            "CampaignQueueResponse": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"$ref": "#/components/schemas/Campaign"},
+                    "queued": {"type": "boolean"},
+                    "batch_count": {"type": "integer"},
+                    "recipient_count": {"type": "integer"},
+                    "skipped_count": {"type": "integer"},
+                },
             },
             "RecipientListType": {"type": "string", "enum": [choice.value for choice in RecipientListType]},
             "RecipientListInput": {

@@ -37,6 +37,7 @@ from mailing.models import (
 from mailing.services.api import (
     ApiValidationError,
     add_contact_tag_for_client,
+    get_campaign_for_client,
     get_client_sender_policy_for_client,
     get_contact_history_for_client,
     get_contact_preferences_for_client,
@@ -45,8 +46,10 @@ from mailing.services.api import (
     get_transactional_template_for_client,
     remove_contact_tag_for_client,
     replace_contact_tags_for_client,
+    queue_campaign_for_client,
     subscribe_for_client,
     unsubscribe_for_client,
+    upsert_campaign_for_client,
     update_client_sender_policy_for_client,
     update_contact_suppression_for_client,
     update_contact_validation_for_client,
@@ -1429,6 +1432,57 @@ def _mock_inbox_disabled_response():
         },
         status=404,
     )
+
+
+@csrf_exempt
+def api_campaign(request, external_key):
+    if request.method not in {"GET", "PUT"}:
+        return method_not_allowed_response(["GET", "PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = get_campaign_for_client(
+                external_key,
+                request.GET,
+                client,
+            )
+            status = 200
+        else:
+            payload = upsert_campaign_for_client(
+                external_key,
+                json_request_body(request),
+                client,
+            )
+            status = 201 if payload.get("created") else 200
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=status)
+
+
+@csrf_exempt
+def api_campaign_queue(request, external_key):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = queue_campaign_for_client(
+            external_key,
+            json_request_body(request),
+            client,
+        )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=202)
 
 
 @csrf_exempt

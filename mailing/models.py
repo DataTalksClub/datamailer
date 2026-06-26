@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.utils.text import slugify
 
 
@@ -366,6 +367,7 @@ def normalize_tag_filter(value):
 class Campaign(TimeStampedModel):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="campaigns")
     audience = models.ForeignKey(Audience, on_delete=models.PROTECT, related_name="campaigns")
+    external_key = models.CharField(max_length=180, blank=True, db_index=True)
     subject = models.CharField(max_length=255)
     preview_text = models.CharField(max_length=255, blank=True)
     html_body = models.TextField(blank=True)
@@ -397,6 +399,13 @@ class Campaign(TimeStampedModel):
         indexes = [
             models.Index(fields=["client", "audience", "status"], name="campaign_client_aud_status_idx"),
             models.Index(fields=["scheduled_at"], name="campaign_scheduled_at_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "external_key"],
+                condition=~Q(external_key=""),
+                name="unique_campaign_external_key_per_client",
+            ),
         ]
 
     def save(self, *args, **kwargs):

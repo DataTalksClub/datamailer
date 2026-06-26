@@ -10,6 +10,8 @@ from django.utils.dateparse import parse_datetime
 
 from mailing.models import (
     Audience,
+    Campaign,
+    CampaignStatus,
     CampaignRecipient,
     CategoryPreference,
     Contact,
@@ -21,7 +23,9 @@ from mailing.models import (
     Subscription,
     SubscriptionStatus,
     TransactionalMessage,
+    normalize_tag_filter,
 )
+from mailing.services.campaigns import queue_campaign
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import (
     assign_tag,
@@ -155,6 +159,187 @@ def validate_sender_policy_payload(data):
 
 def get_client_sender_policy_for_client(authenticated_client):
     return sender_policy_payload(authenticated_client)
+
+
+def campaign_payload(campaign):
+    return {
+        "external_key": campaign.external_key,
+        "audience": campaign.audience.slug,
+        "client": campaign.client.slug,
+        "subject": campaign.subject,
+        "preview_text": campaign.preview_text,
+        "html_body": campaign.html_body,
+        "text_body": campaign.text_body,
+        "status": campaign.status,
+        "scheduled_at": isoformat(campaign.scheduled_at),
+        "sent_at": isoformat(campaign.sent_at),
+        "include_tags": campaign.include_tags,
+        "exclude_tags": campaign.exclude_tags,
+        "recipient_count": campaign.recipient_count,
+        "sent_count": campaign.sent_count,
+        "skipped_count": campaign.skipped_count,
+        "delivered_count": campaign.delivered_count,
+        "unique_open_count": campaign.unique_open_count,
+        "open_count": campaign.open_count,
+        "unique_click_count": campaign.unique_click_count,
+        "click_count": campaign.click_count,
+        "unsubscribe_count": campaign.unsubscribe_count,
+        "bounce_count": campaign.bounce_count,
+        "complaint_count": campaign.complaint_count,
+        "created_at": isoformat(campaign.created_at),
+        "updated_at": isoformat(campaign.updated_at),
+    }
+
+
+def validate_campaign_external_key(value):
+    if not isinstance(value, str) or not value.strip():
+        raise ApiValidationError({"external_key": "required"})
+    external_key = value.strip()
+    if "/" in external_key or len(external_key) > 180:
+        raise ApiValidationError({"external_key": "invalid"})
+    return external_key
+
+
+def validate_campaign_tag_filter(value, field):
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ApiValidationError({field: "must_be_list"})
+    return normalize_tag_filter(value)
+
+
+def validate_campaign_payload(data, authenticated_client):
+    scope = validate_contact_scope(data, authenticated_client, require_email=False)
+    errors = {}
+
+    subject = data.get("subject")
+    if not isinstance(subject, str) or not subject.strip():
+        errors["subject"] = "required"
+        subject = ""
+    elif len(subject.strip()) > 255:
+        errors["subject"] = "too_long"
+
+    preview_text = data.get("preview_text", "")
+    if preview_text in (None, ""):
+        preview_text = ""
+    elif not isinstance(preview_text, str):
+        errors["preview_text"] = "must_be_string"
+    elif len(preview_text.strip()) > 255:
+        errors["preview_text"] = "too_long"
+
+    html_body = data.get("html_body", "")
+    if html_body in (None, ""):
+        html_body = ""
+    elif not isinstance(html_body, str):
+        errors["html_body"] = "must_be_string"
+
+    text_body = data.get("text_body", "")
+    if text_body in (None, ""):
+        text_body = ""
+    elif not isinstance(text_body, str):
+        errors["text_body"] = "must_be_string"
+
+    if not str(html_body).strip() and not str(text_body).strip():
+        errors["body"] = "required"
+
+    scheduled_at = data.get("scheduled_at")
+    if scheduled_at in (None, ""):
+        scheduled_at = None
+    elif not isinstance(scheduled_at, str):
+        errors["scheduled_at"] = "must_be_string"
+    else:
+        scheduled_at = parse_datetime(scheduled_at.strip())
+        if scheduled_at is None:
+            errors["scheduled_at"] = "invalid"
+        elif timezone.is_naive(scheduled_at):
+            scheduled_at = timezone.make_aware(scheduled_at, timezone.get_current_timezone())
+
+    try:
+        include_tags = validate_campaign_tag_filter(data.get("include_tags"), "include_tags")
+    except ApiValidationError as exc:
+        errors.update(exc.errors)
+        include_tags = []
+    try:
+        exclude_tags = validate_campaign_tag_filter(data.get("exclude_tags"), "exclude_tags")
+    except ApiValidationError as exc:
+        errors.update(exc.errors)
+        exclude_tags = []
+
+    if errors:
+        raise ApiValidationError(errors)
+
+    return {
+        "audience": scope.audience,
+        "client": scope.client,
+        "subject": subject.strip(),
+        "preview_text": preview_text.strip(),
+        "html_body": html_body,
+        "text_body": text_body,
+        "scheduled_at": scheduled_at,
+        "include_tags": include_tags,
+        "exclude_tags": exclude_tags,
+    }
+
+
+def get_campaign_for_client(external_key, data, authenticated_client):
+    external_key = validate_campaign_external_key(external_key)
+    scope = validate_contact_scope(data, authenticated_client, require_email=False)
+    campaign = Campaign.objects.filter(
+        client=scope.client,
+        audience=scope.audience,
+        external_key=external_key,
+    ).first()
+    if campaign is None:
+        raise ApiValidationError({"external_key": "not_found"}, status_code=404)
+    return {"campaign": campaign_payload(campaign)}
+
+
+@transaction.atomic
+def upsert_campaign_for_client(external_key, data, authenticated_client):
+    external_key = validate_campaign_external_key(external_key)
+    defaults = validate_campaign_payload(data, authenticated_client)
+    existing = Campaign.objects.select_for_update().filter(
+        client=defaults["client"],
+        external_key=external_key,
+    ).first()
+    if existing is not None and existing.audience_id != defaults["audience"].id:
+        raise ApiValidationError({"external_key": "audience_mismatch"}, status_code=409)
+    if existing is not None and existing.status != CampaignStatus.DRAFT:
+        raise ApiValidationError({"status": "not_editable"}, status_code=409)
+
+    campaign, created = Campaign.objects.update_or_create(
+        client=defaults["client"],
+        external_key=external_key,
+        defaults=defaults,
+    )
+    return {
+        "campaign": campaign_payload(campaign),
+        "created": created,
+    }
+
+
+def queue_campaign_for_client(external_key, data, authenticated_client):
+    external_key = validate_campaign_external_key(external_key)
+    scope = validate_contact_scope(data, authenticated_client, require_email=False)
+    campaign = Campaign.objects.filter(
+        client=scope.client,
+        audience=scope.audience,
+        external_key=external_key,
+    ).first()
+    if campaign is None:
+        raise ApiValidationError({"external_key": "not_found"}, status_code=404)
+    if campaign.status != CampaignStatus.DRAFT:
+        raise ApiValidationError({"status": "not_queueable"}, status_code=409)
+
+    result = queue_campaign(campaign)
+    campaign.refresh_from_db()
+    return {
+        "campaign": campaign_payload(campaign),
+        "queued": result.queued,
+        "batch_count": result.batch_count,
+        "recipient_count": result.recipient_count,
+        "skipped_count": result.skipped_count,
+    }
 
 
 @transaction.atomic
