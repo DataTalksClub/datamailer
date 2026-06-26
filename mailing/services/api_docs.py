@@ -54,6 +54,9 @@ API_DOC_PATHS = {
     "mailing:api_recipient_list_bulk_upsert": "/api/recipient-lists/{list_key}/members/bulk-upsert",
     "mailing:api_recipient_list_reconcile": "/api/recipient-lists/{list_key}/members/reconcile",
     "mailing:api_recipient_list_transactional_send": "/api/recipient-lists/{list_key}/transactional-send",
+    "mailing:api_transient_recipient_list_transactional_send": (
+        "/api/transient-recipient-lists/transactional-send"
+    ),
     "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
@@ -772,6 +775,11 @@ def endpoint_groups():
                     "/api/recipient-lists/{list_key}/transactional-send",
                     "Queue one transactional email per active list member.",
                 ),
+                (
+                    "POST",
+                    "/api/transient-recipient-lists/transactional-send",
+                    "Queue one transactional email per active inline member without persisting a list.",
+                ),
             ],
         },
         {
@@ -829,6 +837,9 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_recipient_list_transactional_send"]: reverse(
             "mailing:api_recipient_list_transactional_send",
             args=["ml-zoomcamp-2026:@e:@homework:homework-1"],
+        ),
+        API_DOC_PATHS["mailing:api_transient_recipient_list_transactional_send"]: reverse(
+            "mailing:api_transient_recipient_list_transactional_send",
         ),
         API_DOC_PATHS["mailing:api_transactional_template"]: reverse(
             "mailing:api_transactional_template",
@@ -1201,6 +1212,22 @@ OPENAPI_SPEC = {
                 ),
             }
         },
+        "/api/transient-recipient-lists/transactional-send": {
+            "post": {
+                "tags": ["Recipient Lists"],
+                "summary": "Send transactional email to transient recipient list",
+                "description": "Creates one transactional message per active inline member without creating recipient-list or membership records. The base idempotency key is expanded with each member source object key. Member metadata is merged into each recipient context and is also available under the member key.",
+                "security": [{"BearerAuth": []}],
+                "requestBody": json_body("#/components/schemas/TransientRecipientListTransactionalSendRequest"),
+                "responses": bearer_responses(
+                    json_response(
+                        "Transient recipient list transactional send result",
+                        "#/components/schemas/TransientRecipientListTransactionalSendResponse",
+                    ),
+                    accepted=True,
+                ),
+            }
+        },
         "/api/client/senders": {
             "get": {
                 "tags": ["Transactional"],
@@ -1482,6 +1509,35 @@ OPENAPI_SPEC = {
                     },
                 ]
             },
+            "TransientRecipientListTransactionalSendRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["template_key", "idempotency_key", "members"],
+                        "properties": {
+                            "template_key": {"type": "string"},
+                            "idempotency_key": {"type": "string"},
+                            "category_tag": {"type": "string"},
+                            "context": {"type": "object"},
+                            "metadata": {"type": "object"},
+                            "list": {
+                                "type": "object",
+                                "properties": {
+                                    "key": {"type": "string"},
+                                    "name": {"type": "string"},
+                                    "metadata": {"type": "object"},
+                                },
+                            },
+                            "members": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/RecipientListMemberInput"},
+                            },
+                            "from_email": {"type": "string"},
+                        },
+                    },
+                ]
+            },
             "ContactUpsertRequest": {
                 "allOf": [
                     {"$ref": "#/components/schemas/ScopedMutationRequest"},
@@ -1755,6 +1811,26 @@ OPENAPI_SPEC = {
                         "type": "object",
                         "properties": {
                             "key": {"type": "string"},
+                            "active_member_count": {"type": "integer"},
+                        },
+                    },
+                    "template_key": {"type": "string"},
+                    "idempotency_key": {"type": "string"},
+                    "created_count": {"type": "integer"},
+                    "enqueued_count": {"type": "integer"},
+                    "skipped_count": {"type": "integer"},
+                    "idempotent_replay_count": {"type": "integer"},
+                },
+            },
+            "TransientRecipientListTransactionalSendResponse": {
+                "type": "object",
+                "properties": {
+                    "transient_recipient_list": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string"},
+                            "name": {"type": "string"},
+                            "member_count": {"type": "integer"},
                             "active_member_count": {"type": "integer"},
                         },
                     },

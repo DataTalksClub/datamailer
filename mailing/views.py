@@ -142,6 +142,7 @@ from mailing.services.transactional import (
     TransactionalSendRejected,
     send_transactional_email_for_client,
     send_transactional_email_to_recipient_list_for_client,
+    send_transactional_email_to_transient_recipient_list_for_client,
 )
 from mailing.services.transactional_catalog import (
     catalog_context,
@@ -1348,6 +1349,26 @@ def api_recipient_list_transactional_send(request, list_key):
     try:
         payload = send_transactional_email_to_recipient_list_for_client(
             list_key,
+            json_request_body(request),
+            client,
+        )
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=202)
+
+
+@csrf_exempt
+def api_transient_recipient_list_transactional_send(request):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = send_transactional_email_to_transient_recipient_list_for_client(
             json_request_body(request),
             client,
         )

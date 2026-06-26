@@ -130,6 +130,15 @@ def post_recipient_list_transactional(django_client, list_key, payload, raw_key=
     )
 
 
+def post_transient_recipient_list_transactional(django_client, payload, raw_key=API_KEY):
+    return django_client.post(
+        reverse("mailing:api_transient_recipient_list_transactional_send"),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
 def put_transactional_template(django_client, template_key, payload, raw_key=API_KEY):
     return django_client.put(
         reverse("mailing:api_transactional_template", args=[template_key]),
@@ -558,6 +567,108 @@ def test_recipient_list_send_can_sync_members_and_render_member_context(
     assert "Homework 1: 9" in message.text_body
     assert message.metadata["recipient_list_member_metadata"]["total_score"] == 9
     assert RecipientListMember.objects.get(source_object_key="homework-submission:old").active is False
+    assert len(enqueued) == 1
+
+
+def test_transient_recipient_list_send_renders_members_without_persisting_list(
+    client,
+    audience,
+    api_client_record,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    reminder_template = EmailTemplate.objects.create(
+        client=api_client_record,
+        key="deadline-reminder",
+        name="Deadline reminder",
+        subject="{{ item_title }} due {{ deadline_at }}",
+        html_body="<p>{{ item_title }} for {{ member.user_id }}</p>",
+        text_body="{{ item_title }} / {{ deadline_at }} / {{ member.source_object_key }}",
+        required_context=[
+            {"name": "item_title"},
+            {"name": "deadline_at"},
+        ],
+    )
+    opted_out_contact = Contact.objects.create(email="opted-out@example.com")
+    CategoryPreference.objects.create(
+        contact=opted_out_contact,
+        audience=audience,
+        client=api_client_record,
+        tag="deadline-reminders",
+        label="Deadline reminders",
+        enabled=False,
+    )
+
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "template_key": reminder_template.key,
+        "idempotency_key": "deadline-reminder:homework:1:24h",
+        "category_tag": "deadline-reminders",
+        "context": {
+            "item_title": "Homework 1",
+            "deadline_at": "Thursday, 18 June 2026, 01:00 Europe/Berlin",
+        },
+        "metadata": {
+            "source": "course-management-platform",
+            "event": "deadline_reminder",
+        },
+        "list": {
+            "key": "deadline-reminders:homework:ml-zoomcamp-2026:homework-1:24h",
+            "name": "Homework 1 24h deadline reminders",
+            "metadata": {"deadline_kind": "homework"},
+        },
+        "members": [
+            {
+                "source_object_key": "enrollment:1",
+                "email": "learner@example.com",
+                "status": "active",
+                "metadata": {
+                    "user_id": 1,
+                    "source_object_key": "enrollment:1",
+                    "deadline_at": "Thursday, 18 June 2026, 01:00 Europe/Berlin",
+                },
+            },
+            {
+                "source_object_key": "enrollment:2",
+                "email": "opted-out@example.com",
+                "status": "active",
+                "metadata": {
+                    "user_id": 2,
+                    "source_object_key": "enrollment:2",
+                    "deadline_at": "Thursday, 18 June 2026, 01:00 Europe/Berlin",
+                },
+            },
+        ],
+    }
+
+    response = post_transient_recipient_list_transactional(client, payload)
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["transient_recipient_list"] == {
+        "key": "deadline-reminders:homework:ml-zoomcamp-2026:homework-1:24h",
+        "name": "Homework 1 24h deadline reminders",
+        "member_count": 2,
+        "active_member_count": 2,
+    }
+    assert body["created_count"] == 2
+    assert body["enqueued_count"] == 1
+    assert body["skipped_count"] == 1
+    assert RecipientList.objects.count() == 0
+    assert RecipientListMember.objects.count() == 0
+
+    messages = list(TransactionalMessage.objects.order_by("email"))
+    assert [message.email for message in messages] == ["learner@example.com", "opted-out@example.com"]
+    assert messages[0].status == TransactionalMessageStatus.QUEUED
+    assert messages[0].subject == "Homework 1 due Thursday, 18 June 2026, 01:00 Europe/Berlin"
+    assert messages[0].context["member"]["user_id"] == 1
+    assert messages[0].metadata["transient_recipient_list_key"] == payload["list"]["key"]
+    assert messages[0].metadata["transient_member_metadata"]["user_id"] == 1
+    assert messages[0].metadata["category_tag"] == "deadline-reminders"
+    assert messages[1].status == TransactionalMessageStatus.SKIPPED
+    assert messages[1].last_error == "category_unsubscribe"
     assert len(enqueued) == 1
 
 

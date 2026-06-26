@@ -21,6 +21,9 @@ from mailing.services.contacts import is_transactional_email_allowed, normalize_
 from mailing.services.recipient_lists import (
     bulk_upsert_recipient_list_members_for_client,
     reconcile_recipient_list_for_client,
+    validate_member_status,
+    validate_metadata,
+    validate_path_key,
 )
 from mailing.services.senders import normalize_sender_id, resolve_sender_email
 from mailing.services.transactional_catalog import validate_template_context
@@ -224,6 +227,116 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
     return response
 
 
+def send_transactional_email_to_transient_recipient_list_for_client(data, authenticated_client):
+    payload = validate_transient_recipient_list_send_payload(data, authenticated_client)
+    template = get_transactional_template(authenticated_client, payload["template_key"])
+    sender = resolve_sender_email(authenticated_client, payload["from_email"])
+
+    active_members = [member for member in payload["members"] if member["active"]]
+    member_contexts = [
+        (member, recipient_list_member_context(payload["context"], member["metadata"]))
+        for member in active_members
+    ]
+    for _, context in member_contexts:
+        validate_template_context(template, context)
+
+    queue_payloads = []
+    created_count = 0
+    enqueued_count = 0
+    skipped_count = 0
+    idempotent_replay_count = 0
+
+    with transaction.atomic():
+        for member, context in member_contexts:
+            idempotency_key = f"{payload['idempotency_key']}:{member['source_object_key']}"
+            existing = find_existing_message(authenticated_client, idempotency_key)
+            if existing is not None:
+                idempotent_replay_count += 1
+                continue
+
+            contact, _ = upsert_contact(member["email"])
+            message_payload = {
+                "email": member["email"],
+                "template_key": template.key,
+                "idempotency_key": idempotency_key,
+                "context": context,
+                "metadata": payload["metadata"]
+                | {
+                    "transient_recipient_list_key": payload["list_key"],
+                    "source_object_key": member["source_object_key"],
+                    "transient_member_metadata": member["metadata"],
+                    "audience": payload["audience"].slug,
+                },
+                "from_email": payload["from_email"],
+            }
+
+            delivery_decision = transactional_delivery_decision(contact, payload)
+            if delivery_decision["allowed"]:
+                message = create_transactional_message(
+                    client=authenticated_client,
+                    contact=contact,
+                    template=template,
+                    payload=message_payload,
+                    sender=sender,
+                    idempotency_key=idempotency_key,
+                    status=TransactionalMessageStatus.QUEUED,
+                )
+                append_transactional_event(
+                    message,
+                    EmailEventType.QUEUED,
+                    {
+                        "template_key": template.key,
+                        "transient_recipient_list_key": payload["list_key"],
+                    },
+                )
+                queue_payloads.append(build_transactional_queue_payload(message))
+                created_count += 1
+                enqueued_count += 1
+                continue
+
+            message = create_transactional_message(
+                client=authenticated_client,
+                contact=contact,
+                template=template,
+                payload=message_payload,
+                sender=sender,
+                idempotency_key=idempotency_key,
+                status=TransactionalMessageStatus.SKIPPED,
+                last_error=delivery_decision["reason"],
+            )
+            append_transactional_event(
+                message,
+                EmailEventType.SKIPPED,
+                {
+                    "reason": message.last_error,
+                    "transient_recipient_list_key": payload["list_key"],
+                },
+            )
+            created_count += 1
+            skipped_count += 1
+
+        def enqueue_payloads():
+            for queue_payload in queue_payloads:
+                enqueue_transactional_email(queue_payload)
+
+        transaction.on_commit(enqueue_payloads)
+
+    return {
+        "transient_recipient_list": {
+            "key": payload["list_key"],
+            "name": payload["list_name"],
+            "member_count": len(payload["members"]),
+            "active_member_count": len(active_members),
+        },
+        "template_key": template.key,
+        "idempotency_key": payload["idempotency_key"],
+        "created_count": created_count,
+        "enqueued_count": enqueued_count,
+        "skipped_count": skipped_count,
+        "idempotent_replay_count": idempotent_replay_count,
+    }
+
+
 def sync_recipient_list_members_for_send(list_key, payload, authenticated_client):
     sync_payload = {
         "audience": payload["audience"].slug,
@@ -395,6 +508,80 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         "remove_absent_members": remove_absent_members,
         "list": list_data,
         "from_email": from_email,
+    }
+
+
+def validate_transient_recipient_list_send_payload(data, authenticated_client):
+    payload = validate_recipient_list_send_payload(data, authenticated_client)
+    members = data.get("members")
+    if not isinstance(members, list) or not members:
+        raise ApiValidationError({"members": "required"})
+
+    list_data = payload["list"] or {}
+    if not isinstance(list_data, dict):
+        raise ApiValidationError({"list": "must_be_object"})
+    raw_list_key = list_data.get("key") or data.get("list_key") or payload["idempotency_key"]
+    list_key = validate_path_key(raw_list_key, "list.key")
+    list_name = list_data.get("name", list_key)
+    if not isinstance(list_name, str) or not list_name.strip():
+        raise ApiValidationError({"list.name": "required"})
+
+    clean_members = []
+    errors = {}
+    for index, member in enumerate(members):
+        if not isinstance(member, dict):
+            errors[f"members.{index}"] = "must_be_object"
+            continue
+
+        source_object_key = member.get("source_object_key")
+        try:
+            source_object_key = validate_path_key(
+                source_object_key,
+                f"members.{index}.source_object_key",
+            )
+        except ApiValidationError as exc:
+            errors.update(exc.errors)
+
+        email = member.get("email")
+        if not isinstance(email, str) or not email.strip():
+            errors[f"members.{index}.email"] = "required"
+        else:
+            try:
+                validate_email(email.strip())
+            except ValidationError:
+                errors[f"members.{index}.email"] = "invalid"
+
+        try:
+            active = validate_member_status(member.get("status"))
+        except ApiValidationError as exc:
+            errors[f"members.{index}.status"] = exc.errors.get("member.status", "invalid")
+            active = True
+
+        try:
+            metadata = validate_metadata(member.get("metadata"), f"members.{index}.metadata")
+        except ApiValidationError as exc:
+            errors.update(exc.errors)
+            metadata = {}
+
+        if f"members.{index}.source_object_key" in errors or f"members.{index}.email" in errors:
+            continue
+
+        clean_members.append(
+            {
+                "source_object_key": source_object_key,
+                "email": email.strip(),
+                "active": active,
+                "metadata": metadata,
+            }
+        )
+
+    if errors:
+        raise ApiValidationError(errors)
+
+    return payload | {
+        "members": clean_members,
+        "list_key": list_key,
+        "list_name": list_name.strip(),
     }
 
 
