@@ -49,6 +49,9 @@ API_DOC_PATHS = {
     "mailing:api_client_senders": "/api/client/senders",
     "mailing:api_campaign": "/api/campaigns/{external_key}",
     "mailing:api_campaign_queue": "/api/campaigns/{external_key}/queue",
+    "mailing:api_campaign_cancel": "/api/campaigns/{external_key}/cancel",
+    "mailing:api_campaign_preview": "/api/campaigns/{external_key}/preview",
+    "mailing:api_campaign_test_send": "/api/campaigns/{external_key}/test-send",
     "mailing:api_subscribe": "/api/subscriptions/subscribe",
     "mailing:api_unsubscribe": "/api/subscriptions/unsubscribe",
     "mailing:api_recipient_list": "/api/recipient-lists/{list_key}",
@@ -758,6 +761,9 @@ def endpoint_groups():
                 ("PUT", "/api/campaigns/{external_key}", "Create or update one draft campaign."),
                 ("GET", "/api/campaigns/{external_key}", "Get one campaign by external key."),
                 ("POST", "/api/campaigns/{external_key}/queue", "Snapshot and queue one draft campaign."),
+                ("POST", "/api/campaigns/{external_key}/cancel", "Cancel one draft or unsent queued campaign."),
+                ("POST", "/api/campaigns/{external_key}/preview", "Render one campaign without recipients."),
+                ("POST", "/api/campaigns/{external_key}/test-send", "Send one campaign to explicit test addresses."),
             ],
         },
         {
@@ -832,6 +838,18 @@ def route_path_map():
         ),
         API_DOC_PATHS["mailing:api_campaign_queue"]: reverse(
             "mailing:api_campaign_queue",
+            args=["cmp-course-start-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_campaign_cancel"]: reverse(
+            "mailing:api_campaign_cancel",
+            args=["cmp-course-start-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_campaign_preview"]: reverse(
+            "mailing:api_campaign_preview",
+            args=["cmp-course-start-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_campaign_test_send"]: reverse(
+            "mailing:api_campaign_test_send",
             args=["cmp-course-start-2026"],
         ),
         API_DOC_PATHS["mailing:api_subscribe"]: reverse("mailing:api_subscribe"),
@@ -1197,6 +1215,47 @@ OPENAPI_SPEC = {
                 | {"409": {"$ref": "#/components/responses/ValidationError"}},
             }
         },
+        "/api/campaigns/{external_key}/cancel": {
+            "post": {
+                "tags": ["Campaigns"],
+                "summary": "Cancel campaign",
+                "description": "Cancels a draft campaign or a queued campaign before any recipient has been sent.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [CAMPAIGN_EXTERNAL_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/ScopedMutationRequest"),
+                "responses": bearer_responses(
+                    json_response("Campaign cancelled", "#/components/schemas/CampaignCancelResponse")
+                )
+                | {"409": {"$ref": "#/components/responses/ValidationError"}},
+            }
+        },
+        "/api/campaigns/{external_key}/preview": {
+            "post": {
+                "tags": ["Campaigns"],
+                "summary": "Preview campaign",
+                "description": "Renders one campaign with tracking and unsubscribe markup but without recipients.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [CAMPAIGN_EXTERNAL_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/ScopedMutationRequest"),
+                "responses": bearer_responses(
+                    json_response("Campaign preview", "#/components/schemas/CampaignPreviewResponse")
+                ),
+            }
+        },
+        "/api/campaigns/{external_key}/test-send": {
+            "post": {
+                "tags": ["Campaigns"],
+                "summary": "Test-send campaign",
+                "description": "Sends one rendered campaign to explicit test addresses without creating campaign recipients or updating campaign delivery counts.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [CAMPAIGN_EXTERNAL_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/CampaignTestSendRequest"),
+                "responses": bearer_responses(
+                    json_response("Campaign test sent", "#/components/schemas/CampaignTestSendResponse"),
+                    accepted=True,
+                ),
+            }
+        },
         "/api/recipient-lists/{list_key}": {
             "get": {
                 "tags": ["Recipient Lists"],
@@ -1547,6 +1606,64 @@ OPENAPI_SPEC = {
                     "batch_count": {"type": "integer"},
                     "recipient_count": {"type": "integer"},
                     "skipped_count": {"type": "integer"},
+                },
+            },
+            "CampaignCancelResponse": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"$ref": "#/components/schemas/Campaign"},
+                    "cancelled": {"type": "boolean"},
+                    "skipped_count": {"type": "integer"},
+                },
+            },
+            "CampaignPreview": {
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string"},
+                    "preview_text": {"type": "string"},
+                    "html_body": {"type": "string"},
+                    "text_body": {"type": "string"},
+                },
+            },
+            "CampaignPreviewResponse": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"$ref": "#/components/schemas/Campaign"},
+                    "preview": {"$ref": "#/components/schemas/CampaignPreview"},
+                },
+            },
+            "CampaignTestSendRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["emails"],
+                        "properties": {
+                            "emails": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "email"},
+                                "minItems": 1,
+                                "maxItems": 25,
+                            }
+                        },
+                    },
+                ]
+            },
+            "CampaignTestSendResponse": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"$ref": "#/components/schemas/Campaign"},
+                    "sent_count": {"type": "integer"},
+                    "recipients": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "email": {"type": "string", "format": "email"},
+                                "message_id": {"type": "string"},
+                            },
+                        },
+                    },
                 },
             },
             "RecipientListType": {"type": "string", "enum": [choice.value for choice in RecipientListType]},

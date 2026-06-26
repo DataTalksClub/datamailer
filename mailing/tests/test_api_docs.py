@@ -111,6 +111,9 @@ def test_openapi_includes_public_campaign_api():
     spec = build_openapi_spec()
     assert "/api/campaigns/{external_key}" in spec["paths"]
     assert "/api/campaigns/{external_key}/queue" in spec["paths"]
+    assert "/api/campaigns/{external_key}/cancel" in spec["paths"]
+    assert "/api/campaigns/{external_key}/preview" in spec["paths"]
+    assert "/api/campaigns/{external_key}/test-send" in spec["paths"]
     assert all("/api/v1" not in path for path in spec["paths"])
 
 

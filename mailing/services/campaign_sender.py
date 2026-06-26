@@ -9,7 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from mailing.aws import ses_client as default_ses_client
-from mailing.models import Campaign, CampaignRecipient, CampaignRecipientStatus, EmailEvent, EmailEventType
+from mailing.models import Campaign, CampaignRecipient, CampaignRecipientStatus, CampaignStatus, EmailEvent, EmailEventType
 from mailing.services.public_urls import click_redirect_url, open_pixel_url, unsubscribe_url
 from mailing.services.tokens import (
     CampaignRecipientTokens,
@@ -56,6 +56,31 @@ class CampaignSendResult:
     failed_count: int
 
 
+def render_campaign_message(campaign, *, tracking_token="preview-tracking-token", unsubscribe_token="preview-unsubscribe-token"):
+    return {
+        "subject": campaign.subject,
+        "preview_text": campaign.preview_text,
+        "html_body": build_campaign_html_body(campaign.html_body, tracking_token, unsubscribe_token),
+        "text_body": build_campaign_text_body(campaign.text_body, unsubscribe_token),
+    }
+
+
+def send_campaign_test_message(campaign, to_email, *, ses_client=None, source=None):
+    rendered = render_campaign_message(
+        campaign,
+        tracking_token=generate_raw_token(),
+        unsubscribe_token=generate_raw_token(),
+    )
+    return send_email(
+        ses_client=ses_client or default_ses_client(),
+        source=source or settings.DEFAULT_FROM_EMAIL,
+        to_email=to_email,
+        subject=rendered["subject"],
+        html_body=rendered["html_body"],
+        text_body=rendered["text_body"],
+    )
+
+
 def send_campaign_batch(payload, *, ses_client=None):
     campaign_id = payload["campaign_id"]
     recipient_ids = payload["campaign_recipient_ids"]
@@ -99,6 +124,13 @@ def _send_campaign_recipient(campaign_id, recipient_id, ses):
         return "skipped"
 
     if recipient.status != CampaignRecipientStatus.PENDING:
+        return "skipped"
+
+    if recipient.campaign.status == CampaignStatus.CANCELLED:
+        recipient.status = CampaignRecipientStatus.SKIPPED
+        recipient.last_error = "campaign_cancelled"
+        recipient.save(update_fields=["status", "last_error", "updated_at"])
+        _create_campaign_event(recipient, EmailEventType.SKIPPED, metadata={"reason": "campaign_cancelled"})
         return "skipped"
 
     tokens = _send_tokens_for_pending_recipient(recipient)

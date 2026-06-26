@@ -11,8 +11,9 @@ from django.utils.dateparse import parse_datetime
 from mailing.models import (
     Audience,
     Campaign,
-    CampaignStatus,
     CampaignRecipient,
+    CampaignRecipientStatus,
+    CampaignStatus,
     CategoryPreference,
     Contact,
     ContactTag,
@@ -26,6 +27,7 @@ from mailing.models import (
     normalize_tag_filter,
 )
 from mailing.services.campaigns import queue_campaign
+from mailing.services.campaign_sender import render_campaign_message, send_campaign_test_message
 from mailing.services.cmp_callbacks import emit_cmp_contact_event
 from mailing.services.contacts import (
     assign_tag,
@@ -282,16 +284,24 @@ def validate_campaign_payload(data, authenticated_client):
 
 
 def get_campaign_for_client(external_key, data, authenticated_client):
+    campaign = campaign_for_client(external_key, data, authenticated_client)
+    return {"campaign": campaign_payload(campaign)}
+
+
+def campaign_for_client(external_key, data, authenticated_client, *, for_update=False):
     external_key = validate_campaign_external_key(external_key)
     scope = validate_contact_scope(data, authenticated_client, require_email=False)
-    campaign = Campaign.objects.filter(
+    queryset = Campaign.objects
+    if for_update:
+        queryset = queryset.select_for_update()
+    campaign = queryset.filter(
         client=scope.client,
         audience=scope.audience,
         external_key=external_key,
     ).first()
     if campaign is None:
         raise ApiValidationError({"external_key": "not_found"}, status_code=404)
-    return {"campaign": campaign_payload(campaign)}
+    return campaign
 
 
 @transaction.atomic
@@ -319,15 +329,7 @@ def upsert_campaign_for_client(external_key, data, authenticated_client):
 
 
 def queue_campaign_for_client(external_key, data, authenticated_client):
-    external_key = validate_campaign_external_key(external_key)
-    scope = validate_contact_scope(data, authenticated_client, require_email=False)
-    campaign = Campaign.objects.filter(
-        client=scope.client,
-        audience=scope.audience,
-        external_key=external_key,
-    ).first()
-    if campaign is None:
-        raise ApiValidationError({"external_key": "not_found"}, status_code=404)
+    campaign = campaign_for_client(external_key, data, authenticated_client)
     if campaign.status != CampaignStatus.DRAFT:
         raise ApiValidationError({"status": "not_queueable"}, status_code=409)
 
@@ -339,6 +341,88 @@ def queue_campaign_for_client(external_key, data, authenticated_client):
         "batch_count": result.batch_count,
         "recipient_count": result.recipient_count,
         "skipped_count": result.skipped_count,
+    }
+
+
+@transaction.atomic
+def cancel_campaign_for_client(external_key, data, authenticated_client):
+    campaign = campaign_for_client(external_key, data, authenticated_client, for_update=True)
+    if campaign.status == CampaignStatus.CANCELLED:
+        return {"campaign": campaign_payload(campaign), "cancelled": False}
+    if campaign.status == CampaignStatus.DRAFT:
+        campaign.status = CampaignStatus.CANCELLED
+        campaign.save(update_fields=["status", "updated_at"])
+        return {"campaign": campaign_payload(campaign), "cancelled": True}
+    has_sent_recipients = CampaignRecipient.objects.filter(
+        campaign=campaign,
+        status=CampaignRecipientStatus.SENT,
+    ).exists()
+    if campaign.status == CampaignStatus.QUEUED and campaign.sent_count == 0 and not has_sent_recipients:
+        skipped = CampaignRecipient.objects.filter(
+            campaign=campaign,
+            status=CampaignRecipientStatus.PENDING,
+        ).update(
+            status=CampaignRecipientStatus.SKIPPED,
+            last_error="campaign_cancelled",
+            updated_at=timezone.now(),
+        )
+        campaign.status = CampaignStatus.CANCELLED
+        campaign.skipped_count += skipped
+        campaign.recipient_count = max(campaign.recipient_count - skipped, 0)
+        campaign.save(update_fields=["status", "skipped_count", "recipient_count", "updated_at"])
+        return {"campaign": campaign_payload(campaign), "cancelled": True, "skipped_count": skipped}
+
+    raise ApiValidationError({"status": "not_cancellable"}, status_code=409)
+
+
+def preview_campaign_for_client(external_key, data, authenticated_client):
+    campaign = campaign_for_client(external_key, data, authenticated_client)
+    return {
+        "campaign": campaign_payload(campaign),
+        "preview": render_campaign_message(campaign),
+    }
+
+
+def validate_test_recipient_emails(value):
+    if not isinstance(value, list) or not value:
+        raise ApiValidationError({"emails": "required"})
+    if len(value) > 25:
+        raise ApiValidationError({"emails": "too_many"})
+
+    emails = []
+    errors = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            errors.append({"index": index, "error": "required"})
+            continue
+        email = item.strip()
+        try:
+            validate_email(email)
+        except ValidationError:
+            errors.append({"index": index, "email": email, "error": "invalid"})
+            continue
+        emails.append(normalize_email(email))
+
+    if errors:
+        raise ApiValidationError({"emails": errors})
+    return sorted(set(emails))
+
+
+def test_send_campaign_for_client(external_key, data, authenticated_client):
+    campaign = campaign_for_client(external_key, data, authenticated_client)
+    emails = validate_test_recipient_emails(data.get("emails"))
+    sent = []
+    for email in emails:
+        sent.append(
+            {
+                "email": email,
+                "message_id": send_campaign_test_message(campaign, email),
+            }
+        )
+    return {
+        "campaign": campaign_payload(campaign),
+        "sent_count": len(sent),
+        "recipients": sent,
     }
 
 

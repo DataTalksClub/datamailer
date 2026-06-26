@@ -5,6 +5,8 @@ from django.utils import timezone
 from mailing.models import (
     Audience,
     Campaign,
+    CampaignRecipient,
+    CampaignRecipientStatus,
     CampaignStatus,
     Client,
     Contact,
@@ -12,6 +14,7 @@ from mailing.models import (
     Subscription,
     SubscriptionStatus,
 )
+from mailing.services.campaign_sender import send_campaign_batch
 from mailing.services.auth import create_client_api_key
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -68,6 +71,33 @@ def get_campaign(django_client, external_key, payload, raw_key=API_KEY):
 def queue_campaign_api(django_client, external_key, payload, raw_key=API_KEY):
     return django_client.post(
         reverse("mailing:api_campaign_queue", args=[external_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def cancel_campaign_api(django_client, external_key, payload, raw_key=API_KEY):
+    return django_client.post(
+        reverse("mailing:api_campaign_cancel", args=[external_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def preview_campaign_api(django_client, external_key, payload, raw_key=API_KEY):
+    return django_client.post(
+        reverse("mailing:api_campaign_preview", args=[external_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(raw_key),
+    )
+
+
+def post_campaign_test_send(django_client, external_key, payload, raw_key=API_KEY):
+    return django_client.post(
+        reverse("mailing:api_campaign_test_send", args=[external_key]),
         data=payload,
         content_type="application/json",
         **auth_headers(raw_key),
@@ -221,3 +251,168 @@ def test_campaign_api_queue_snapshots_and_enqueues_pending_recipients(
 
     assert replay.status_code == 409
     assert replay.json()["error"]["fields"] == {"status": "not_queueable"}
+
+
+def test_campaign_api_cancels_draft_campaign(client, audience, api_client_record):
+    campaign = Campaign.objects.create(
+        client=api_client_record,
+        audience=audience,
+        external_key="draft-campaign",
+        subject="Draft",
+        html_body="<p>Hello</p>",
+    )
+
+    response = cancel_campaign_api(
+        client,
+        "draft-campaign",
+        {"audience": audience.slug, "client": api_client_record.slug},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cancelled"] is True
+    campaign.refresh_from_db()
+    assert campaign.status == CampaignStatus.CANCELLED
+
+
+def test_campaign_api_cancels_unsent_queued_campaign_and_stale_batch_does_not_send(
+    client,
+    audience,
+    api_client_record,
+):
+    campaign = Campaign.objects.create(
+        client=api_client_record,
+        audience=audience,
+        external_key="queued-campaign",
+        subject="Queued",
+        html_body="<p>Hello</p>",
+        status=CampaignStatus.QUEUED,
+        recipient_count=1,
+    )
+    contact = Contact.objects.create(email="learner@example.com", verified_at=timezone.now())
+    recipient = CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=contact,
+        email=contact.email,
+        status=CampaignRecipientStatus.PENDING,
+    )
+
+    response = cancel_campaign_api(
+        client,
+        "queued-campaign",
+        {"audience": audience.slug, "client": api_client_record.slug},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cancelled"] is True
+    campaign.refresh_from_db()
+    recipient.refresh_from_db()
+    assert campaign.status == CampaignStatus.CANCELLED
+    assert campaign.recipient_count == 0
+    assert campaign.skipped_count == 1
+    assert recipient.status == CampaignRecipientStatus.SKIPPED
+    assert recipient.last_error == "campaign_cancelled"
+
+    result = send_campaign_batch(
+        {
+            "campaign_id": campaign.id,
+            "campaign_recipient_ids": [recipient.id],
+        },
+        ses_client=_FailingIfCalledSes(),
+    )
+
+    assert result.skipped_count == 1
+
+
+def test_campaign_api_rejects_cancel_after_send_started(client, audience, api_client_record):
+    campaign = Campaign.objects.create(
+        client=api_client_record,
+        audience=audience,
+        external_key="sending-campaign",
+        subject="Sending",
+        html_body="<p>Hello</p>",
+        status=CampaignStatus.QUEUED,
+        sent_count=1,
+    )
+
+    response = cancel_campaign_api(
+        client,
+        "sending-campaign",
+        {"audience": audience.slug, "client": api_client_record.slug},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["fields"] == {"status": "not_cancellable"}
+    campaign.refresh_from_db()
+    assert campaign.status == CampaignStatus.QUEUED
+
+
+def test_campaign_api_preview_renders_campaign_body(client, audience, api_client_record, settings):
+    settings.PUBLIC_BASE_URL = "https://mail.example.com"
+    put = put_campaign(
+        client,
+        "preview-campaign",
+        campaign_payload(audience, api_client_record)
+        | {
+            "html_body": '<p>Hello <a href="https://example.com/read">read</a></p>',
+            "text_body": "Hello text",
+        },
+    )
+    assert put.status_code == 201
+
+    response = preview_campaign_api(
+        client,
+        "preview-campaign",
+        {"audience": audience.slug, "client": api_client_record.slug},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()["preview"]
+    assert preview["subject"] == "Course starts tomorrow"
+    assert "https://mail.example.com/t/c/preview-tracking-token" in preview["html_body"]
+    assert "Unsubscribe or manage preferences" in preview["html_body"]
+    assert "https://mail.example.com/unsubscribe/preview-unsubscribe-token" in preview["text_body"]
+
+
+def test_campaign_api_test_send_sends_explicit_recipients_without_campaign_recipients(
+    client,
+    audience,
+    api_client_record,
+    monkeypatch,
+):
+    sent = []
+
+    def fake_send(campaign, email):
+        sent.append((campaign.external_key, email))
+        return f"message-{len(sent)}"
+
+    monkeypatch.setattr("mailing.services.api.send_campaign_test_message", fake_send)
+    put = put_campaign(client, "test-send-campaign", campaign_payload(audience, api_client_record))
+    assert put.status_code == 201
+
+    response = post_campaign_test_send(
+        client,
+        "test-send-campaign",
+        {
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "emails": ["B@example.com", "a@example.com", "a@example.com"],
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["sent_count"] == 2
+    assert body["recipients"] == [
+        {"email": "a@example.com", "message_id": "message-1"},
+        {"email": "b@example.com", "message_id": "message-2"},
+    ]
+    assert sent == [
+        ("test-send-campaign", "a@example.com"),
+        ("test-send-campaign", "b@example.com"),
+    ]
+    assert CampaignRecipient.objects.count() == 0
+
+
+class _FailingIfCalledSes:
+    def send_email(self, **params):
+        raise AssertionError("SES should not be called")
