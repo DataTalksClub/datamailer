@@ -1,4 +1,7 @@
+from io import StringIO
+
 import pytest
+from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 
@@ -516,6 +519,14 @@ def test_recipient_list_import_job_records_bad_rows_without_writes(
     assert job.failed_rows[0]["line"] == 1
     assert RecipientListImportJob.objects.count() == 1
     assert RecipientList.objects.filter(key=list_key).exists() is False
+
+
+def test_recipient_list_import_worker_command_processes_one_batch():
+    out = StringIO()
+
+    call_command("process_recipient_list_imports", "--once", stdout=out)
+
+    assert "processed=0 succeeded=0 failed=0" in out.getvalue()
 
 
 def test_contact_upsert_accepts_validation_and_suppression_inputs_idempotently(client, audience, api_client_record):

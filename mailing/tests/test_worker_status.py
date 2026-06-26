@@ -19,6 +19,8 @@ from mailing.models import (
     EmailEventType,
     EmailTemplate,
     Organization,
+    RecipientListImportJob,
+    RecipientListImportJobStatus,
     TransactionalMessage,
     TransactionalMessageStatus,
 )
@@ -58,6 +60,7 @@ def test_sandbox_worker_statuses_include_systemd_state_and_local_backlog(setting
     assert statuses["campaign"].backlog_count == 1
     assert statuses["ses-webhooks"].backlog_count is None
     assert statuses["cmp-callbacks"].backlog_count == 1
+    assert statuses["recipient-list-imports"].backlog_count == 1
 
 
 def test_worker_status_api_returns_staff_only_json_status(client, settings, monkeypatch):
@@ -79,6 +82,7 @@ def test_worker_status_api_returns_staff_only_json_status(client, settings, monk
     assert workers["campaign"]["status"] == "failed"
     assert workers["campaign"]["detail"] == "failed; result=exit-code"
     assert workers["ses-webhooks"]["backlog"] == {"label": "SQS backlog", "count": None}
+    assert workers["recipient-list-imports"]["backlog"] == {"label": "Pending import jobs", "count": 1}
 
 
 def test_worker_status_api_requires_staff(client):
@@ -166,4 +170,11 @@ def _create_worker_backlog():
         payload={"email": contact.email},
         status=CmpCallbackStatus.PENDING,
         next_attempt_at=timezone.now(),
+    )
+    RecipientListImportJob.objects.create(
+        client=client,
+        audience=audience,
+        list_key="ml-zoomcamp-2026:@e",
+        source_url="https://storage.example.com/import.jsonl",
+        status=RecipientListImportJobStatus.PENDING,
     )

@@ -73,6 +73,7 @@ jobs:
                 \"systemctl is-active datamailer-transactional-worker\",
                 \"systemctl is-active datamailer-ses-webhooks-worker\",
                 \"systemctl is-active datamailer-cmp-callbacks-worker\",
+                \"systemctl is-active datamailer-recipient-list-imports-worker\",
                 \"sudo -u ubuntu git -C /opt/datamailer rev-parse --short HEAD\"
               ]" \
               --query 'Command.CommandId' \

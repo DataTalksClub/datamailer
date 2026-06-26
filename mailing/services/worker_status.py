@@ -13,6 +13,8 @@ from mailing.models import (
     CampaignStatus,
     CmpCallback,
     CmpCallbackStatus,
+    RecipientListImportJob,
+    RecipientListImportJobStatus,
     TransactionalMessage,
     TransactionalMessageStatus,
 )
@@ -80,6 +82,13 @@ WORKER_DEFINITIONS = (
         "datamailer-cmp-callbacks-worker.service",
         "process_cmp_callbacks",
         "Due callbacks",
+    ),
+    WorkerDefinition(
+        "recipient-list-imports",
+        "Recipient list imports",
+        "datamailer-recipient-list-imports-worker.service",
+        "process_recipient_list_imports",
+        "Pending import jobs",
     ),
 )
 
@@ -180,6 +189,13 @@ def _backlog_count(worker_key: str) -> int | None:
         return CmpCallback.objects.filter(
             Q(status=CmpCallbackStatus.PENDING, next_attempt_at__lte=timezone.now())
             | Q(status=CmpCallbackStatus.FAILED)
+        ).count()
+    if worker_key == "recipient-list-imports":
+        return RecipientListImportJob.objects.filter(
+            status__in=[
+                RecipientListImportJobStatus.PENDING,
+                RecipientListImportJobStatus.PROCESSING,
+            ]
         ).count()
     return None
 
