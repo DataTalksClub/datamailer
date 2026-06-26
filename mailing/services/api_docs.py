@@ -4,7 +4,13 @@ from copy import deepcopy
 from django.conf import settings
 from django.urls import reverse
 
-from mailing.models import CampaignStatus, EmailValidationStatus, RecipientListType, SubscriptionStatus
+from mailing.models import (
+    CampaignStatus,
+    EmailValidationStatus,
+    RecipientListImportJobStatus,
+    RecipientListType,
+    SubscriptionStatus,
+)
 
 DEMO_API_KEYS = [
     {
@@ -59,6 +65,8 @@ API_DOC_PATHS = {
     "mailing:api_recipient_list_member": "/api/recipient-lists/{list_key}/members/{source_object_key}",
     "mailing:api_recipient_list_bulk_upsert": "/api/recipient-lists/{list_key}/members/bulk-upsert",
     "mailing:api_recipient_list_reconcile": "/api/recipient-lists/{list_key}/members/reconcile",
+    "mailing:api_recipient_list_imports": "/api/recipient-lists/{list_key}/imports",
+    "mailing:api_recipient_list_import": "/api/recipient-lists/{list_key}/imports/{job_id}",
     "mailing:api_recipient_list_transactional_send": "/api/recipient-lists/{list_key}/transactional-send",
     "mailing:api_transient_recipient_list_transactional_send": (
         "/api/transient-recipient-lists/transactional-send"
@@ -806,6 +814,16 @@ def endpoint_groups():
                 ),
                 (
                     "POST",
+                    "/api/recipient-lists/{list_key}/imports",
+                    "Create a pending JSONL import job from a fetchable URL.",
+                ),
+                (
+                    "GET",
+                    "/api/recipient-lists/{list_key}/imports/{job_id}",
+                    "Get recipient-list import job status.",
+                ),
+                (
+                    "POST",
                     "/api/recipient-lists/{list_key}/transactional-send",
                     "Queue one transactional email per active list member.",
                 ),
@@ -889,6 +907,14 @@ def route_path_map():
             "mailing:api_recipient_list_reconcile",
             args=["ml-zoomcamp-2026"],
         ),
+        API_DOC_PATHS["mailing:api_recipient_list_imports"]: reverse(
+            "mailing:api_recipient_list_imports",
+            args=["ml-zoomcamp-2026"],
+        ),
+        API_DOC_PATHS["mailing:api_recipient_list_import"]: reverse(
+            "mailing:api_recipient_list_import",
+            args=["ml-zoomcamp-2026", 101],
+        ),
         API_DOC_PATHS["mailing:api_recipient_list_transactional_send"]: reverse(
             "mailing:api_recipient_list_transactional_send",
             args=["ml-zoomcamp-2026:@e:@homework:homework-1"],
@@ -955,6 +981,7 @@ RUN_ID_PARAM = {"name": "run_id", "in": "path", "required": True, "schema": {"ty
 MESSAGE_ID_PARAM = {"name": "message_id", "in": "path", "required": True, "schema": {"type": "integer"}}
 TAG_SLUG_PARAM = {"name": "tag_slug", "in": "path", "required": True, "schema": {"type": "string"}}
 LIST_KEY_PARAM = {"name": "list_key", "in": "path", "required": True, "schema": {"type": "string"}}
+JOB_ID_PARAM = {"name": "job_id", "in": "path", "required": True, "schema": {"type": "integer"}}
 CAMPAIGN_EXTERNAL_KEY_PARAM = {
     "name": "external_key",
     "in": "path",
@@ -1363,6 +1390,36 @@ OPENAPI_SPEC = {
                     json_response(
                         "Recipient list reconcile result", "#/components/schemas/RecipientListReconcileResponse"
                     )
+                ),
+            }
+        },
+        "/api/recipient-lists/{list_key}/imports": {
+            "post": {
+                "tags": ["Recipient Lists"],
+                "summary": "Create recipient list import job",
+                "description": "Creates a pending job that fetches JSONL member rows from a client-owned URL. Process the job asynchronously, then poll the job status before dependent sends.",
+                "security": [{"BearerAuth": []}],
+                "parameters": [LIST_KEY_PARAM],
+                "requestBody": json_body("#/components/schemas/RecipientListImportRequest"),
+                "responses": bearer_responses(
+                    json_response("Recipient list import job", "#/components/schemas/RecipientListImportJobResponse"),
+                    accepted=True,
+                ),
+            }
+        },
+        "/api/recipient-lists/{list_key}/imports/{job_id}": {
+            "get": {
+                "tags": ["Recipient Lists"],
+                "summary": "Get recipient list import job",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    LIST_KEY_PARAM,
+                    JOB_ID_PARAM,
+                    {"name": "audience", "in": "query", "required": True, "schema": {"type": "string"}},
+                    {"name": "client", "in": "query", "required": True, "schema": {"type": "string"}},
+                ],
+                "responses": bearer_responses(
+                    json_response("Recipient list import job", "#/components/schemas/RecipientListImportJobResponse")
                 ),
             }
         },
@@ -1823,6 +1880,10 @@ OPENAPI_SPEC = {
                 "properties": {"deleted_count": {"type": "integer"}},
             },
             "RecipientListType": {"type": "string", "enum": [choice.value for choice in RecipientListType]},
+            "RecipientListImportJobStatus": {
+                "type": "string",
+                "enum": [choice.value for choice in RecipientListImportJobStatus],
+            },
             "RecipientListInput": {
                 "type": "object",
                 "properties": {
@@ -1882,6 +1943,21 @@ OPENAPI_SPEC = {
                         "type": "object",
                         "properties": {
                             "dry_run": {"type": "boolean"},
+                            "remove_absent": {"type": "boolean"},
+                        },
+                    },
+                ]
+            },
+            "RecipientListImportRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["source_url"],
+                        "properties": {
+                            "source_url": {"type": "string", "format": "uri"},
+                            "idempotency_key": {"type": "string", "maxLength": 255},
+                            "list": {"$ref": "#/components/schemas/RecipientListInput"},
                             "remove_absent": {"type": "boolean"},
                         },
                     },
@@ -2266,6 +2342,45 @@ OPENAPI_SPEC = {
                     "dry_run": {"type": "boolean"},
                     "upsert_count": {"type": "integer"},
                     "removed_count": {"type": "integer"},
+                },
+            },
+            "RecipientListImportJob": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "list_key": {"type": "string"},
+                    "audience": {"type": "string"},
+                    "client": {"type": "string"},
+                    "source_url": {"type": "string", "format": "uri"},
+                    "idempotency_key": {"type": "string"},
+                    "status": {"$ref": "#/components/schemas/RecipientListImportJobStatus"},
+                    "list": {"type": "object"},
+                    "remove_absent": {"type": "boolean"},
+                    "row_count": {"type": "integer"},
+                    "created_count": {"type": "integer"},
+                    "updated_count": {"type": "integer"},
+                    "removed_count": {"type": "integer"},
+                    "failed_count": {"type": "integer"},
+                    "failed_rows": {"type": "array", "items": {"type": "object"}},
+                    "content_sha256": {"type": "string"},
+                    "error": {"type": "string"},
+                    "started_at": {"type": ["string", "null"], "format": "date-time"},
+                    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+                    "created_at": {"type": "string", "format": "date-time"},
+                    "updated_at": {"type": "string", "format": "date-time"},
+                    "recipient_list": {
+                        "anyOf": [
+                            {"$ref": "#/components/schemas/RecipientList"},
+                            {"type": "null"},
+                        ]
+                    },
+                },
+            },
+            "RecipientListImportJobResponse": {
+                "type": "object",
+                "properties": {
+                    "import_job": {"$ref": "#/components/schemas/RecipientListImportJob"},
+                    "created": {"type": "boolean"},
                 },
             },
             "RecipientListTransactionalSendResponse": {

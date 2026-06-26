@@ -350,6 +350,64 @@ class RecipientListMember(TimeStampedModel):
         return f"{self.recipient_list.key}: {self.source_object_key}"
 
 
+class RecipientListImportJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    PROCESSING = "processing", "Processing"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+
+
+class RecipientListImportJob(TimeStampedModel):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="recipient_list_import_jobs")
+    audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name="recipient_list_import_jobs")
+    recipient_list = models.ForeignKey(
+        RecipientList,
+        on_delete=models.SET_NULL,
+        related_name="import_jobs",
+        null=True,
+        blank=True,
+    )
+    list_key = models.CharField(max_length=255)
+    source_url = models.URLField(max_length=2048)
+    idempotency_key = models.CharField(max_length=255, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=RecipientListImportJobStatus.choices,
+        default=RecipientListImportJobStatus.PENDING,
+        db_index=True,
+    )
+    list_defaults = models.JSONField(default=dict, blank=True)
+    remove_absent = models.BooleanField(default=False)
+    row_count = models.PositiveIntegerField(default=0)
+    created_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    removed_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    failed_rows = models.JSONField(default=list, blank=True)
+    content_sha256 = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "recipient_list_import_jobs"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "idempotency_key"],
+                condition=~models.Q(idempotency_key=""),
+                name="unique_recipient_list_import_job_idempotency",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["client", "audience", "status"], name="recip_import_scope_status_idx"),
+            models.Index(fields=["list_key", "created_at"], name="recip_import_list_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.client.slug}/{self.audience.slug}/{self.list_key} import {self.status}"
+
+
 class CampaignStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     QUEUED = "queued", "Queued"

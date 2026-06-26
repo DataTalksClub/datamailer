@@ -20,6 +20,8 @@ from mailing.models import (
     EmailValidationStatus,
     Organization,
     RecipientList,
+    RecipientListImportJob,
+    RecipientListImportJobStatus,
     RecipientListMember,
     Subscription,
     SubscriptionStatus,
@@ -29,6 +31,7 @@ from mailing.models import (
 )
 from mailing.services.auth import authenticate_bearer_token, check_api_key, create_client_api_key
 from mailing.services.campaigns import snapshot_campaign_recipients
+from mailing.services.recipient_lists import process_recipient_list_import_job
 
 pytestmark = pytest.mark.django_db
 
@@ -394,6 +397,125 @@ def test_recipient_list_bulk_upsert_and_reconcile(client, audience, api_client_r
     removed = RecipientListMember.objects.get(source_object_key="registration:2")
     assert removed.active is False
     assert removed.removed_at is not None
+
+
+def test_recipient_list_import_job_fetches_jsonl_and_updates_members(
+    client,
+    audience,
+    api_client_record,
+    monkeypatch,
+):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, _size):
+            return b"\n".join(
+                [
+                    b'{"source_object_key":"registration:1","email":"one@example.com","metadata":{"user_id":1}}',
+                    b'{"source_object_key":"registration:2","email":"two@example.com","metadata":{"user_id":2}}',
+                ]
+            )
+
+    monkeypatch.setattr("mailing.services.recipient_lists.urlopen", lambda *args, **kwargs: FakeResponse())
+    list_key = "ml-zoomcamp-2026:@e"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "source_url": "https://storage.example.com/import.jsonl?signature=abc",
+        "idempotency_key": "cmp-import-1",
+        "list": {
+            "name": "ML Zoomcamp enrolled",
+            "metadata": {"course_slug": "ml-zoomcamp-2026"},
+        },
+    }
+
+    response = client.post(
+        reverse("mailing:api_recipient_list_imports", args=[list_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+    replay = client.post(
+        reverse("mailing:api_recipient_list_imports", args=[list_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+
+    assert response.status_code == 202
+    assert replay.status_code == 200
+    body = response.json()
+    job_id = body["import_job"]["id"]
+    assert body["created"] is True
+    assert replay.json()["created"] is False
+    assert replay.json()["import_job"]["id"] == job_id
+    assert body["import_job"]["status"] == RecipientListImportJobStatus.PENDING
+
+    job = process_recipient_list_import_job(job_id)
+
+    assert job.status == RecipientListImportJobStatus.SUCCEEDED
+    assert job.row_count == 2
+    assert job.created_count == 2
+    assert job.content_sha256
+    assert RecipientList.objects.get(key=list_key).active_member_count == 2
+    assert set(RecipientListMember.objects.filter(recipient_list__key=list_key).values_list("email", flat=True)) == {
+        "one@example.com",
+        "two@example.com",
+    }
+
+    detail = client.get(
+        reverse("mailing:api_recipient_list_import", args=[list_key, job_id]),
+        {"audience": audience.slug, "client": api_client_record.slug},
+        **auth_headers(),
+    )
+
+    assert detail.status_code == 200
+    detail_job = detail.json()["import_job"]
+    assert detail_job["status"] == RecipientListImportJobStatus.SUCCEEDED
+    assert detail_job["recipient_list"]["active_member_count"] == 2
+
+
+def test_recipient_list_import_job_records_bad_rows_without_writes(
+    client,
+    audience,
+    api_client_record,
+    monkeypatch,
+):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, _size):
+            return b'{"source_object_key":"registration:1","email":"not-an-email"}'
+
+    monkeypatch.setattr("mailing.services.recipient_lists.urlopen", lambda *args, **kwargs: FakeResponse())
+    list_key = "ml-zoomcamp-2026:@e"
+    payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "source_url": "https://storage.example.com/import.jsonl",
+    }
+
+    response = client.post(
+        reverse("mailing:api_recipient_list_imports", args=[list_key]),
+        data=payload,
+        content_type="application/json",
+        **auth_headers(),
+    )
+    job = process_recipient_list_import_job(response.json()["import_job"]["id"])
+
+    assert job.status == RecipientListImportJobStatus.FAILED
+    assert job.failed_count == 1
+    assert job.failed_rows[0]["line"] == 1
+    assert RecipientListImportJob.objects.count() == 1
+    assert RecipientList.objects.filter(key=list_key).exists() is False
 
 
 def test_contact_upsert_accepts_validation_and_suppression_inputs_idempotently(client, audience, api_client_record):

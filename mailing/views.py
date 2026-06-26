@@ -144,7 +144,9 @@ from mailing.services.real_inbox import (
 )
 from mailing.services.recipient_lists import (
     bulk_upsert_recipient_list_members_for_client,
+    create_recipient_list_import_job_for_client,
     get_recipient_list_for_client,
+    get_recipient_list_import_job_for_client,
     reconcile_recipient_list_for_client,
     upsert_recipient_list_for_client,
     upsert_recipient_list_member_for_client,
@@ -1362,6 +1364,40 @@ def api_recipient_list_reconcile(request, list_key):
 
     try:
         payload = reconcile_recipient_list_for_client(list_key, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_recipient_list_imports(request, list_key):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = create_recipient_list_import_job_for_client(list_key, json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=202 if payload.get("created") else 200)
+
+
+@csrf_exempt
+def api_recipient_list_import(request, list_key, job_id):
+    if request.method != "GET":
+        return method_not_allowed_response(["GET"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = get_recipient_list_import_job_for_client(list_key, job_id, request.GET, client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 
