@@ -10,7 +10,9 @@ from mailing.models import (
     CategoryPreference,
     Client,
     ClientApiKey,
+    CmpCallback,
     Contact,
+    ContactSourceMetadata,
     ContactTag,
     EmailEvent,
     EmailEventType,
@@ -511,6 +513,152 @@ def test_contact_preferences_reject_enabling_suppressed_contact(client, audience
     assert response.json()["error"]["fields"] == {
         "categories": "suppressed_contact_cannot_be_enabled",
     }
+
+
+def test_contact_erase_deletes_live_state_and_anonymizes_history(client, audience, api_client_record):
+    contact = Contact.objects.create(
+        email="person@example.com",
+        verified_at=timezone.now(),
+        email_validation_status=EmailValidationStatus.EXTERNALLY_VALIDATED,
+        email_validated_at=timezone.now(),
+        global_unsubscribed_at=timezone.now(),
+        hard_bounced_at=timezone.now(),
+        complained_at=timezone.now(),
+    )
+    Subscription.objects.create(
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
+    CategoryPreference.objects.create(
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        tag="course-updates",
+        enabled=False,
+    )
+    tag = Tag.objects.create(audience=audience, name="Learner", slug="learner")
+    ContactTag.objects.create(contact=contact, tag=tag)
+    ContactSourceMetadata.objects.create(
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        source="cmp",
+        external_id="user:42",
+        metadata={"email": "person@example.com"},
+    )
+    recipient_list = RecipientList.objects.create(
+        audience=audience,
+        client=api_client_record,
+        key="ml-zoomcamp-2026",
+        name="ML Zoomcamp 2026",
+    )
+    RecipientListMember.objects.create(
+        recipient_list=recipient_list,
+        contact=contact,
+        email="person@example.com",
+        source_object_key="user:42",
+    )
+    template = EmailTemplate.objects.create(
+        client=api_client_record,
+        key="submission-result",
+        name="Submission result",
+        subject="Result",
+    )
+    message = TransactionalMessage.objects.create(
+        client=api_client_record,
+        contact=contact,
+        email="person@example.com",
+        template=template,
+        template_key=template.key,
+        subject="Result",
+        context={"email": "person@example.com"},
+        metadata={"source": "cmp"},
+    )
+    campaign = Campaign.objects.create(
+        audience=audience,
+        client=api_client_record,
+        subject="Course starts",
+    )
+    recipient = CampaignRecipient.objects.create(
+        campaign=campaign,
+        contact=contact,
+        email="person@example.com",
+    )
+    event = EmailEvent.objects.create(
+        campaign=campaign,
+        campaign_recipient=recipient,
+        transactional_message=message,
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        event_type=EmailEventType.SENT,
+        metadata={"email": "person@example.com"},
+    )
+    callback = CmpCallback.objects.create(
+        email_event=event,
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        event_id="evt_1",
+        event_type="sent",
+        callback_url="https://courses.example.com/webhook",
+        payload={"email": "person@example.com"},
+        next_attempt_at=timezone.now(),
+    )
+
+    response = post_json(
+        client,
+        "mailing:api_contact_erase",
+        {
+            "email": "person@example.com",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["erased"] is True
+    assert body["email"] == "person@example.com"
+    assert body["counts"]["subscriptions_deleted"] == 1
+    assert body["counts"]["recipient_list_members_deleted"] == 1
+    contact.refresh_from_db()
+    assert contact.email == f"erased-contact-{contact.id}@erased.invalid"
+    assert contact.normalized_email == contact.email
+    assert contact.verified_at is None
+    assert contact.email_validation_status == EmailValidationStatus.UNKNOWN
+    assert contact.global_unsubscribed_at is None
+    assert Subscription.objects.filter(contact=contact).exists() is False
+    assert CategoryPreference.objects.filter(contact=contact).exists() is False
+    assert ContactTag.objects.filter(contact=contact).exists() is False
+    assert ContactSourceMetadata.objects.filter(contact=contact).exists() is False
+    assert RecipientListMember.objects.filter(contact=contact).exists() is False
+    message.refresh_from_db()
+    recipient.refresh_from_db()
+    event.refresh_from_db()
+    callback.refresh_from_db()
+    assert message.email == contact.email
+    assert message.context == {}
+    assert message.metadata == {"erased": True}
+    assert recipient.email == contact.email
+    assert event.metadata == {"erased": True}
+    assert callback.payload == {"erased": True}
+    assert Contact.objects.filter(normalized_email="person@example.com").exists() is False
+
+    second_response = post_json(
+        client,
+        "mailing:api_contact_erase",
+        {
+            "email": "person@example.com",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+        },
+    )
+
+    assert second_response.status_code == 200
+    assert second_response.json()["erased"] is False
 
 
 def test_contact_upsert_verified_marks_subscription_not_global_contact(client, audience, api_client_record):

@@ -39,6 +39,7 @@ API_DOC_PATHS = {
     "mailing:api_contact_imports": "/api/contacts/imports",
     "mailing:api_contact_imports_csv": "/api/contacts/imports/csv",
     "mailing:api_contact_status": "/api/contacts/status",
+    "mailing:api_contact_erase": "/api/contacts/erase",
     "mailing:api_contact_preferences": "/api/contacts/preferences",
     "mailing:api_contact_tags": "/api/contacts/{contact_id}/tags",
     "mailing:api_contact_tag": "/api/contacts/{contact_id}/tags/{tag_slug}",
@@ -721,6 +722,7 @@ def endpoint_groups():
             "endpoints": [
                 ("POST", "/api/contacts", "Upsert one contact in an audience/client scope."),
                 ("GET", "/api/contacts/status", "Look up contact status for one scoped email."),
+                ("POST", "/api/contacts/erase", "Erase/anonymize one scoped contact."),
                 ("GET/PUT", "/api/contacts/preferences", "Read and update scoped category preferences."),
                 ("GET", "/api/contacts", "List/export contacts as paginated JSON."),
                 ("GET", "/api/contacts.csv", "Export contacts as CSV."),
@@ -840,6 +842,7 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_contact_imports"]: reverse("mailing:api_contact_imports"),
         API_DOC_PATHS["mailing:api_contact_imports_csv"]: reverse("mailing:api_contact_imports_csv"),
         API_DOC_PATHS["mailing:api_contact_status"]: reverse("mailing:api_contact_status"),
+        API_DOC_PATHS["mailing:api_contact_erase"]: reverse("mailing:api_contact_erase"),
         API_DOC_PATHS["mailing:api_contact_preferences"]: reverse("mailing:api_contact_preferences"),
         API_DOC_PATHS["mailing:api_contact_tags"]: reverse("mailing:api_contact_tags", args=[123]),
         API_DOC_PATHS["mailing:api_contact_tag"]: reverse("mailing:api_contact_tag", args=[123, "newsletter"]),
@@ -1084,6 +1087,21 @@ OPENAPI_SPEC = {
                 "security": [{"BearerAuth": []}],
                 "parameters": SCOPE_QUERY_PARAMS,
                 "responses": bearer_responses(json_response("Contact status", "#/components/schemas/ContactStatus")),
+            }
+        },
+        "/api/contacts/erase": {
+            "post": {
+                "tags": ["Contacts"],
+                "summary": "Erase contact",
+                "description": (
+                    "Deletes live subscriptions, preferences, tags, source metadata, and recipient-list "
+                    "memberships, then anonymizes retained campaign and transactional history."
+                ),
+                "security": [{"BearerAuth": []}],
+                "requestBody": json_body("#/components/schemas/ContactEraseRequest"),
+                "responses": bearer_responses(
+                    json_response("Contact erasure result", "#/components/schemas/ContactEraseResponse")
+                ),
             }
         },
         "/api/contacts/preferences": {
@@ -2101,6 +2119,25 @@ OPENAPI_SPEC = {
                     {"$ref": "#/components/schemas/ContactStatus"},
                     {"type": "object", "properties": {"tags": {"type": "array", "items": {"type": "string"}}}},
                 ]
+            },
+            "ContactEraseRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["email"],
+                        "properties": {"email": {"type": "string", "format": "email"}},
+                    },
+                ]
+            },
+            "ContactEraseResponse": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string", "format": "email"},
+                    "erased": {"type": "boolean"},
+                    "contact_id": {"type": ["integer", "null"]},
+                    "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+                },
             },
             "CategoryPreference": {
                 "type": "object",

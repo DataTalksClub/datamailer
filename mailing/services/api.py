@@ -15,12 +15,15 @@ from mailing.models import (
     CampaignRecipientStatus,
     CampaignStatus,
     CategoryPreference,
+    CmpCallback,
     Contact,
+    ContactSourceMetadata,
     ContactTag,
     EmailEvent,
     EmailEventType,
     EmailTemplate,
     EmailValidationStatus,
+    RecipientListMember,
     Subscription,
     SubscriptionStatus,
     TransactionalMessage,
@@ -1035,6 +1038,126 @@ def get_contact_status_for_client(data, authenticated_client):
     scope = validate_contact_scope(data, authenticated_client)
     contact = Contact.objects.filter(normalized_email=normalize_email(scope.email)).first()
     return contact_status_payload(contact, scope.audience, scope.client, requested_email=scope.email)
+
+
+def contact_has_scoped_relationship(contact, scope):
+    return (
+        Subscription.objects.filter(contact=contact, audience=scope.audience, client=scope.client).exists()
+        or CategoryPreference.objects.filter(contact=contact, audience=scope.audience, client=scope.client).exists()
+        or ContactSourceMetadata.objects.filter(contact=contact, audience=scope.audience, client=scope.client).exists()
+        or RecipientListMember.objects.filter(
+            contact=contact,
+            recipient_list__audience=scope.audience,
+            recipient_list__client=scope.client,
+        ).exists()
+        or CampaignRecipient.objects.filter(
+            contact=contact,
+            campaign__audience=scope.audience,
+            campaign__client=scope.client,
+        ).exists()
+        or TransactionalMessage.objects.filter(contact=contact, client=scope.client).exists()
+        or EmailEvent.objects.filter(contact=contact, audience=scope.audience, client=scope.client).exists()
+        or CmpCallback.objects.filter(contact=contact, audience=scope.audience, client=scope.client).exists()
+    )
+
+
+def empty_erasure_counts():
+    return {
+        "subscriptions_deleted": 0,
+        "category_preferences_deleted": 0,
+        "contact_tags_deleted": 0,
+        "source_metadata_deleted": 0,
+        "recipient_list_members_deleted": 0,
+        "transactional_messages_anonymized": 0,
+        "campaign_recipients_anonymized": 0,
+        "email_events_anonymized": 0,
+        "cmp_callbacks_anonymized": 0,
+    }
+
+
+def delete_count(result):
+    deleted_count, _ = result
+    return deleted_count
+
+
+@transaction.atomic
+def erase_contact_for_client(data, authenticated_client):
+    scope = validate_contact_scope(data, authenticated_client)
+    normalized_email = normalize_email(scope.email)
+    contact = Contact.objects.select_for_update().filter(normalized_email=normalized_email).first()
+    if contact is None:
+        return {
+            "email": normalized_email,
+            "erased": False,
+            "contact_id": None,
+            "counts": empty_erasure_counts(),
+        }
+
+    if not contact_has_scoped_relationship(contact, scope):
+        return {
+            "email": normalized_email,
+            "erased": False,
+            "contact_id": None,
+            "counts": empty_erasure_counts(),
+        }
+
+    now = timezone.now()
+    erased_email = f"erased-contact-{contact.id}@erased.invalid"
+    counts = empty_erasure_counts()
+
+    counts["subscriptions_deleted"] = delete_count(Subscription.objects.filter(contact=contact).delete())
+    counts["category_preferences_deleted"] = delete_count(CategoryPreference.objects.filter(contact=contact).delete())
+    counts["contact_tags_deleted"] = delete_count(ContactTag.objects.filter(contact=contact).delete())
+    counts["source_metadata_deleted"] = delete_count(ContactSourceMetadata.objects.filter(contact=contact).delete())
+    counts["recipient_list_members_deleted"] = delete_count(RecipientListMember.objects.filter(contact=contact).delete())
+    counts["transactional_messages_anonymized"] = TransactionalMessage.objects.filter(contact=contact).update(
+        email=erased_email,
+        context={},
+        metadata={"erased": True},
+        updated_at=now,
+    )
+    counts["campaign_recipients_anonymized"] = CampaignRecipient.objects.filter(contact=contact).update(
+        email=erased_email,
+        updated_at=now,
+    )
+    counts["email_events_anonymized"] = EmailEvent.objects.filter(contact=contact).update(
+        metadata={"erased": True},
+    )
+    counts["cmp_callbacks_anonymized"] = CmpCallback.objects.filter(contact=contact).update(
+        payload={"erased": True},
+        updated_at=now,
+    )
+
+    contact.email = erased_email
+    contact.normalized_email = erased_email
+    contact.verified_at = None
+    contact.email_validation_status = EmailValidationStatus.UNKNOWN
+    contact.email_validation_reason = ""
+    contact.email_validated_at = None
+    contact.global_unsubscribed_at = None
+    contact.hard_bounced_at = None
+    contact.complained_at = None
+    contact.save(
+        update_fields=[
+            "email",
+            "normalized_email",
+            "verified_at",
+            "email_validation_status",
+            "email_validation_reason",
+            "email_validated_at",
+            "global_unsubscribed_at",
+            "hard_bounced_at",
+            "complained_at",
+            "updated_at",
+        ]
+    )
+
+    return {
+        "email": normalized_email,
+        "erased": True,
+        "contact_id": contact.id,
+        "counts": counts,
+    }
 
 
 @transaction.atomic

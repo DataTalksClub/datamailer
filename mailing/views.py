@@ -38,6 +38,7 @@ from mailing.services.api import (
     ApiValidationError,
     add_contact_tag_for_client,
     cancel_campaign_for_client,
+    erase_contact_for_client,
     get_campaign_for_client,
     get_client_sender_policy_for_client,
     get_contact_history_for_client,
@@ -1090,6 +1091,23 @@ def api_contact_status(request):
 
     try:
         payload = get_contact_status_for_client(request.GET, client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_erase(request):
+    if request.method != "POST":
+        return method_not_allowed_response(["POST"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = erase_contact_for_client(json_request_body(request), client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 
