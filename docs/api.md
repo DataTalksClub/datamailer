@@ -150,7 +150,7 @@ JSON and CSV imports are idempotent by normalized email plus audience/client sco
 
 ## Recipient List APIs
 
-Recipient lists are client-scoped batches for later list sends. CMP uses them for groups such as course registrants, enrolled learners, homework submitters, and project submitters. Keys are unique within the authenticated client plus audience scope, for example `course-registrants:ml-zoomcamp-2026`, `course-enrolled:ml-zoomcamp-2026`, or `homework-submitters:ml-zoomcamp-2026:homework-1`.
+Recipient lists are client-scoped audience nodes for later list sends. CMP writes path keys such as `ml-zoomcamp-2026`, `ml-zoomcamp-2026:@e`, and `ml-zoomcamp-2026:@e:@homework:homework-1`. Adding a member to a child path also adds cascade memberships to each parent path, including `<all>`. CMP writes the most specific node, and Datamailer keeps the ancestors current.
 
 ```text
 PUT /api/recipient-lists/{list_key}
