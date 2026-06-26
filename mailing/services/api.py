@@ -27,6 +27,7 @@ from mailing.models import (
     Subscription,
     SubscriptionStatus,
     TransactionalMessage,
+    normalize_category_tag as normalize_campaign_category_tag,
     normalize_tag_filter,
 )
 from mailing.services.campaign_sender import render_campaign_message, send_campaign_test_message
@@ -179,6 +180,7 @@ def campaign_payload(campaign):
         "status": campaign.status,
         "scheduled_at": isoformat(campaign.scheduled_at),
         "sent_at": isoformat(campaign.sent_at),
+        "category_tag": campaign.category_tag,
         "include_tags": campaign.include_tags,
         "exclude_tags": campaign.exclude_tags,
         "recipient_count": campaign.recipient_count,
@@ -271,6 +273,19 @@ def validate_campaign_payload(data, authenticated_client):
         errors.update(exc.errors)
         exclude_tags = []
 
+    category_tag = data.get("category_tag", "")
+    if category_tag in (None, ""):
+        category_tag = ""
+    elif not isinstance(category_tag, str):
+        errors["category_tag"] = "must_be_string"
+        category_tag = ""
+    else:
+        category_tag = normalize_campaign_category_tag(category_tag)
+        if not category_tag:
+            errors["category_tag"] = "invalid"
+        elif len(category_tag) > 80:
+            errors["category_tag"] = "too_long"
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -282,6 +297,7 @@ def validate_campaign_payload(data, authenticated_client):
         "html_body": html_body,
         "text_body": text_body,
         "scheduled_at": scheduled_at,
+        "category_tag": category_tag,
         "include_tags": include_tags,
         "exclude_tags": exclude_tags,
     }

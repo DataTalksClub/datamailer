@@ -112,6 +112,7 @@ def campaign_payload(audience, api_client_record):
         "preview_text": "Start details",
         "html_body": "<p>Hello learner</p>",
         "text_body": "Hello learner",
+        "category_tag": "course-reminders",
         "include_tags": ["python", "ml", "python"],
         "exclude_tags": ["inactive"],
     }
@@ -132,6 +133,7 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
     assert campaign["audience"] == audience.slug
     assert campaign["client"] == api_client_record.slug
     assert campaign["status"] == CampaignStatus.DRAFT
+    assert campaign["category_tag"] == "course-reminders"
     assert campaign["include_tags"] == ["ml", "python"]
     assert campaign["exclude_tags"] == ["inactive"]
 
@@ -154,6 +156,7 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
 
     assert fetched.status_code == 200
     assert fetched.json()["campaign"]["subject"] == "Course starts today"
+    assert fetched.json()["campaign"]["category_tag"] == "course-reminders"
     assert Campaign.objects.count() == 1
 
 

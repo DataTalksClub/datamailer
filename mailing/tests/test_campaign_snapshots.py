@@ -11,6 +11,7 @@ from mailing.models import (
     CampaignRecipientSkipReason,
     CampaignRecipientStatus,
     Client,
+    CategoryPreference,
     Contact,
     ContactTag,
     EmailValidationStatus,
@@ -210,6 +211,32 @@ def test_snapshot_records_explicit_skip_reasons(
     campaign.refresh_from_db()
     assert campaign.recipient_count == 0
     assert campaign.skipped_count == 1
+
+
+def test_snapshot_skips_category_unsubscribed_contact(audience, client):
+    campaign = Campaign.objects.create(
+        audience=audience,
+        client=client,
+        subject="Course deadline",
+        category_tag="course-deadlines",
+        text_body="Submit your project",
+    )
+    contact = create_contact("category-unsubscribed@example.com", audience, client)
+    CategoryPreference.objects.create(
+        contact=contact,
+        audience=audience,
+        client=client,
+        tag="course-deadlines",
+        enabled=False,
+    )
+
+    result = snapshot_campaign_recipients(campaign)
+
+    recipient = CampaignRecipient.objects.get(campaign=campaign, contact=contact)
+    assert result.recipient_count == 0
+    assert result.skipped_count == 1
+    assert recipient.status == CampaignRecipientStatus.SKIPPED
+    assert recipient.skip_reason == CampaignRecipientSkipReason.CLIENT_UNSUBSCRIBE
 
 
 def test_duplicate_skip_reason_is_available_for_imported_or_manually_classified_rows():

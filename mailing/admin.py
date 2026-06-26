@@ -161,6 +161,7 @@ class CampaignAdmin(admin.ModelAdmin):
         "subject",
         "client",
         "audience",
+        "category_tag",
         "status",
         "scheduled_at",
         "recipient_count",
@@ -168,8 +169,8 @@ class CampaignAdmin(admin.ModelAdmin):
         "sent_count",
         "created_at",
     )
-    list_filter = ("status", "client", "audience")
-    search_fields = ("subject", "client__name", "client__slug", "audience__name", "audience__slug")
+    list_filter = ("status", "client", "audience", "category_tag")
+    search_fields = ("subject", "category_tag", "client__name", "client__slug", "audience__name", "audience__slug")
     autocomplete_fields = ("client", "audience")
     inlines = (CampaignRecipientInline,)
 

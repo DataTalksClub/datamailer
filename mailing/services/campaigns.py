@@ -11,6 +11,7 @@ from mailing.models import (
     CampaignRecipientSkipReason,
     CampaignRecipientStatus,
     CampaignStatus,
+    CategoryPreference,
     Contact,
     EmailEvent,
     EmailEventType,
@@ -282,6 +283,8 @@ def _skip_reason(contact, campaign):
         return CampaignRecipientSkipReason.CLIENT_UNSUBSCRIBE
     if not client_subscription or client_subscription.status != SubscriptionStatus.SUBSCRIBED:
         return CampaignRecipientSkipReason.SUPPRESSED
+    if _has_disabled_category_preference(contact, campaign):
+        return CampaignRecipientSkipReason.CLIENT_UNSUBSCRIBE
 
     return ""
 
@@ -292,6 +295,18 @@ def _subscription_for(contact, campaign, client):
         audience=campaign.audience,
         client=client,
     ).first()
+
+
+def _has_disabled_category_preference(contact, campaign):
+    if not campaign.category_tag:
+        return False
+    return CategoryPreference.objects.filter(
+        contact=contact,
+        audience=campaign.audience,
+        client=campaign.client,
+        tag=campaign.category_tag,
+        enabled=False,
+    ).exists()
 
 
 def _refresh_campaign_counts(campaign):

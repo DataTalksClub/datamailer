@@ -364,6 +364,12 @@ def normalize_tag_filter(value):
     return sorted({slugify(str(tag).strip()) for tag in (value or []) if str(tag).strip()})
 
 
+def normalize_category_tag(value):
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    return slugify(value.strip())
+
+
 class Campaign(TimeStampedModel):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="campaigns")
     audience = models.ForeignKey(Audience, on_delete=models.PROTECT, related_name="campaigns")
@@ -379,6 +385,7 @@ class Campaign(TimeStampedModel):
     )
     scheduled_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    category_tag = models.SlugField(max_length=80, blank=True)
     include_tags = models.JSONField(default=list, blank=True)
     exclude_tags = models.JSONField(default=list, blank=True)
     recipient_count = models.PositiveIntegerField(default=0)
@@ -409,6 +416,7 @@ class Campaign(TimeStampedModel):
         ]
 
     def save(self, *args, **kwargs):
+        self.category_tag = normalize_category_tag(self.category_tag)
         self.include_tags = normalize_tag_filter(self.include_tags)
         self.exclude_tags = normalize_tag_filter(self.exclude_tags)
         super().save(*args, **kwargs)
