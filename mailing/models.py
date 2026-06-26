@@ -386,6 +386,7 @@ class Campaign(TimeStampedModel):
     scheduled_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     category_tag = models.SlugField(max_length=80, blank=True)
+    recipient_list_key = models.CharField(max_length=255, blank=True)
     include_tags = models.JSONField(default=list, blank=True)
     exclude_tags = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)

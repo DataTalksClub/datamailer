@@ -15,6 +15,7 @@ from mailing.models import (
     Contact,
     EmailEvent,
     EmailEventType,
+    RecipientListMember,
     Subscription,
     SubscriptionStatus,
     normalize_tag_filter,
@@ -201,6 +202,20 @@ def _candidate_contacts(campaign, include_tags, exclude_tags):
 
 
 def _base_candidate_contacts(campaign):
+    if campaign.recipient_list_key:
+        contacts = (
+            RecipientListMember.objects.filter(
+                recipient_list__audience=campaign.audience,
+                recipient_list__client=campaign.client,
+                recipient_list__key=campaign.recipient_list_key,
+                active=True,
+            )
+            .order_by("contact__normalized_email", "contact_id")
+            .distinct()
+            .values_list("contact", flat=True)
+        )
+        return Contact.objects.filter(id__in=contacts).order_by("normalized_email", "id")
+
     contacts = (
         Subscription.objects.filter(audience=campaign.audience)
         .filter(Q(client=campaign.client) | Q(client__isnull=True))

@@ -16,6 +16,8 @@ from mailing.models import (
     ContactTag,
     EmailValidationStatus,
     Organization,
+    RecipientList,
+    RecipientListMember,
     Subscription,
     SubscriptionStatus,
     Tag,
@@ -138,6 +140,45 @@ def test_snapshot_applies_include_and_exclude_tag_filters(campaign, audience, cl
     snapshot_campaign_recipients(campaign)
 
     assert list(CampaignRecipient.objects.values_list("email", flat=True)) == ["included@example.com"]
+
+
+def test_snapshot_can_target_active_recipient_list_members(audience, client):
+    recipient_list = RecipientList.objects.create(
+        audience=audience,
+        client=client,
+        key="ml-zoomcamp-2026:@e",
+        name="ML Zoomcamp enrolled",
+    )
+    campaign = Campaign.objects.create(
+        audience=audience,
+        client=client,
+        subject="Course update",
+        recipient_list_key=recipient_list.key,
+        text_body="Hello",
+    )
+    active = create_contact("active@example.com", audience, client)
+    inactive = create_contact("inactive@example.com", audience, client)
+    outside = create_contact("outside@example.com", audience, client)
+    RecipientListMember.objects.create(
+        recipient_list=recipient_list,
+        contact=active,
+        email=active.email,
+        source_object_key="active",
+    )
+    RecipientListMember.objects.create(
+        recipient_list=recipient_list,
+        contact=inactive,
+        email=inactive.email,
+        source_object_key="inactive",
+        active=False,
+        removed_at=timezone.now(),
+    )
+
+    result = snapshot_campaign_recipients(campaign)
+
+    assert result.created_count == 1
+    assert list(CampaignRecipient.objects.values_list("email", flat=True)) == ["active@example.com"]
+    assert not CampaignRecipient.objects.filter(contact=outside).exists()
 
 
 @pytest.mark.parametrize(

@@ -123,7 +123,7 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
     response = put_campaign(
         client,
         "cmp-course-start-2026",
-        campaign_payload(audience, api_client_record),
+        campaign_payload(audience, api_client_record) | {"recipient_list_key": "ml-zoomcamp-2026:@e"},
     )
 
     assert response.status_code == 201
@@ -135,12 +135,14 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
     assert campaign["client"] == api_client_record.slug
     assert campaign["status"] == CampaignStatus.DRAFT
     assert campaign["category_tag"] == "course-reminders"
+    assert campaign["recipient_list_key"] == "ml-zoomcamp-2026:@e"
     assert campaign["include_tags"] == ["ml", "python"]
     assert campaign["exclude_tags"] == ["inactive"]
     assert campaign["metadata"] == {"course_slug": "ml-zoomcamp-2026"}
 
     update_payload = campaign_payload(audience, api_client_record) | {
         "subject": "Course starts today",
+        "recipient_list_key": "ml-zoomcamp-2026:@e",
         "include_tags": ["ml"],
     }
     update = put_campaign(client, "cmp-course-start-2026", update_payload)
@@ -159,6 +161,7 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
     assert fetched.status_code == 200
     assert fetched.json()["campaign"]["subject"] == "Course starts today"
     assert fetched.json()["campaign"]["category_tag"] == "course-reminders"
+    assert fetched.json()["campaign"]["recipient_list_key"] == "ml-zoomcamp-2026:@e"
     assert fetched.json()["campaign"]["metadata"] == {"course_slug": "ml-zoomcamp-2026"}
     assert Campaign.objects.count() == 1
 

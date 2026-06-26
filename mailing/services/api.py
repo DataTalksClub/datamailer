@@ -181,6 +181,7 @@ def campaign_payload(campaign):
         "scheduled_at": isoformat(campaign.scheduled_at),
         "sent_at": isoformat(campaign.sent_at),
         "category_tag": campaign.category_tag,
+        "recipient_list_key": campaign.recipient_list_key,
         "include_tags": campaign.include_tags,
         "exclude_tags": campaign.exclude_tags,
         "metadata": campaign.metadata,
@@ -293,6 +294,19 @@ def validate_campaign_payload(data, authenticated_client):
     elif not isinstance(metadata, dict):
         errors["metadata"] = "must_be_object"
 
+    recipient_list_key = data.get("recipient_list_key", "")
+    if recipient_list_key in (None, ""):
+        recipient_list_key = ""
+    elif not isinstance(recipient_list_key, str):
+        errors["recipient_list_key"] = "must_be_string"
+        recipient_list_key = ""
+    else:
+        recipient_list_key = recipient_list_key.strip()
+        if not recipient_list_key:
+            errors["recipient_list_key"] = "invalid"
+        elif len(recipient_list_key) > 255:
+            errors["recipient_list_key"] = "too_long"
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -305,6 +319,7 @@ def validate_campaign_payload(data, authenticated_client):
         "text_body": text_body,
         "scheduled_at": scheduled_at,
         "category_tag": category_tag,
+        "recipient_list_key": recipient_list_key,
         "include_tags": include_tags,
         "exclude_tags": exclude_tags,
         "metadata": metadata,
