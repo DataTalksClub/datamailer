@@ -115,6 +115,7 @@ def campaign_payload(audience, api_client_record):
         "category_tag": "course-reminders",
         "include_tags": ["python", "ml", "python"],
         "exclude_tags": ["inactive"],
+        "metadata": {"course_slug": "ml-zoomcamp-2026"},
     }
 
 
@@ -136,6 +137,7 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
     assert campaign["category_tag"] == "course-reminders"
     assert campaign["include_tags"] == ["ml", "python"]
     assert campaign["exclude_tags"] == ["inactive"]
+    assert campaign["metadata"] == {"course_slug": "ml-zoomcamp-2026"}
 
     update_payload = campaign_payload(audience, api_client_record) | {
         "subject": "Course starts today",
@@ -157,6 +159,7 @@ def test_campaign_api_upserts_and_gets_by_external_key(client, audience, api_cli
     assert fetched.status_code == 200
     assert fetched.json()["campaign"]["subject"] == "Course starts today"
     assert fetched.json()["campaign"]["category_tag"] == "course-reminders"
+    assert fetched.json()["campaign"]["metadata"] == {"course_slug": "ml-zoomcamp-2026"}
     assert Campaign.objects.count() == 1
 
 
@@ -199,6 +202,17 @@ def test_campaign_api_rejects_update_after_queue(client, audience, api_client_re
 
     assert response.status_code == 409
     assert response.json()["error"]["fields"] == {"status": "not_editable"}
+
+
+def test_campaign_api_rejects_non_object_metadata(client, audience, api_client_record):
+    response = put_campaign(
+        client,
+        "cmp-course-start-2026",
+        campaign_payload(audience, api_client_record) | {"metadata": ["invalid"]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"metadata": "must_be_object"}
 
 
 def test_campaign_api_queue_snapshots_and_enqueues_pending_recipients(

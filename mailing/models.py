@@ -388,6 +388,7 @@ class Campaign(TimeStampedModel):
     category_tag = models.SlugField(max_length=80, blank=True)
     include_tags = models.JSONField(default=list, blank=True)
     exclude_tags = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
     recipient_count = models.PositiveIntegerField(default=0)
     sent_count = models.PositiveIntegerField(default=0)
     skipped_count = models.PositiveIntegerField(default=0)

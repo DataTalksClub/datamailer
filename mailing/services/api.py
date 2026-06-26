@@ -183,6 +183,7 @@ def campaign_payload(campaign):
         "category_tag": campaign.category_tag,
         "include_tags": campaign.include_tags,
         "exclude_tags": campaign.exclude_tags,
+        "metadata": campaign.metadata,
         "recipient_count": campaign.recipient_count,
         "sent_count": campaign.sent_count,
         "skipped_count": campaign.skipped_count,
@@ -286,6 +287,12 @@ def validate_campaign_payload(data, authenticated_client):
         elif len(category_tag) > 80:
             errors["category_tag"] = "too_long"
 
+    metadata = data.get("metadata", {})
+    if metadata in (None, ""):
+        metadata = {}
+    elif not isinstance(metadata, dict):
+        errors["metadata"] = "must_be_object"
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -300,6 +307,7 @@ def validate_campaign_payload(data, authenticated_client):
         "category_tag": category_tag,
         "include_tags": include_tags,
         "exclude_tags": exclude_tags,
+        "metadata": metadata,
     }
 
 

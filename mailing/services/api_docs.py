@@ -1651,6 +1651,7 @@ OPENAPI_SPEC = {
                             "category_tag": {"type": "string", "maxLength": 80},
                             "include_tags": {"type": "array", "items": {"type": "string"}},
                             "exclude_tags": {"type": "array", "items": {"type": "string"}},
+                            "metadata": {"type": "object"},
                         },
                     },
                 ]
@@ -1671,6 +1672,7 @@ OPENAPI_SPEC = {
                     "category_tag": {"type": "string"},
                     "include_tags": {"type": "array", "items": {"type": "string"}},
                     "exclude_tags": {"type": "array", "items": {"type": "string"}},
+                    "metadata": {"type": "object"},
                     "recipient_count": {"type": "integer"},
                     "sent_count": {"type": "integer"},
                     "skipped_count": {"type": "integer"},
