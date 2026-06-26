@@ -39,6 +39,7 @@ API_DOC_PATHS = {
     "mailing:api_contact_imports": "/api/contacts/imports",
     "mailing:api_contact_imports_csv": "/api/contacts/imports/csv",
     "mailing:api_contact_status": "/api/contacts/status",
+    "mailing:api_contact_preferences": "/api/contacts/preferences",
     "mailing:api_contact_tags": "/api/contacts/{contact_id}/tags",
     "mailing:api_contact_tag": "/api/contacts/{contact_id}/tags/{tag_slug}",
     "mailing:api_contact_verification": "/api/contacts/{contact_id}/verification",
@@ -709,6 +710,7 @@ def endpoint_groups():
             "endpoints": [
                 ("POST", "/api/contacts", "Upsert one contact in an audience/client scope."),
                 ("GET", "/api/contacts/status", "Look up contact status for one scoped email."),
+                ("GET/PUT", "/api/contacts/preferences", "Read and update scoped category preferences."),
                 ("GET", "/api/contacts", "List/export contacts as paginated JSON."),
                 ("GET", "/api/contacts.csv", "Export contacts as CSV."),
             ],
@@ -798,6 +800,7 @@ def route_path_map():
         API_DOC_PATHS["mailing:api_contact_imports"]: reverse("mailing:api_contact_imports"),
         API_DOC_PATHS["mailing:api_contact_imports_csv"]: reverse("mailing:api_contact_imports_csv"),
         API_DOC_PATHS["mailing:api_contact_status"]: reverse("mailing:api_contact_status"),
+        API_DOC_PATHS["mailing:api_contact_preferences"]: reverse("mailing:api_contact_preferences"),
         API_DOC_PATHS["mailing:api_contact_tags"]: reverse("mailing:api_contact_tags", args=[123]),
         API_DOC_PATHS["mailing:api_contact_tag"]: reverse("mailing:api_contact_tag", args=[123, "newsletter"]),
         API_DOC_PATHS["mailing:api_contact_verification"]: reverse("mailing:api_contact_verification", args=[123]),
@@ -996,6 +999,35 @@ OPENAPI_SPEC = {
                 "parameters": SCOPE_QUERY_PARAMS,
                 "responses": bearer_responses(json_response("Contact status", "#/components/schemas/ContactStatus")),
             }
+        },
+        "/api/contacts/preferences": {
+            "get": {
+                "tags": ["Contacts"],
+                "summary": "Get category preferences",
+                "security": [{"BearerAuth": []}],
+                "parameters": SCOPE_QUERY_PARAMS
+                + [
+                    {
+                        "name": "category_tags",
+                        "in": "query",
+                        "schema": {"type": "string"},
+                        "description": "Comma-separated category tags to include with default enabled states.",
+                    }
+                ],
+                "responses": bearer_responses(
+                    json_response("Category preferences", "#/components/schemas/CategoryPreferencesResponse")
+                ),
+            },
+            "put": {
+                "tags": ["Contacts"],
+                "summary": "Update category preferences",
+                "security": [{"BearerAuth": []}],
+                "requestBody": json_body("#/components/schemas/CategoryPreferencesUpdateRequest"),
+                "responses": bearer_responses(
+                    json_response("Category preferences", "#/components/schemas/CategoryPreferencesResponse")
+                )
+                | {"409": {"$ref": "#/components/responses/ValidationError"}},
+            },
         },
         "/api/contacts/{contact_id}/tags": {
             "put": {
@@ -1428,6 +1460,7 @@ OPENAPI_SPEC = {
                         "properties": {
                             "template_key": {"type": "string"},
                             "idempotency_key": {"type": "string"},
+                            "category_tag": {"type": "string"},
                             "context": {"type": "object"},
                             "metadata": {"type": "object"},
                             "list": {"$ref": "#/components/schemas/RecipientListInput"},
@@ -1610,6 +1643,45 @@ OPENAPI_SPEC = {
                     {"type": "object", "properties": {"tags": {"type": "array", "items": {"type": "string"}}}},
                 ]
             },
+            "CategoryPreference": {
+                "type": "object",
+                "properties": {
+                    "tag": {"type": "string"},
+                    "label": {"type": "string"},
+                    "enabled": {"type": "boolean"},
+                },
+            },
+            "CategoryPreferencesUpdateRequest": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/ScopedMutationRequest"},
+                    {
+                        "type": "object",
+                        "required": ["email", "categories"],
+                        "properties": {
+                            "email": {"type": "string", "format": "email"},
+                            "categories": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/CategoryPreference"},
+                            },
+                        },
+                    },
+                ]
+            },
+            "CategoryPreferencesResponse": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string", "format": "email"},
+                    "audience": {"type": "string"},
+                    "client": {"type": "string"},
+                    "categories": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/CategoryPreference"},
+                    },
+                    "global_unsubscribed": {"type": "boolean"},
+                    "suppressed": {"type": "boolean"},
+                    "suppression_reasons": {"type": "array", "items": {"type": "string"}},
+                },
+            },
             "RecipientList": {
                 "type": "object",
                 "properties": {
@@ -1790,6 +1862,7 @@ OPENAPI_SPEC = {
                     },
                     "template_key": {"type": "string"},
                     "idempotency_key": {"type": "string"},
+                    "category_tag": {"type": "string"},
                     "context": {"type": "object"},
                     "metadata": {"type": "object"},
                 },

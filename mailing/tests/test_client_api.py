@@ -7,6 +7,7 @@ from mailing.models import (
     Campaign,
     CampaignRecipient,
     CampaignRecipientStatus,
+    CategoryPreference,
     Client,
     ClientApiKey,
     Contact,
@@ -425,6 +426,91 @@ def test_contact_upsert_accepts_validation_and_suppression_inputs_idempotently(c
     assert second.json()["email_validation"]["status"] == EmailValidationStatus.EXTERNALLY_VALIDATED
     assert Contact.objects.count() == 1
     assert Subscription.objects.count() == 1
+
+
+def test_contact_preferences_api_reads_defaults_and_updates_categories(client, audience, api_client_record):
+    get_response = client.get(
+        reverse("mailing:api_contact_preferences"),
+        {
+            "email": "Learner@Example.com",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "category_tags": "submission-results,deadline-reminders,course-updates",
+        },
+        **auth_headers(),
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.json()["categories"] == [
+        {"tag": "submission-results", "label": "Submission Results", "enabled": True},
+        {"tag": "deadline-reminders", "label": "Deadline Reminders", "enabled": True},
+        {"tag": "course-updates", "label": "Course Updates", "enabled": True},
+    ]
+
+    put_response = put_json(
+        client,
+        "mailing:api_contact_preferences",
+        {
+            "email": "Learner@Example.com",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "categories": [
+                {
+                    "tag": "submission-results",
+                    "label": "Homework and project submissions",
+                    "enabled": False,
+                },
+                {
+                    "tag": "deadline-reminders",
+                    "label": "Deadline reminders",
+                    "enabled": True,
+                },
+            ],
+        },
+    )
+
+    assert put_response.status_code == 200
+    assert put_response.json()["email"] == "learner@example.com"
+    assert put_response.json()["categories"] == [
+        {
+            "tag": "submission-results",
+            "label": "Homework and project submissions",
+            "enabled": False,
+        },
+        {
+            "tag": "deadline-reminders",
+            "label": "Deadline reminders",
+            "enabled": True,
+        },
+    ]
+    assert Contact.objects.get().normalized_email == "learner@example.com"
+    assert CategoryPreference.objects.filter(enabled=False, tag="submission-results").exists()
+
+
+def test_contact_preferences_reject_enabling_suppressed_contact(client, audience, api_client_record):
+    contact = Contact.objects.create(email="suppressed@example.com", hard_bounced_at=timezone.now())
+
+    response = put_json(
+        client,
+        "mailing:api_contact_preferences",
+        {
+            "email": contact.email,
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "categories": [
+                {
+                    "tag": "course-updates",
+                    "label": "Course updates",
+                    "enabled": True,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["fields"] == {
+        "categories": "suppressed_contact_cannot_be_enabled",
+    }
 
 
 def test_contact_upsert_verified_marks_subscription_not_global_contact(client, audience, api_client_record):

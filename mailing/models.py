@@ -192,6 +192,34 @@ class Subscription(TimeStampedModel):
         return f"{self.contact.normalized_email}: {self.audience.slug}/{client_slug} {self.status}"
 
 
+class CategoryPreference(TimeStampedModel):
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, related_name="category_preferences")
+    audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name="category_preferences")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="category_preferences")
+    tag = models.SlugField(max_length=80)
+    label = models.CharField(max_length=120, blank=True)
+    enabled = models.BooleanField(default=True)
+    updated_reason = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        db_table = "category_preferences"
+        ordering = ["client__slug", "audience__slug", "contact__normalized_email", "tag"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contact", "audience", "client", "tag"],
+                name="unique_category_preference_scope",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["client", "audience", "tag", "enabled"], name="cat_pref_scope_tag_enabled_idx"),
+            models.Index(fields=["contact", "client", "audience"], name="cat_pref_contact_scope_idx"),
+        ]
+
+    def __str__(self):
+        state = "enabled" if self.enabled else "disabled"
+        return f"{self.contact.normalized_email}: {self.client.slug}/{self.audience.slug}/{self.tag} {state}"
+
+
 class Tag(models.Model):
     audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name="tags")
     name = models.CharField(max_length=120)

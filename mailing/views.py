@@ -39,6 +39,7 @@ from mailing.services.api import (
     add_contact_tag_for_client,
     get_client_sender_policy_for_client,
     get_contact_history_for_client,
+    get_contact_preferences_for_client,
     get_contact_status_for_client,
     get_transactional_message_status_for_client,
     get_transactional_template_for_client,
@@ -50,6 +51,7 @@ from mailing.services.api import (
     update_contact_suppression_for_client,
     update_contact_validation_for_client,
     update_contact_verification_for_client,
+    update_contact_preferences_for_client,
     upsert_contact_for_client,
     upsert_transactional_template_for_client,
 )
@@ -1108,6 +1110,26 @@ def api_unsubscribe(request):
 
     try:
         payload = unsubscribe_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_contact_preferences(request):
+    if request.method not in {"GET", "PUT"}:
+        return method_not_allowed_response(["GET", "PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        if request.method == "GET":
+            payload = get_contact_preferences_for_client(request.GET, client)
+        else:
+            payload = update_contact_preferences_for_client(json_request_body(request), client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

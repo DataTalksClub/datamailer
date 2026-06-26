@@ -6,6 +6,7 @@ from django.core.validators import validate_email
 from django.db import transaction
 
 from mailing.models import (
+    CategoryPreference,
     EmailEvent,
     EmailEventType,
     EmailTemplate,
@@ -42,7 +43,7 @@ class TransactionalSendResult:
 
 
 def send_transactional_email_for_client(data, authenticated_client):
-    payload = validate_transactional_send_payload(data)
+    payload = validate_transactional_send_payload(data, authenticated_client)
     template = get_transactional_template(authenticated_client, payload["template_key"])
     idempotency_key = payload["idempotency_key"] or build_internal_idempotency_key()
 
@@ -55,7 +56,8 @@ def send_transactional_email_for_client(data, authenticated_client):
 
     with transaction.atomic():
         contact, _ = upsert_contact(payload["email"])
-        if is_transactional_email_allowed(contact):
+        delivery_decision = transactional_delivery_decision(contact, payload)
+        if delivery_decision["allowed"]:
             message = create_transactional_message(
                 client=authenticated_client,
                 contact=contact,
@@ -79,7 +81,7 @@ def send_transactional_email_for_client(data, authenticated_client):
             sender=sender,
             idempotency_key=idempotency_key,
             status=TransactionalMessageStatus.SKIPPED,
-            last_error=suppression_reason(contact),
+            last_error=delivery_decision["reason"],
         )
         append_transactional_event(message, EmailEventType.SKIPPED, {"reason": message.last_error})
 
@@ -154,7 +156,8 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                 "from_email": payload["from_email"],
             }
 
-            if is_transactional_email_allowed(member.contact):
+            delivery_decision = transactional_delivery_decision(member.contact, payload)
+            if delivery_decision["allowed"]:
                 message = create_transactional_message(
                     client=authenticated_client,
                     contact=member.contact,
@@ -185,7 +188,7 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                 sender=sender,
                 idempotency_key=idempotency_key,
                 status=TransactionalMessageStatus.SKIPPED,
-                last_error=suppression_reason(member.contact),
+                last_error=delivery_decision["reason"],
             )
             append_transactional_event(
                 message,
@@ -243,7 +246,7 @@ def recipient_list_member_context(base_context, member_metadata):
     return context
 
 
-def validate_transactional_send_payload(data):
+def validate_transactional_send_payload(data, authenticated_client):
     errors = {}
 
     email = data.get("email")
@@ -297,6 +300,10 @@ def validate_transactional_send_payload(data):
     if errors:
         raise ApiValidationError(errors)
 
+    scope = None
+    if category_tag:
+        scope = validate_contact_scope(data, authenticated_client)
+
     return {
         "email": email.strip(),
         "template_key": template_key.strip(),
@@ -304,6 +311,8 @@ def validate_transactional_send_payload(data):
         "context": context,
         "metadata": metadata | ({"category_tag": category_tag} if category_tag else {}),
         "category_tag": category_tag,
+        "audience": scope.audience if scope else None,
+        "client": scope.client if scope else authenticated_client,
         "from_email": from_email,
     }
 
@@ -413,6 +422,33 @@ def find_existing_message(client, idempotency_key):
 
 def build_internal_idempotency_key():
     return f"transactional-message:{uuid4().hex}"
+
+
+def transactional_delivery_decision(contact, payload):
+    if not is_transactional_email_allowed(contact):
+        return {"allowed": False, "reason": suppression_reason(contact)}
+
+    category_tag = payload.get("category_tag", "")
+    audience = payload.get("audience")
+    client = payload.get("client")
+    if not category_tag:
+        return {"allowed": True, "reason": ""}
+
+    if contact.global_unsubscribed_at is not None:
+        return {"allowed": False, "reason": "global_unsubscribe"}
+
+    if audience is None or client is None:
+        return {"allowed": False, "reason": "missing_category_scope"}
+
+    preference = CategoryPreference.objects.filter(
+        contact=contact,
+        audience=audience,
+        client=client,
+        tag=category_tag,
+    ).first()
+    if preference is not None and not preference.enabled:
+        return {"allowed": False, "reason": "category_unsubscribe"}
+    return {"allowed": True, "reason": ""}
 
 
 def create_transactional_message(*, client, contact, template, payload, sender, idempotency_key, status, last_error=""):

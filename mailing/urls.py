@@ -71,6 +71,7 @@ urlpatterns = [
     path("api/contacts/imports/csv", views.api_contact_imports_csv, name="api_contact_imports_csv"),
     path("api/contacts", views.api_contacts, name="api_contacts"),
     path("api/contacts/status", views.api_contact_status, name="api_contact_status"),
+    path("api/contacts/preferences", views.api_contact_preferences, name="api_contact_preferences"),
     path("api/contacts/<int:contact_id>/tags", views.api_contact_tags, name="api_contact_tags"),
     path("api/contacts/<int:contact_id>/tags/<slug:tag_slug>", views.api_contact_tag, name="api_contact_tag"),
     path(

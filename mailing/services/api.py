@@ -11,6 +11,7 @@ from django.utils.dateparse import parse_datetime
 from mailing.models import (
     Audience,
     CampaignRecipient,
+    CategoryPreference,
     Contact,
     ContactTag,
     EmailEvent,
@@ -467,6 +468,159 @@ def contact_payload(contact, audience, client, *, requested_email=""):
     return contact_status_payload(contact, audience, client, requested_email=requested_email) | {
         "tags": contact_tags_payload(contact, audience),
     }
+
+
+def normalize_category_tag(value, field="tag"):
+    if not isinstance(value, str) or not value.strip():
+        raise ApiValidationError({field: "required"})
+    tag = value.strip()
+    try:
+        validate_slug(tag)
+    except ValidationError as exc:
+        raise ApiValidationError({field: "invalid"}) from exc
+    return tag
+
+
+def category_label_for_tag(tag):
+    return tag.replace("-", " ").title()
+
+
+def category_tag_list(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        raw_tags = value.split(",")
+    elif isinstance(value, list):
+        raw_tags = value
+    else:
+        raise ApiValidationError({"category_tags": "invalid"})
+    return [normalize_category_tag(tag, "category_tags") for tag in raw_tags if str(tag).strip()]
+
+
+def category_preference_payload(preference, tag):
+    if preference is None:
+        return {
+            "tag": tag,
+            "label": category_label_for_tag(tag),
+            "enabled": True,
+        }
+    return {
+        "tag": preference.tag,
+        "label": preference.label or category_label_for_tag(preference.tag),
+        "enabled": preference.enabled,
+    }
+
+
+def preferences_suppression_payload(contact):
+    if contact is None:
+        return {
+            "global_unsubscribed": False,
+            "suppressed": False,
+            "suppression_reasons": [],
+        }
+    reasons = []
+    if contact.global_unsubscribed_at is not None:
+        reasons.append("global_unsubscribed")
+    if contact.hard_bounced_at is not None:
+        reasons.append("hard_bounce")
+    if contact.complained_at is not None:
+        reasons.append("complaint")
+    return {
+        "global_unsubscribed": contact.global_unsubscribed_at is not None,
+        "suppressed": bool(reasons),
+        "suppression_reasons": reasons,
+    }
+
+
+def get_contact_preferences_for_client(data, authenticated_client):
+    scope = validate_contact_scope(data, authenticated_client)
+    requested_tags = category_tag_list(data.get("category_tags"))
+    contact = Contact.objects.filter(normalized_email=normalize_email(scope.email)).first()
+    preferences = {}
+    if contact is not None:
+        preferences = {
+            preference.tag: preference
+            for preference in CategoryPreference.objects.filter(
+                contact=contact,
+                audience=scope.audience,
+                client=scope.client,
+            )
+        }
+    if not requested_tags:
+        requested_tags = sorted(preferences)
+
+    return {
+        "email": normalize_email(scope.email),
+        "audience": scope.audience.slug,
+        "client": scope.client.slug,
+        "categories": [
+            category_preference_payload(preferences.get(tag), tag)
+            for tag in requested_tags
+        ],
+        **preferences_suppression_payload(contact),
+    }
+
+
+def validate_category_preference_input(data):
+    categories = data.get("categories")
+    if not isinstance(categories, list):
+        raise ApiValidationError({"categories": "must_be_list"})
+    parsed = []
+    for index, item in enumerate(categories):
+        if not isinstance(item, dict):
+            raise ApiValidationError({f"categories.{index}": "must_be_object"})
+        tag = normalize_category_tag(item.get("tag"), f"categories.{index}.tag")
+        enabled = item.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ApiValidationError({f"categories.{index}.enabled": "must_be_boolean"})
+        label = item.get("label", "")
+        if label is None:
+            label = ""
+        if not isinstance(label, str):
+            raise ApiValidationError({f"categories.{index}.label": "must_be_string"})
+        parsed.append(
+            {
+                "tag": tag,
+                "enabled": enabled,
+                "label": label.strip(),
+            }
+        )
+    return parsed
+
+
+@transaction.atomic
+def update_contact_preferences_for_client(data, authenticated_client):
+    scope = validate_contact_scope(data, authenticated_client)
+    categories = validate_category_preference_input(data)
+    contact, _ = upsert_contact(scope.email)
+    suppression = preferences_suppression_payload(contact)
+    if suppression["suppressed"] and any(category["enabled"] for category in categories):
+        raise ApiValidationError(
+            {"categories": "suppressed_contact_cannot_be_enabled"},
+            status_code=409,
+        )
+
+    for category in categories:
+        CategoryPreference.objects.update_or_create(
+            contact=contact,
+            audience=scope.audience,
+            client=scope.client,
+            tag=category["tag"],
+            defaults={
+                "label": category["label"],
+                "enabled": category["enabled"],
+                "updated_reason": data.get("reason", "") if isinstance(data.get("reason", ""), str) else "",
+            },
+        )
+    return get_contact_preferences_for_client(
+        {
+            "email": scope.email,
+            "audience": scope.audience.slug,
+            "client": scope.client.slug,
+            "category_tags": [category["tag"] for category in categories],
+        },
+        authenticated_client,
+    )
 
 
 def apply_validation_input(contact, data):

@@ -9,6 +9,7 @@ from django.utils import timezone
 from mailing.admin import EmailEventAdmin, EmailTemplateAdmin, TransactionalMessageAdmin
 from mailing.models import (
     Audience,
+    CategoryPreference,
     Client,
     CmpCallback,
     CmpCallbackStatus,
@@ -271,6 +272,8 @@ def test_transactional_template_api_validates_payload(client, api_client_record)
 
 def test_transactional_send_creates_message_event_and_contract_queue_payload(
     client,
+    audience,
+    api_client_record,
     template,
     monkeypatch,
 ):
@@ -281,6 +284,8 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
         client,
         {
             "email": " Person@Example.COM ",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
             "template_key": template.key,
             "idempotency_key": "verify-123",
             "context": {
@@ -327,6 +332,46 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["idempotency_key"] == "verify-123"
 
 
+def test_transactional_send_skips_category_opted_out_contact(
+    client,
+    audience,
+    api_client_record,
+    template,
+    monkeypatch,
+):
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+    contact = Contact.objects.create(email="person@example.com")
+    CategoryPreference.objects.create(
+        contact=contact,
+        audience=audience,
+        client=api_client_record,
+        tag="course-updates",
+        label="Course updates",
+        enabled=False,
+    )
+
+    response = post_transactional(
+        client,
+        {
+            "email": "person@example.com",
+            "audience": audience.slug,
+            "client": api_client_record.slug,
+            "template_key": template.key,
+            "idempotency_key": "course-update-123",
+            "context": {"product": "Datamailer"},
+            "category_tag": "course-updates",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["reason"] == "category_unsubscribe"
+    message = TransactionalMessage.objects.get()
+    assert message.status == TransactionalMessageStatus.SKIPPED
+    assert message.last_error == "category_unsubscribe"
+    assert enqueued == []
+
+
 @override_settings(CMP_WEBHOOK_URL="https://cmp.example.com/api/datamailer/events", CMP_WEBHOOK_TOKEN="secret")
 def test_transactional_send_to_recipient_list_creates_per_member_messages(
     client,
@@ -364,6 +409,14 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
         email=suppressed_contact.normalized_email,
         source_object_key="homework-submission:2",
     )
+    CategoryPreference.objects.create(
+        contact=allowed_contact,
+        audience=audience,
+        client=api_client_record,
+        tag="submission-results",
+        label="Submission results",
+        enabled=False,
+    )
 
     payload = {
         "audience": audience.slug,
@@ -383,30 +436,36 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     assert response.status_code == 202
     body = response.json()
     assert body["created_count"] == 2
-    assert body["enqueued_count"] == 1
-    assert body["skipped_count"] == 1
+    assert body["enqueued_count"] == 0
+    assert body["skipped_count"] == 2
     assert body["idempotent_replay_count"] == 0
     messages = list(TransactionalMessage.objects.order_by("email"))
     assert [message.email for message in messages] == ["allowed@example.com", "suppressed@example.com"]
     assert messages[0].idempotency_key == "homework-score:homework-1:homework-submission:1"
-    assert messages[0].status == TransactionalMessageStatus.QUEUED
+    assert messages[0].status == TransactionalMessageStatus.SKIPPED
     assert messages[0].metadata["recipient_list_key"] == recipient_list.key
     assert messages[0].metadata["category_tag"] == "submission-results"
+    assert messages[0].last_error == "category_unsubscribe"
     assert messages[1].idempotency_key == "homework-score:homework-1:homework-submission:2"
     assert messages[1].status == TransactionalMessageStatus.SKIPPED
     assert messages[1].last_error == "hard_bounce"
-    assert len(enqueued) == 1
-    assert validate_transactional_email_message(enqueued[0]) == enqueued[0]
-    assert CmpCallback.objects.filter(status=CmpCallbackStatus.PENDING).count() == 1
+    assert len(enqueued) == 0
+    assert CmpCallback.objects.filter(status=CmpCallbackStatus.PENDING).count() == 2
     process_due_cmp_callbacks()
-    assert len(posts) == 1
+    assert len(posts) == 2
+    reasons_by_email = {
+        post["json"]["email"]: post["json"]["metadata"]["reason"]
+        for post in posts
+    }
     assert posts[0]["url"] == "https://cmp.example.com/api/datamailer/events"
     assert posts[0]["headers"]["Authorization"] == "Bearer secret"
-    assert posts[0]["json"]["event_type"] == "transactional.skipped"
-    assert posts[0]["json"]["email"] == "suppressed@example.com"
-    assert posts[0]["json"]["audience"] == audience.slug
-    assert posts[0]["json"]["client"] == api_client_record.slug
-    assert posts[0]["json"]["metadata"]["reason"] == "hard_bounce"
+    assert {post["json"]["event_type"] for post in posts} == {"transactional.skipped"}
+    assert {post["json"]["audience"] for post in posts} == {audience.slug}
+    assert {post["json"]["client"] for post in posts} == {api_client_record.slug}
+    assert reasons_by_email == {
+        "allowed@example.com": "category_unsubscribe",
+        "suppressed@example.com": "hard_bounce",
+    }
 
     replay = post_recipient_list_transactional(client, recipient_list.key, payload)
 
@@ -415,7 +474,7 @@ def test_transactional_send_to_recipient_list_creates_per_member_messages(
     assert replay.json()["enqueued_count"] == 0
     assert replay.json()["idempotent_replay_count"] == 2
     assert TransactionalMessage.objects.count() == 2
-    assert len(enqueued) == 1
+    assert len(enqueued) == 0
 
 
 def test_recipient_list_send_can_sync_members_and_render_member_context(
