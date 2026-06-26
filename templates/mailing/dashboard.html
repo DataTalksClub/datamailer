@@ -107,6 +107,55 @@
     </div>
   </section>
 
+  <section class="section" aria-labelledby="worker-status">
+    <div class="section-header">
+      <div>
+        <h2 id="worker-status">Worker Status</h2>
+        <p class="muted">Sandbox background services and local backlog signals.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Worker</th>
+            <th>Status</th>
+            <th>Backlog</th>
+            <th>Runtime</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for worker in dashboard.worker_statuses %}
+            <tr>
+              <td>
+                <strong>{{ worker.label }}</strong>
+                <div class="helptext">{{ worker.service_name }}</div>
+              </td>
+              <td>
+                <span class="badge {{ worker.badge_tone }}">{{ worker.badge_label }}</span>
+                <div class="helptext">{{ worker.detail }}</div>
+              </td>
+              <td>
+                {% if worker.backlog_count is None %}
+                  <span class="muted">{{ worker.backlog_label }}</span>
+                  <div class="helptext">Check SQS queue metrics</div>
+                {% else %}
+                  <strong>{{ worker.backlog_count }}</strong>
+                  <div class="helptext">{{ worker.backlog_label }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <code>{{ worker.command }}</code>
+                {% if worker.pid and worker.pid != "0" %}<div class="helptext">pid {{ worker.pid }}</div>{% endif %}
+                {% if worker.started_at %}<div class="helptext">started {{ worker.started_at }}</div>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <div class="detail-grid">
     <section class="section" aria-labelledby="recent-campaigns">
       <div class="section-header">

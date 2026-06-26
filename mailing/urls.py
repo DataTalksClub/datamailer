@@ -54,6 +54,7 @@ urlpatterns = [
     ),
     path("api-docs/", views.api_docs, name="api_docs"),
     path("api-docs/openapi.json", views.api_docs_json, name="api_docs_json"),
+    path("api/workers/status", views.api_worker_status, name="api_worker_status"),
     path("templates/", views.template_catalog, name="template_catalog"),
     path("templates/<int:template_id>/", views.template_detail, name="template_detail"),
     path(

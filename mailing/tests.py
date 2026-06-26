@@ -66,6 +66,7 @@ class ProductRouteTests(SimpleTestCase):
             ("contact_tag_remove", ["person@example.com"], "/contacts/person@example.com/tags/remove/"),
             ("api_docs", [], "/api-docs/"),
             ("api_docs_json", [], "/api-docs/openapi.json"),
+            ("api_worker_status", [], "/api/workers/status"),
             ("template_catalog", [], "/templates/"),
             ("template_detail", [123], "/templates/123/"),
         ]

@@ -30,6 +30,7 @@ from mailing.models import (
     TransactionalMessageStatus,
 )
 from mailing.services.contacts import has_invalid_email_validation, normalize_email
+from mailing.services.worker_status import WorkerStatus, sandbox_worker_statuses
 
 RECIPIENT_FILTERS = {
     "opened": Q(first_opened_at__isnull=False),
@@ -273,6 +274,7 @@ class DashboardContext:
     summary_stats: list[Stat]
     recent_campaigns: list[DashboardCampaign]
     attention_items: list[DashboardAttentionItem]
+    worker_statuses: list[WorkerStatus]
     integration_stats: list[Stat]
     integration_clients: list[DashboardClient]
 
@@ -359,6 +361,7 @@ def dashboard_context(client: Client | None = None) -> DashboardContext:
         ],
         recent_campaigns=recent_campaigns,
         attention_items=dashboard_attention_items(client),
+        worker_statuses=sandbox_worker_statuses(),
         integration_stats=[
             Stat("clients", "Active clients", active_clients, f"{client_scope.count()} total"),
             Stat("api_keys", "Active API keys", active_api_keys),

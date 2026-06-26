@@ -19,7 +19,9 @@ For this intermediate step, the sandbox deploy installs these systemd units on t
 
 ```bash
 /opt/datamailer/.venv/bin/python manage.py process_sqs_worker transactional --batch-size 10 --wait-time 20
+/opt/datamailer/.venv/bin/python manage.py process_sqs_worker campaign --batch-size 10 --wait-time 20
 /opt/datamailer/.venv/bin/python manage.py process_sqs_worker ses-webhooks --batch-size 10 --wait-time 20
+/opt/datamailer/.venv/bin/python manage.py process_cmp_callbacks --batch-size 25 --idle-sleep 5
 ```
 
 The commands long-poll their SQS queues, call the same handlers used by the future Lambda workers, delete only successfully processed records, and leave failed records for SQS retry/DLQ behavior. This is intentionally a sandbox bridge, not the final production architecture.

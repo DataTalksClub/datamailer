@@ -184,6 +184,8 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
 
     assert response.status_code == 200
     assert "Operational Summary" in html
+    assert "Worker Status" in html
+    assert "datamailer-campaign-worker.service" in html
     assert "Recent Campaign Activity" in html
     assert "Deliverability Attention" in html
     assert "Quick Links" in html

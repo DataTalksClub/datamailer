@@ -148,6 +148,7 @@ from mailing.services.transactional_catalog import (
     template_catalog_rows,
     transactional_template_queryset,
 )
+from mailing.services.worker_status import worker_status_payload
 
 
 def health(request):
@@ -227,6 +228,12 @@ def api_docs(request):
 @staff_member_required
 def api_docs_json(request):
     return JsonResponse(build_openapi_spec(request), json_dumps_params={"indent": 2})
+
+
+@staff_member_required
+@require_GET
+def api_worker_status(request):
+    return JsonResponse(worker_status_payload())
 
 
 @staff_member_required
