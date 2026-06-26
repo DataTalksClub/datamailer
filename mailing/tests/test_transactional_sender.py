@@ -122,6 +122,48 @@ def test_transactional_handler_forwards_extra_recipient_headers(
     assert transactional_message.ses_message_id == "ses-message-123"
 
 
+class FakeRawSesClient:
+    def __init__(self):
+        self.raw_params = None
+
+    def send_raw_email(self, **params):
+        self.raw_params = params
+        return {"MessageId": "raw-ses-message-123"}
+
+
+@override_settings(DEFAULT_FROM_EMAIL="sender@example.com", AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
+def test_transactional_handler_sends_structured_message_parts_as_raw_email(
+    transactional_message,
+    monkeypatch,
+):
+    transactional_message.metadata = {
+        "headers": {"X-Calendar-UID": "event-123"},
+        "message_parts": [
+            {
+                "content_type": "text/calendar; method=REQUEST",
+                "content": "BEGIN:VCALENDAR\nMETHOD:REQUEST\nEND:VCALENDAR",
+                "filename": "invite.ics",
+                "disposition": "attachment",
+            }
+        ],
+    }
+    transactional_message.save(update_fields=["metadata", "updated_at"])
+    ses = FakeRawSesClient()
+    monkeypatch.setattr("mailing.services.transactional_sender.ses_client", lambda: ses)
+
+    response = transactional_email_handler(
+        _event("message-1", build_transactional_queue_payload(transactional_message))
+    )
+
+    transactional_message.refresh_from_db()
+    assert response == {"batchItemFailures": []}
+    assert transactional_message.status == TransactionalMessageStatus.SENT
+    assert transactional_message.ses_message_id == "raw-ses-message-123"
+    assert ses.raw_params["Destinations"] == ["person@example.com"]
+    assert b"X-Calendar-UID: event-123" in ses.raw_params["RawMessage"]["Data"]
+    assert b"BEGIN:VCALENDAR" in ses.raw_params["RawMessage"]["Data"]
+
+
 class CallbackResponse:
     def __enter__(self):
         return self

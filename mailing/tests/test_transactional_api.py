@@ -329,6 +329,15 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
             "reply_to": "support@example.com",
             "cc": ["mentor@example.com"],
             "bcc": "audit@example.com",
+            "headers": {"X-Calendar-UID": "event-123"},
+            "message_parts": [
+                {
+                    "content_type": "text/calendar; method=REQUEST",
+                    "content": "BEGIN:VCALENDAR\nMETHOD:REQUEST\nEND:VCALENDAR",
+                    "filename": "invite.ics",
+                    "disposition": "attachment",
+                }
+            ],
             "metadata": {"user_id": "42"},
         },
     )
@@ -363,6 +372,15 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
         "reply_to": "support@example.com",
         "cc": ["mentor@example.com"],
         "bcc": ["audit@example.com"],
+        "headers": {"X-Calendar-UID": "event-123"},
+        "message_parts": [
+            {
+                "content_type": "text/calendar; method=REQUEST",
+                "content": "BEGIN:VCALENDAR\nMETHOD:REQUEST\nEND:VCALENDAR",
+                "filename": "invite.ics",
+                "disposition": "attachment",
+            }
+        ],
     }
     assert event.event_type == EmailEventType.QUEUED
     assert event.transactional_message == message
@@ -373,6 +391,8 @@ def test_transactional_send_creates_message_event_and_contract_queue_payload(
     assert enqueued[0]["metadata"]["reply_to"] == "support@example.com"
     assert enqueued[0]["metadata"]["cc"] == ["mentor@example.com"]
     assert enqueued[0]["metadata"]["bcc"] == ["audit@example.com"]
+    assert enqueued[0]["metadata"]["headers"] == {"X-Calendar-UID": "event-123"}
+    assert enqueued[0]["metadata"]["message_parts"][0]["filename"] == "invite.ics"
     assert enqueued[0]["client_id"] == template.client_id
     assert enqueued[0]["contact_id"] == contact.id
     assert enqueued[0]["template_id"] == template.id
@@ -1289,6 +1309,23 @@ def test_inactive_transactional_template_returns_clear_404_without_mutation(
         ({"email": "person@example.com", "template_key": "email-verification", "reply_to": "not-email"}, "reply_to"),
         ({"email": "person@example.com", "template_key": "email-verification", "cc": ["not-email"]}, "cc.0"),
         ({"email": "person@example.com", "template_key": "email-verification", "bcc": {"email": "x@y.z"}}, "bcc"),
+        ({"email": "person@example.com", "template_key": "email-verification", "headers": []}, "headers"),
+        (
+            {
+                "email": "person@example.com",
+                "template_key": "email-verification",
+                "headers": {"Subject": "override"},
+            },
+            "headers.Subject",
+        ),
+        (
+            {
+                "email": "person@example.com",
+                "template_key": "email-verification",
+                "message_parts": [{"content_type": "application/pdf", "content": "..."}],
+            },
+            "message_parts.0.content_type",
+        ),
         (
             {"email": "person@example.com", "template_key": "email-verification", "idempotency_key": []},
             "idempotency_key",

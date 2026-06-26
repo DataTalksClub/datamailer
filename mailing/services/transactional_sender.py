@@ -80,6 +80,8 @@ def send_transactional_email_from_queue(payload, *, client=None, source=None):
                 reply_to=message.metadata.get("reply_to", ""),
                 cc=message.metadata.get("cc", []),
                 bcc=message.metadata.get("bcc", []),
+                headers=message.metadata.get("headers", {}),
+                message_parts=message.metadata.get("message_parts", []),
             )
         except ClientError as exc:
             if _is_permanent_client_error(exc):

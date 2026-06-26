@@ -1917,6 +1917,15 @@ OPENAPI_SPEC = {
                                 "type": "array",
                                 "items": {"type": "string", "format": "email"},
                             },
+                            "headers": {
+                                "type": "object",
+                                "additionalProperties": {"type": "string"},
+                                "description": "Optional custom non-address message headers.",
+                            },
+                            "message_parts": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/StructuredMessagePart"},
+                            },
                         },
                     },
                 ]
@@ -1954,6 +1963,15 @@ OPENAPI_SPEC = {
                             "bcc": {
                                 "type": "array",
                                 "items": {"type": "string", "format": "email"},
+                            },
+                            "headers": {
+                                "type": "object",
+                                "additionalProperties": {"type": "string"},
+                                "description": "Optional custom non-address message headers.",
+                            },
+                            "message_parts": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/StructuredMessagePart"},
                             },
                         },
                     },
@@ -2385,6 +2403,15 @@ OPENAPI_SPEC = {
                         "type": "array",
                         "items": {"type": "string", "format": "email"},
                     },
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                        "description": "Optional custom non-address message headers.",
+                    },
+                    "message_parts": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/StructuredMessagePart"},
+                    },
                     "template_key": {"type": "string"},
                     "idempotency_key": {"type": "string"},
                     "category_tag": {"type": "string"},
@@ -2398,6 +2425,23 @@ OPENAPI_SPEC = {
                     "message": {"type": "object"},
                     "idempotent_replay": {"type": "boolean"},
                     "enqueued": {"type": "boolean"},
+                },
+            },
+            "StructuredMessagePart": {
+                "type": "object",
+                "required": ["content_type", "content"],
+                "properties": {
+                    "content_type": {
+                        "type": "string",
+                        "examples": ["text/calendar; method=REQUEST"],
+                    },
+                    "content": {"type": "string"},
+                    "filename": {"type": "string"},
+                    "disposition": {
+                        "type": "string",
+                        "enum": ["attachment", "inline"],
+                        "default": "attachment",
+                    },
                 },
             },
             "TransactionalTemplateUpsertRequest": {

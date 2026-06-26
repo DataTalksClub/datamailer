@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from email.message import Message
+import re
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -36,6 +38,13 @@ class TransactionalSendRejected(Exception):
         self.payload = payload
         self.status_code = status_code
         super().__init__("transactional_send_rejected")
+
+
+HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
+RESERVED_HEADERS = {"bcc", "cc", "content-type", "from", "reply-to", "subject", "to"}
+MAX_CUSTOM_HEADERS = 20
+MAX_MESSAGE_PARTS = 10
+MAX_MESSAGE_PART_CONTENT_LENGTH = 200_000
 
 
 @dataclass(frozen=True)
@@ -166,6 +175,8 @@ def send_transactional_email_to_recipient_list_for_client(list_key, data, authen
                 "reply_to": payload["reply_to"],
                 "cc": payload["cc"],
                 "bcc": payload["bcc"],
+                "headers": payload["headers"],
+                "message_parts": payload["message_parts"],
             }
 
             delivery_decision = transactional_delivery_decision(member.contact, payload)
@@ -283,6 +294,8 @@ def send_transactional_email_to_transient_recipient_list_for_client(data, authen
                 "reply_to": payload["reply_to"],
                 "cc": payload["cc"],
                 "bcc": payload["bcc"],
+                "headers": payload["headers"],
+                "message_parts": payload["message_parts"],
             }
 
             delivery_decision = transactional_delivery_decision(contact, payload)
@@ -432,6 +445,8 @@ def validate_transactional_send_payload(data, authenticated_client):
     reply_to = validate_optional_email_address(data, "reply_to", errors)
     cc = validate_optional_email_addresses(data, "cc", errors)
     bcc = validate_optional_email_addresses(data, "bcc", errors)
+    headers = validate_headers(data.get("headers"), errors)
+    message_parts = validate_message_parts(data.get("message_parts"), errors)
 
     if errors:
         raise ApiValidationError(errors)
@@ -453,6 +468,8 @@ def validate_transactional_send_payload(data, authenticated_client):
         "reply_to": reply_to,
         "cc": cc,
         "bcc": bcc,
+        "headers": headers,
+        "message_parts": message_parts,
     }
 
 
@@ -521,6 +538,8 @@ def validate_recipient_list_send_payload(data, authenticated_client):
     reply_to = validate_optional_email_address(data, "reply_to", errors)
     cc = validate_optional_email_addresses(data, "cc", errors)
     bcc = validate_optional_email_addresses(data, "bcc", errors)
+    headers = validate_headers(data.get("headers"), errors)
+    message_parts = validate_message_parts(data.get("message_parts"), errors)
 
     if errors:
         raise ApiValidationError(errors)
@@ -541,6 +560,8 @@ def validate_recipient_list_send_payload(data, authenticated_client):
         "reply_to": reply_to,
         "cc": cc,
         "bcc": bcc,
+        "headers": headers,
+        "message_parts": message_parts,
     }
 
 
@@ -672,6 +693,102 @@ def validate_optional_email_addresses(data, field, errors):
     return addresses
 
 
+def validate_headers(value, errors):
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, dict):
+        errors["headers"] = "must_be_object"
+        return {}
+    if len(value) > MAX_CUSTOM_HEADERS:
+        errors["headers"] = "too_many"
+        return {}
+
+    headers = {}
+    for raw_name, raw_value in value.items():
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        field = f"headers.{name or raw_name}"
+        if not HEADER_NAME_RE.match(name):
+            errors[field] = "invalid_name"
+            continue
+        if name.casefold() in RESERVED_HEADERS:
+            errors[field] = "reserved"
+            continue
+        if not isinstance(raw_value, str) or "\r" in raw_value or "\n" in raw_value:
+            errors[field] = "invalid_value"
+            continue
+        headers[name] = raw_value
+    return headers
+
+
+def validate_message_parts(value, errors):
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        errors["message_parts"] = "must_be_list"
+        return []
+    if len(value) > MAX_MESSAGE_PARTS:
+        errors["message_parts"] = "too_many"
+        return []
+
+    parts = []
+    for index, raw_part in enumerate(value):
+        if not isinstance(raw_part, dict):
+            errors[f"message_parts.{index}"] = "must_be_object"
+            continue
+
+        content_type = raw_part.get("content_type")
+        if not isinstance(content_type, str) or not content_type.strip():
+            errors[f"message_parts.{index}.content_type"] = "required"
+            continue
+        parsed = parse_content_type(content_type)
+        if parsed is None or parsed["maintype"] != "text":
+            errors[f"message_parts.{index}.content_type"] = "unsupported"
+            continue
+
+        content = raw_part.get("content")
+        if not isinstance(content, str):
+            errors[f"message_parts.{index}.content"] = "must_be_string"
+            content = ""
+        elif len(content) > MAX_MESSAGE_PART_CONTENT_LENGTH:
+            errors[f"message_parts.{index}.content"] = "too_large"
+
+        filename = raw_part.get("filename", "")
+        if filename in (None, ""):
+            filename = ""
+        elif not isinstance(filename, str) or "/" in filename or "\\" in filename:
+            errors[f"message_parts.{index}.filename"] = "invalid"
+
+        disposition = raw_part.get("disposition", "attachment")
+        if disposition in (None, ""):
+            disposition = "attachment"
+        elif disposition not in {"attachment", "inline"}:
+            errors[f"message_parts.{index}.disposition"] = "invalid"
+
+        parts.append(
+            {
+                "content_type": content_type.strip(),
+                "content": content,
+                "filename": filename,
+                "disposition": disposition,
+            }
+        )
+    return parts
+
+
+def parse_content_type(value):
+    message = Message()
+    message["content-type"] = value
+    content_type = message.get_content_type()
+    if "/" not in content_type:
+        return None
+    maintype, subtype = content_type.split("/", 1)
+    return {
+        "maintype": maintype,
+        "subtype": subtype,
+        "params": dict(message.get_params()[1:]),
+    }
+
+
 def find_existing_message(client, idempotency_key):
     if not idempotency_key:
         return None
@@ -722,6 +839,10 @@ def create_transactional_message(*, client, contact, template, payload, sender, 
         metadata = metadata | {"cc": payload["cc"]}
     if payload.get("bcc"):
         metadata = metadata | {"bcc": payload["bcc"]}
+    if payload.get("headers"):
+        metadata = metadata | {"headers": payload["headers"]}
+    if payload.get("message_parts"):
+        metadata = metadata | {"message_parts": payload["message_parts"]}
     return TransactionalMessage.objects.create(
         client=client,
         contact=contact,

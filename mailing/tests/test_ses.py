@@ -1,3 +1,5 @@
+from email import message_from_bytes
+
 import boto3
 import pytest
 from botocore.stub import Stubber
@@ -5,6 +7,15 @@ from django.test import override_settings
 
 import mailing.ses as ses_module
 from mailing.ses import send_email
+
+
+class FakeSesClient:
+    def __init__(self):
+        self.raw_params = None
+
+    def send_raw_email(self, **params):
+        self.raw_params = params
+        return {"MessageId": "raw-message-123"}
 
 
 @override_settings(AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="")
@@ -120,6 +131,52 @@ def test_send_email_uses_cc_and_bcc_addresses():
         )
 
     assert message_id == "message-123"
+
+
+@override_settings(AWS_SES_CONFIGURATION_SET="")
+def test_send_email_uses_raw_message_for_headers_and_structured_parts():
+    client = FakeSesClient()
+
+    message_id = send_email(
+        ses_client=client,
+        source="newsletter@example.com",
+        to_email="person@example.com",
+        subject="Calendar invite",
+        html_body="<p>Join</p>",
+        text_body="Join",
+        reply_to="support@example.com",
+        cc=["mentor@example.com"],
+        bcc=["audit@example.com"],
+        headers={"X-Calendar-UID": "event-123"},
+        message_parts=[
+            {
+                "content_type": "text/calendar; method=REQUEST",
+                "content": "BEGIN:VCALENDAR\nMETHOD:REQUEST\nEND:VCALENDAR",
+                "filename": "invite.ics",
+                "disposition": "attachment",
+            }
+        ],
+    )
+
+    assert message_id == "raw-message-123"
+    assert client.raw_params["Source"] == "newsletter@example.com"
+    assert client.raw_params["Destinations"] == [
+        "person@example.com",
+        "mentor@example.com",
+        "audit@example.com",
+    ]
+    message = message_from_bytes(client.raw_params["RawMessage"]["Data"])
+    assert message["From"] == "newsletter@example.com"
+    assert message["To"] == "person@example.com"
+    assert message["Cc"] == "mentor@example.com"
+    assert message["Reply-To"] == "support@example.com"
+    assert message["X-Calendar-UID"] == "event-123"
+    payload = message.get_payload()
+    calendar = payload[-1]
+    assert calendar.get_content_type() == "text/calendar"
+    assert calendar.get_param("method") == "REQUEST"
+    assert calendar.get_filename() == "invite.ics"
+    assert "BEGIN:VCALENDAR" in calendar.get_payload()
 
 
 @override_settings(AWS_REGION="us-east-1", AWS_SES_CONFIGURATION_SET="", SES_MAX_SEND_RATE_PER_SECOND=2)
