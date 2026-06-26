@@ -368,15 +368,21 @@ def upsert_member(recipient_list, source_object_key, member_data):
     else:
         member = existing_by_source or existing_by_contact
 
+    existing_metadata = member.metadata if member and isinstance(member.metadata, dict) else {}
+    existing_cascade_reasons = cascade_reasons(existing_metadata)
+    active = member_data["active"] or bool(existing_cascade_reasons)
     removed_at = None
-    if not member_data["active"]:
+    if not active:
         removed_at = member.removed_at if member and member.removed_at else timezone.now()
+    metadata = member_data["metadata"]
+    if existing_cascade_reasons:
+        metadata = metadata | {"membership_reasons": existing_cascade_reasons}
     defaults = {
         "contact": contact,
         "email": normalize_email(member_data["email"]),
         "source_object_key": source_object_key,
-        "metadata": member_data["metadata"],
-        "active": member_data["active"],
+        "metadata": metadata,
+        "active": active,
         "removed_at": removed_at,
     }
 

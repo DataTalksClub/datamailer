@@ -307,6 +307,107 @@ def test_recipient_list_reconcile_removes_cascaded_parent_reason(client, audienc
     assert course_member.metadata["membership_reasons"] == []
 
 
+def test_parent_membership_removal_preserves_active_child_cascade_reason(client, audience, api_client_record):
+    parent_key = "ml-zoomcamp-2026"
+    child_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
+    registration_key = "registration:1"
+    submission_key = "homework-submission:1"
+    parent_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "registrants",
+            "name": "ML Zoomcamp 2026 registrants",
+        },
+        "member": {
+            "source_object_key": registration_key,
+            "email": "learner@example.com",
+            "metadata": {"registration_id": 1},
+        },
+    }
+    child_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "Homework 1 submitters",
+        },
+        "member": {
+            "source_object_key": submission_key,
+            "email": "learner@example.com",
+            "metadata": {"submission_id": 1},
+        },
+    }
+
+    assert put_json(client, "mailing:api_recipient_list_member", parent_payload, parent_key, registration_key).status_code == 200
+    assert put_json(client, "mailing:api_recipient_list_member", child_payload, child_key, submission_key).status_code == 200
+
+    remove_payload = parent_payload | {
+        "member": parent_payload["member"] | {"status": "removed"}
+    }
+    response = put_json(client, "mailing:api_recipient_list_member", remove_payload, parent_key, registration_key)
+
+    assert response.status_code == 200
+    parent_member = RecipientListMember.objects.get(recipient_list__key=parent_key)
+    assert parent_member.active is True
+    assert parent_member.removed_at is None
+    assert parent_member.metadata["membership_reasons"] == [
+        {
+            "list_key": child_key,
+            "source_object_key": submission_key,
+        }
+    ]
+
+
+def test_child_membership_removal_preserves_explicit_parent_membership(client, audience, api_client_record):
+    parent_key = "ml-zoomcamp-2026"
+    child_key = "ml-zoomcamp-2026:@e:@homework:homework-1"
+    registration_key = "registration:1"
+    submission_key = "homework-submission:1"
+    parent_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "registrants",
+            "name": "ML Zoomcamp 2026 registrants",
+        },
+        "member": {
+            "source_object_key": registration_key,
+            "email": "learner@example.com",
+            "metadata": {"registration_id": 1},
+        },
+    }
+    child_payload = {
+        "audience": audience.slug,
+        "client": api_client_record.slug,
+        "list": {
+            "type": "homework_submitters",
+            "name": "Homework 1 submitters",
+        },
+        "member": {
+            "source_object_key": submission_key,
+            "email": "learner@example.com",
+            "metadata": {"submission_id": 1},
+        },
+    }
+
+    assert put_json(client, "mailing:api_recipient_list_member", parent_payload, parent_key, registration_key).status_code == 200
+    assert put_json(client, "mailing:api_recipient_list_member", child_payload, child_key, submission_key).status_code == 200
+
+    remove_payload = child_payload | {
+        "member": child_payload["member"] | {"status": "removed"}
+    }
+    response = put_json(client, "mailing:api_recipient_list_member", remove_payload, child_key, submission_key)
+
+    assert response.status_code == 200
+    parent_member = RecipientListMember.objects.get(recipient_list__key=parent_key)
+    child_member = RecipientListMember.objects.get(recipient_list__key=child_key)
+    assert child_member.active is False
+    assert parent_member.active is True
+    assert parent_member.source_object_key == registration_key
+    assert parent_member.metadata["membership_reasons"] == []
+
+
 def test_recipient_list_keys_are_scoped_to_authenticated_client(
     client,
     audience,
