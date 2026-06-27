@@ -1,8 +1,12 @@
 # Datamailer
 
-Datamailer is a standalone Django mailing service for shared audiences, campaigns, transactional email, unsubscribe handling, and engagement stats.
+Datamailer is a standalone Django mailing service for shared audiences,
+campaigns, transactional email, and unsubscribe handling. It also tracks
+engagement stats.
 
-## What is included
+## Included Features
+
+Datamailer includes:
 
 - UI and admin for audience management
 - Shared contacts with audience/client-specific subscriptions
@@ -17,6 +21,8 @@ repo keeps app code, tests, CloudFormation skeletons, and smoke scripts.
 
 ## Design Docs
 
+Read these docs for the main architecture and API details:
+
 - [Architecture](docs/architecture.md)
 - [Data Model](docs/data-model.md)
 - [API Design](docs/api.md)
@@ -25,8 +31,10 @@ repo keeps app code, tests, CloudFormation skeletons, and smoke scripts.
 ## CLI client
 
 [`cli/`](cli/) is a standalone, dependency-free command-line client published to PyPI as
-[`datamailer`](https://pypi.org/project/datamailer/). It lets scripts and agents send email
-through any Datamailer deployment with a URL and a client API key:
+[`datamailer`](https://pypi.org/project/datamailer/).
+
+Use it to send email through any Datamailer deployment with a URL and a client
+API key:
 
 ```bash
 pip install datamailer
@@ -34,10 +42,12 @@ datamailer configure --url https://datamailer.example.com --api-key dm_xxx
 ./run_pipeline.sh | datamailer send --to me@example.com --subject "Pipeline output"
 ```
 
-See [cli/README.md](cli/README.md). The CLI is versioned and released independently from this
-backend; its server distribution name is `datamailer-backend`.
+See [cli/README.md](cli/README.md) for usage details. The CLI is versioned and
+released independently from this backend as `datamailer-backend`.
 
 ## Setup
+
+Install dependencies and run migrations:
 
 ```bash
 make setup
@@ -61,18 +71,40 @@ Log in at `/admin/login/` with:
 - Password: `admin`
 
 The product UI uses Django staff auth, so unauthenticated users are redirected to `/admin/login/`.
-Staff users can open the local API reference at `/api-docs/`; the OpenAPI JSON is available at
-`/api-docs/openapi.json`.
+Staff users can open the local API reference at `/api-docs/`. The OpenAPI JSON is
+available at `/api-docs/openapi.json`.
 Transactional template keys and required context are visible to staff at `/templates/`.
+
+## Local capture mode
+
+Run Datamailer locally with Postgres and capture delivery:
+
+```bash
+make capture-up
+```
+
+The command starts the app on `http://localhost:8001`, runs migrations, seeds
+demo data, and enables `DATAMAILER_DELIVERY_MODE=capture`. Log in with
+`admin` / `admin`.
+
+The seeded `dtc-courses` client has this local API key:
+
+```text
+dm_dtccourses_demo_transactional_email_key
+```
+
+You can view captured transactional and campaign renders through the product UI
+and the testbed API at `/api/testbed/runs`.
 
 Client applications authenticate to `/api` with Bearer authentication. In the product UI, open
 `/clients/`, create or select a client, then create a named API key for each integration. The raw key is
 shown once after generation and should be stored by the client application. API access is scoped to the
 authenticated client's organization and the request's `audience`/`client` values.
 
-`seed_demo_data` is local-only and idempotent; rerun it after migrations to recreate or refresh the test admin,
-organizations, audiences, clients, contacts, tags, campaigns, transactional history, engagement events, and
-suppressed contacts without enqueueing SQS work or calling SES.
+After migrations, rerun the local-only `seed_demo_data` command to refresh the
+test admin and core API records. It also refreshes demo contacts and campaigns.
+Transactional history, engagement events, and suppressed contacts are refreshed
+without enqueueing SQS work or calling SES.
 
 ## Direction
 

@@ -1,0 +1,14 @@
+.git
+.claude
+.tmp
+.venv
+.worktrees
+.pytest_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.pyc
+.env
+db.sqlite3
+htmlcov
+coverage.xml

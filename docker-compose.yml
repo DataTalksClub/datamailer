@@ -1,4 +1,58 @@
 services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: datamailer
+      POSTGRES_USER: datamailer_user
+      POSTGRES_PASSWORD: datamailer_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datamailer_user -d datamailer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://datamailer_user:datamailer_password@db:5432/datamailer
+      DEBUG: "1"
+      SECRET_KEY: dev-secret-key-change-in-production
+      ALLOWED_HOSTS: localhost,127.0.0.1,web,datamailer-web
+      CSRF_TRUSTED_ORIGINS: http://localhost:8001,http://127.0.0.1:8001
+      PUBLIC_BASE_URL: http://localhost:8001
+      DATAMAILER_API_DOCS_BASE_URL: http://localhost:8001
+      DATAMAILER_DELIVERY_MODE: capture
+      DATAMAILER_CAPTURE_UI: "1"
+      MOCK_INBOX_ENABLED: "1"
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        uv run python manage.py migrate
+        uv run python manage.py seed_demo_data
+        uv run python manage.py runserver 0.0.0.0:8000
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "uv",
+          "run",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   localstack:
     image: localstack/localstack:4.4.0
     profiles: ["aws-local"]
@@ -14,3 +68,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+volumes:
+  postgres_data:
