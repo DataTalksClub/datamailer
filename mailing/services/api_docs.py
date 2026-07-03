@@ -74,10 +74,8 @@ API_DOC_PATHS = {
     ),
     "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
+    "mailing:api_transactional_test_send": "/api/transactional/test-send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
-    "mailing:api_testbed_runs": "/api/testbed/runs",
-    "mailing:api_testbed_run_detail": "/api/testbed/runs/{run_id}",
-    "mailing:api_testbed_run_message": "/api/testbed/runs/{run_id}/messages/{message_id}",
     "mailing:tracking_open": "/t/o/{tracking_token}.gif",
     "mailing:tracking_click": "/t/c/{tracking_token}",
     "mailing:public_unsubscribe": "/unsubscribe/{unsubscribe_token}",
@@ -766,6 +764,11 @@ def endpoint_groups():
                 ("PUT", "/api/transactional/templates/{template_key}", "Create or update a transactional template."),
                 ("GET", "/api/transactional/templates/{template_key}", "Get one transactional template."),
                 ("POST", "/api/transactional/send", "Queue one transactional email."),
+                (
+                    "POST",
+                    "/api/transactional/test-send",
+                    "Render a transactional email for e2e tests without sending.",
+                ),
                 ("GET", "/api/transactional/messages/{message_id}", "Get transactional message status."),
             ],
         },
@@ -778,19 +781,6 @@ def endpoint_groups():
                 ("POST", "/api/campaigns/{external_key}/cancel", "Cancel one draft or unsent queued campaign."),
                 ("POST", "/api/campaigns/{external_key}/preview", "Render one campaign without recipients."),
                 ("POST", "/api/campaigns/{external_key}/test-send", "Send one campaign to explicit test addresses."),
-            ],
-        },
-        {
-            "name": "Testbed",
-            "endpoints": [
-                ("GET", "/api/testbed/runs", "List captured rendered messages."),
-                ("GET", "/api/testbed/runs/{run_id}", "Get one captured rendered message."),
-                (
-                    "GET",
-                    "/api/testbed/runs/{run_id}/messages/{message_id}",
-                    "Get the message for one captured run.",
-                ),
-                ("DELETE", "/api/testbed/runs", "Clear captured rendered messages."),
             ],
         },
         {
@@ -933,18 +923,10 @@ def route_path_map():
             args=["homework-submission-confirmation"],
         ),
         API_DOC_PATHS["mailing:api_transactional_send"]: reverse("mailing:api_transactional_send"),
+        API_DOC_PATHS["mailing:api_transactional_test_send"]: reverse("mailing:api_transactional_test_send"),
         API_DOC_PATHS["mailing:api_transactional_message_status"]: reverse(
             "mailing:api_transactional_message_status",
             args=[123],
-        ),
-        API_DOC_PATHS["mailing:api_testbed_runs"]: reverse("mailing:api_testbed_runs"),
-        API_DOC_PATHS["mailing:api_testbed_run_detail"]: reverse(
-            "mailing:api_testbed_run_detail",
-            args=[123],
-        ),
-        API_DOC_PATHS["mailing:api_testbed_run_message"]: reverse(
-            "mailing:api_testbed_run_message",
-            args=[123, 123],
         ),
         API_DOC_PATHS["mailing:tracking_open"]: reverse("mailing:tracking_open", args=["tracking"]),
         API_DOC_PATHS["mailing:tracking_click"]: reverse("mailing:tracking_click", args=["tracking"]),
@@ -983,8 +965,6 @@ def bearer_responses(success, *, accepted=False):
 
 
 CONTACT_ID_PARAM = {"name": "contact_id", "in": "path", "required": True, "schema": {"type": "integer"}}
-RUN_ID_PARAM = {"name": "run_id", "in": "path", "required": True, "schema": {"type": "integer"}}
-MESSAGE_ID_PARAM = {"name": "message_id", "in": "path", "required": True, "schema": {"type": "integer"}}
 TAG_SLUG_PARAM = {"name": "tag_slug", "in": "path", "required": True, "schema": {"type": "string"}}
 LIST_KEY_PARAM = {"name": "list_key", "in": "path", "required": True, "schema": {"type": "string"}}
 JOB_ID_PARAM = {"name": "job_id", "in": "path", "required": True, "schema": {"type": "integer"}}
@@ -1054,7 +1034,6 @@ OPENAPI_SPEC = {
         {"name": "State"},
         {"name": "Imports"},
         {"name": "Transactional"},
-        {"name": "Testbed"},
         {"name": "Public"},
         {"name": "Provider"},
     ],
@@ -1526,6 +1505,21 @@ OPENAPI_SPEC = {
                 | {"409": json_response("Contact suppressed", "#/components/schemas/TransactionalSendResponse")},
             }
         },
+        "/api/transactional/test-send": {
+            "post": {
+                "tags": ["Transactional"],
+                "summary": "Test-send transactional email",
+                "description": "Fake drop-in for POST /api/transactional/send used by end-to-end tests. Accepts the same request body and validation, renders the email, and returns it inline without sending, queuing, or persisting anything.",
+                "security": [{"BearerAuth": []}],
+                "requestBody": json_body("#/components/schemas/TransactionalSendRequest"),
+                "responses": bearer_responses(
+                    json_response(
+                        "Rendered transactional email",
+                        "#/components/schemas/TransactionalTestSendResponse",
+                    )
+                ),
+            }
+        },
         "/api/transactional/templates/{template_key}": {
             "get": {
                 "tags": ["Transactional"],
@@ -1582,57 +1576,6 @@ OPENAPI_SPEC = {
                         "Transactional message status",
                         "#/components/schemas/TransactionalMessageStatusResponse",
                     )
-                )
-                | {"404": {"$ref": "#/components/responses/ValidationError"}},
-            }
-        },
-        "/api/testbed/runs": {
-            "get": {
-                "tags": ["Testbed"],
-                "summary": "List captured runs",
-                "description": "Lists rendered messages captured while delivery mode is capture.",
-                "security": [{"BearerAuth": []}],
-                "parameters": [
-                    {"name": "email", "in": "query", "schema": {"type": "string", "format": "email"}},
-                    {"name": "source", "in": "query", "schema": {"type": "string"}},
-                    {"name": "event", "in": "query", "schema": {"type": "string"}},
-                    {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1}},
-                ],
-                "responses": bearer_responses(
-                    json_response("Captured runs", "#/components/schemas/CapturedRunList")
-                ),
-            },
-            "delete": {
-                "tags": ["Testbed"],
-                "summary": "Clear captured runs",
-                "description": "Deletes captured rendered messages for the authenticated client.",
-                "security": [{"BearerAuth": []}],
-                "requestBody": json_body("#/components/schemas/CapturedRunClearRequest", required=False),
-                "responses": bearer_responses(
-                    json_response("Captured runs cleared", "#/components/schemas/CapturedRunClearResponse")
-                ),
-            },
-        },
-        "/api/testbed/runs/{run_id}": {
-            "get": {
-                "tags": ["Testbed"],
-                "summary": "Get captured run",
-                "security": [{"BearerAuth": []}],
-                "parameters": [RUN_ID_PARAM],
-                "responses": bearer_responses(
-                    json_response("Captured run", "#/components/schemas/CapturedRunResponse")
-                )
-                | {"404": {"$ref": "#/components/responses/ValidationError"}},
-            }
-        },
-        "/api/testbed/runs/{run_id}/messages/{message_id}": {
-            "get": {
-                "tags": ["Testbed"],
-                "summary": "Get captured run message",
-                "security": [{"BearerAuth": []}],
-                "parameters": [RUN_ID_PARAM, MESSAGE_ID_PARAM],
-                "responses": bearer_responses(
-                    json_response("Captured run message", "#/components/schemas/CapturedRunMessageResponse")
                 )
                 | {"404": {"$ref": "#/components/responses/ValidationError"}},
             }
@@ -1860,59 +1803,6 @@ OPENAPI_SPEC = {
                         },
                     },
                 },
-            },
-            "CapturedRun": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "email": {"type": "string", "format": "email"},
-                    "from_email": {"type": "string"},
-                    "subject": {"type": "string"},
-                    "template_key": {"type": "string"},
-                    "source": {"type": "string"},
-                    "event": {"type": "string"},
-                    "idempotency_key": {"type": "string"},
-                    "created_at": {"type": "string", "format": "date-time"},
-                },
-            },
-            "CapturedRunDetail": {
-                "allOf": [
-                    {"$ref": "#/components/schemas/CapturedRun"},
-                    {
-                        "type": "object",
-                        "properties": {
-                            "html_body": {"type": "string"},
-                            "text_body": {"type": "string"},
-                            "metadata": {"type": "object"},
-                            "transactional_message_id": {"type": ["integer", "null"]},
-                            "campaign_id": {"type": ["integer", "null"]},
-                            "campaign_recipient_id": {"type": ["integer", "null"]},
-                        },
-                    },
-                ]
-            },
-            "CapturedRunList": {
-                "type": "object",
-                "properties": {
-                    "count": {"type": "integer"},
-                    "runs": {"type": "array", "items": {"$ref": "#/components/schemas/CapturedRun"}},
-                },
-            },
-            "CapturedRunResponse": {
-                "type": "object",
-                "properties": {"run": {"$ref": "#/components/schemas/CapturedRunDetail"}},
-            },
-            "CapturedRunMessageResponse": {
-                "type": "object",
-                "properties": {"message": {"$ref": "#/components/schemas/CapturedRunDetail"}},
-            },
-            "CapturedRunClearRequest": {
-                "type": "object",
-                "properties": {"email": {"type": "string", "format": "email"}},
-            },
-            "CapturedRunClearResponse": {
-                "type": "object",
-                "properties": {"deleted_count": {"type": "integer"}},
             },
             "RecipientListType": {"type": "string", "enum": [choice.value for choice in RecipientListType]},
             "RecipientListImportJobStatus": {
@@ -2601,6 +2491,31 @@ OPENAPI_SPEC = {
                     "message": {"type": "object"},
                     "idempotent_replay": {"type": "boolean"},
                     "enqueued": {"type": "boolean"},
+                },
+            },
+            "TransactionalTestSendResponse": {
+                "type": "object",
+                "description": "Superset of TransactionalSendResponse returned by the fake test-send endpoint. Nothing is sent, queued, or persisted.",
+                "properties": {
+                    "message": {"type": "object"},
+                    "idempotent_replay": {"type": "boolean"},
+                    "enqueued": {"type": "boolean"},
+                    "rendered": {
+                        "type": "object",
+                        "properties": {
+                            "subject": {"type": "string"},
+                            "html_body": {"type": "string"},
+                            "text_body": {"type": "string"},
+                        },
+                    },
+                    "would_deliver": {"type": "boolean"},
+                    "delivery_decision": {
+                        "type": "object",
+                        "properties": {
+                            "allowed": {"type": "boolean"},
+                            "reason": {"type": "string"},
+                        },
+                    },
                 },
             },
             "StructuredMessagePart": {

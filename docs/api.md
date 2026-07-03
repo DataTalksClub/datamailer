@@ -344,196 +344,55 @@ GET /api/contacts/{contact_id}/history?audience=dtc-courses&client=dtc-courses&l
 
 Returns safe scoped campaign recipient, transactional message, and event history. Secret hashes and delivery link tokens are never returned.
 
-## Mock Inbox (test-only)
-
-The mock inbox lets end-to-end tests verify that an email was "delivered"
-without sending real mail. It is gated behind `MOCK_INBOX_ENABLED` (defaults on
-when `DEBUG` or under tests; explicitly opt in on shared deployments).
-
-An address is recognised as a **mock address** when either:
-
-- its domain equals `MOCK_INBOX_DOMAIN` (default `mailbox.test`), e.g.
-  `anyone@mailbox.test`; or
-- its local part is sub-addressed with `MOCK_INBOX_PLUS_TAG` (default `e2e`),
-  e.g. `e2e+homework@example.com`.
-
-Transactional sends to a mock address are still persisted as
-`TransactionalMessage` rows (rendered subject/body, template key, context,
-metadata, idempotency key) but the worker **skips real SES delivery** and marks
-them `sent` with a `ses_message_id` of `mock-inbox:{id}`. These endpoints read
-and clear those captured rows. All routes use the same client Bearer auth and
-are scoped to the authenticated client. When `MOCK_INBOX_ENABLED` is off, every
-route returns `404 {"error": {"code": "mock_inbox_disabled"}}`.
-
-### List captured messages
+## Transactional Test-Send (test-only)
 
 ```text
-GET /api/mock-inbox/messages?address=e2e+homework@example.com&limit=25
+POST /api/transactional/test-send
 ```
 
-Returns recently captured messages for the mock address, newest first. `limit`
-is optional (default 25, max 200). Sending a non-mock address returns
-`422 {"error": {"code": "validation_error", "fields": {"address": "not_a_mock_address"}}}`.
+A fake drop-in for `POST /api/transactional/send` for end-to-end tests. It uses
+the same client Bearer auth and accepts the **same request body and validation**
+as the real send. Instead of sending, it renders the email and returns it inline
+in a single response: it **sends nothing, queues nothing, and persists nothing**,
+so there are no message rows to poll and no teardown to run.
 
-```json
-{
-  "address": "e2e+homework@example.com",
-  "count": 1,
-  "messages": [
-    {
-      "id": 42,
-      "email": "e2e+homework@example.com",
-      "from_email": "newsletter@example.com",
-      "subject": "Submission received",
-      "template_key": "homework-confirmation",
-      "status": "sent",
-      "idempotency_key": "homework-submission:123",
-      "created_at": "2026-06-20T10:00:00Z"
-    }
-  ]
-}
-```
-
-### Fetch one captured message (with body and context)
-
-```text
-GET /api/mock-inbox/messages/{message_id}
-```
-
-Returns the full message including `html_body`, `text_body`, `context`, and
-`metadata`. Returns `404` if the id is unknown, not owned by the client, or not
-a mock address.
+The response is a superset of the real send response. Alongside the usual
+`message`, `idempotent_replay`, and `enqueued` fields it adds the rendered
+`subject`/`html_body`/`text_body` plus a `would_deliver` flag and a
+`delivery_decision` explaining whether the real send would have been allowed. The
+returned `message.id` and `message.created_at` are always `null` because nothing
+is stored, and `enqueued` is always `false`.
 
 ```json
 {
   "message": {
-    "id": 42,
-    "email": "e2e+homework@example.com",
-    "subject": "Submission received",
-    "template_key": "homework-confirmation",
-    "status": "sent",
-    "idempotency_key": "homework-submission:123",
-    "created_at": "2026-06-20T10:00:00Z",
+    "id": null,
+    "email": "learner@example.com",
+    "from_email": "courses",
+    "from_email_address": "DataTalks.Club Courses <courses@dtcdev.click>",
+    "reply_to": "",
+    "cc": [],
+    "bcc": [],
+    "status": "queued",
+    "template_key": "registration-welcome",
+    "idempotency_key": "registration-user-123",
+    "created_at": null
+  },
+  "idempotent_replay": false,
+  "enqueued": false,
+  "rendered": {
+    "subject": "Welcome to ML Zoomcamp",
     "html_body": "<p>Thanks ...</p>",
-    "text_body": "Thanks ...",
-    "context": {"course_slug": "e2e-smoke-1718880000"},
-    "metadata": {"event": "homework_submission"}
-  }
+    "text_body": "Thanks ..."
+  },
+  "would_deliver": true,
+  "delivery_decision": {"allowed": true, "reason": ""}
 }
 ```
 
-### Clear captured messages (teardown)
-
-```text
-DELETE /api/mock-inbox/messages
-```
-
-With a JSON body `{"address": "e2e+homework@example.com"}` deletes captured
-messages for that mock address. With no body it deletes **all** mock-addressed
-messages for the client (real-recipient messages are never touched). Related
-`EmailEvent` rows cascade-delete.
-
-```json
-{"address": "e2e+homework@example.com", "deleted_count": 1}
-```
-
-## Real Inbox (SES inbound, test-only)
-
-The real inbox is the counterpart to the mock inbox: instead of skipping SES, it
-proves an email was **actually sent via SES and received in a real mailbox**. The
-receiving side is infrastructure (`datamailer-infra`): an SES receipt rule for the
-inbound domain writes every raw MIME message to an S3 bucket. Datamailer really sends
-to the test address, and this read API parses the received mail back out of S3.
-
-An address is a **real-inbox address** when its domain (ignoring any `+tag`
-sub-address) equals `REAL_INBOX_DOMAIN` (default `mailer.dtcdev.click`), e.g.
-`e2e+e2e-smoke-1718880000@mailer.dtcdev.click` or
-`datamailer+<tag>@mailer.dtcdev.click`. Such addresses always take the **real SES
-send path** (they are never short-circuited by the mock inbox), independent of
-`REAL_INBOX_ENABLED`.
-
-The read/clear endpoints below are gated by `REAL_INBOX_ENABLED` and require
-`REAL_INBOX_S3_BUCKET` (plus `REAL_INBOX_S3_PREFIX`, default `raw/`). All routes use
-the same client Bearer auth. When `REAL_INBOX_ENABLED` is off, every route returns
-`404 {"error": {"code": "real_inbox_disabled"}}`. When the bucket is not configured,
-they return `503 {"error": {"code": "validation_error", "fields": {"config": "real_inbox_s3_bucket_not_configured"}}}`.
-
-> **Eventual consistency:** SES inbound delivery to S3 is asynchronous. In practice a
-> message lands within ~5-15 seconds; e2e tests should poll `GET /api/inbox/messages`
-> until `count > 0` (or a timeout of ~60s). Received mail is not scoped to a
-> Datamailer client — only to the recipient address — so isolate runs with a unique
-> `+<tag>`. The `address` query value contains a `+`; **URL-encode it** (`%2B`) so it
-> is not decoded to a space.
-
-### List received messages
-
-```text
-GET /api/inbox/messages?address=e2e%2Be2e-smoke-1718880000@mailer.dtcdev.click&limit=25
-```
-
-Polls the inbound S3 bucket, parses each raw MIME object, and returns the messages
-whose `To`/`Cc`/`X-Original-To` includes the address, newest first by S3
-`LastModified`. `limit` is optional (default 25, max 200). A non-real address returns
-`422 {"error": {"code": "validation_error", "fields": {"address": "not_a_real_inbox_address"}}}`.
-
-```json
-{
-  "address": "e2e+e2e-smoke-1718880000@mailer.dtcdev.click",
-  "count": 1,
-  "messages": [
-    {
-      "s3_key": "raw/s3oudir75a3gb1k2qlht3mianpfvr5h04ltujlo1",
-      "message_id": "<...@email.amazonses.com>",
-      "from_email": "no-reply@dtcdev.click",
-      "to": ["e2e+e2e-smoke-1718880000@mailer.dtcdev.click"],
-      "subject": "Submission received",
-      "received_at": "2026-06-20T10:04:22Z"
-    }
-  ]
-}
-```
-
-### Fetch one received message (with parsed body and headers)
-
-```text
-GET /api/inbox/messages/{s3_key}?address=e2e%2B<tag>@mailer.dtcdev.click
-```
-
-`{s3_key}` is the `s3_key` from the list response (it contains `/`, matched as a path).
-The `address` query param scopes the lookup so one address cannot read another's mail.
-Returns the parsed message including `text_body`, `html_body`, `from_email`, `to`,
-`subject`, `message_id`, `received_at`, and the SES `spam_verdict`/`virus_verdict`.
-Returns `404` when the key is unknown or not addressed to `address`.
-
-```json
-{
-  "message": {
-    "s3_key": "raw/s3oudir75a3gb1k2qlht3mianpfvr5h04ltujlo1",
-    "message_id": "<...@email.amazonses.com>",
-    "from_email": "no-reply@dtcdev.click",
-    "to": ["e2e+e2e-smoke-1718880000@mailer.dtcdev.click"],
-    "subject": "Submission received",
-    "received_at": "2026-06-20T10:04:22Z",
-    "text_body": "Thanks ...",
-    "html_body": "<p>Thanks ...</p>",
-    "spam_verdict": "PASS",
-    "virus_verdict": "PASS"
-  }
-}
-```
-
-### Clear received messages (teardown)
-
-```text
-DELETE /api/inbox/messages?address=e2e%2B<tag>@mailer.dtcdev.click
-```
-
-Deletes every received S3 object addressed to the real-inbox `address` (required).
-Use a unique `+<tag>` per run so teardown only removes that run's mail.
-
-```json
-{"address": "e2e+e2e-smoke-1718880000@mailer.dtcdev.click", "deleted_count": 1}
-```
+`status` is `queued` when the real send would deliver and `skipped` when it would
+be suppressed; in the suppressed case `would_deliver` is `false` and
+`delivery_decision.reason` names the reason.
 
 ## Public and Provider Routes
 

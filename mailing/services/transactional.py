@@ -54,50 +54,77 @@ class TransactionalSendResult:
     enqueued: bool
 
 
-def send_transactional_email_for_client(data, authenticated_client):
+@dataclass(frozen=True)
+class RenderedTransactional:
+    contact: object
+    message: TransactionalMessage
+    sender: object
+    delivery_decision: dict
+    idempotency_key: str
+
+
+def resolve_transactional_send(data, authenticated_client):
+    """Validate a transactional-send request and load its template.
+
+    Shared verbatim by the real send and the fake test-send endpoints.
+    """
     payload = validate_transactional_send_payload(data, authenticated_client)
     template = get_transactional_template(authenticated_client, payload["template_key"])
-    idempotency_key = payload["idempotency_key"] or build_internal_idempotency_key()
+    return payload, template
 
-    existing = find_existing_message(authenticated_client, payload["idempotency_key"])
-    if existing is not None:
-        return response_payload(TransactionalSendResult(existing, idempotent_replay=True, enqueued=False))
 
+def render_transactional_send(payload, template, authenticated_client):
+    """Resolve the sender, upsert the contact, and render the message.
+
+    Shared verbatim by the real send and the fake test-send endpoints. Returns an
+    UNSAVED, fully rendered message plus the delivery decision. The only work that
+    is special to a real send -- persisting the row, recording lifecycle events,
+    and enqueuing provider work -- lives in :func:`send_transactional_email_for_client`.
+    """
     sender = resolve_sender_email(
         authenticated_client,
         sender_id_for_payload(payload, template),
     )
     validate_template_context(template, payload["context"])
+    idempotency_key = payload["idempotency_key"] or build_internal_idempotency_key()
+    contact, _ = upsert_contact(payload["email"])
+    delivery_decision = transactional_delivery_decision(contact, payload)
+    message = build_transactional_message(
+        client=authenticated_client,
+        contact=contact,
+        template=template,
+        payload=payload,
+        sender=sender,
+        idempotency_key=idempotency_key,
+        status=(
+            TransactionalMessageStatus.QUEUED
+            if delivery_decision["allowed"]
+            else TransactionalMessageStatus.SKIPPED
+        ),
+        last_error="" if delivery_decision["allowed"] else delivery_decision["reason"],
+    )
+    return RenderedTransactional(contact, message, sender, delivery_decision, idempotency_key)
+
+
+def send_transactional_email_for_client(data, authenticated_client):
+    payload, template = resolve_transactional_send(data, authenticated_client)
+
+    existing = find_existing_message(authenticated_client, payload["idempotency_key"])
+    if existing is not None:
+        return response_payload(TransactionalSendResult(existing, idempotent_replay=True, enqueued=False))
 
     with transaction.atomic():
-        contact, _ = upsert_contact(payload["email"])
-        delivery_decision = transactional_delivery_decision(contact, payload)
-        if delivery_decision["allowed"]:
-            message = create_transactional_message(
-                client=authenticated_client,
-                contact=contact,
-                template=template,
-                payload=payload,
-                sender=sender,
-                idempotency_key=idempotency_key,
-                status=TransactionalMessageStatus.QUEUED,
-            )
+        rendered = render_transactional_send(payload, template, authenticated_client)
+        message = rendered.message
+        if rendered.delivery_decision["allowed"]:
+            message.save()
             append_transactional_event(message, EmailEventType.QUEUED, {"template_key": template.key})
             queue_payload = build_transactional_queue_payload(message)
             transaction.on_commit(lambda: enqueue_transactional_email(queue_payload))
 
             return response_payload(TransactionalSendResult(message, idempotent_replay=False, enqueued=True))
 
-        message = create_transactional_message(
-            client=authenticated_client,
-            contact=contact,
-            template=template,
-            payload=payload,
-            sender=sender,
-            idempotency_key=idempotency_key,
-            status=TransactionalMessageStatus.SKIPPED,
-            last_error=delivery_decision["reason"],
-        )
+        message.save()
         append_transactional_event(message, EmailEventType.SKIPPED, {"reason": message.last_error})
 
     raise TransactionalSendRejected(
@@ -111,6 +138,34 @@ def send_transactional_email_for_client(data, authenticated_client):
         },
         status_code=409,
     )
+
+
+def preview_transactional_email_for_client(data, authenticated_client):
+    """Fake drop-in for :func:`send_transactional_email_for_client` for e2e tests.
+
+    Runs the identical validate -> resolve -> render pipeline, then returns the
+    rendered email inline in one response instead of persisting a message row,
+    recording lifecycle events, or enqueuing provider work. Nothing is sent.
+
+    The response is a strict superset of the real send response: the same
+    ``message``/``idempotent_replay``/``enqueued`` shape (with ``id``/``created_at``
+    null because nothing is persisted) plus a ``rendered`` block and the delivery
+    decision, so e2e tests can assert the rendered output -- and whether the real
+    send would have delivered -- without a second request.
+    """
+    payload, template = resolve_transactional_send(data, authenticated_client)
+    rendered = render_transactional_send(payload, template, authenticated_client)
+    message = rendered.message
+
+    return response_payload(TransactionalSendResult(message, idempotent_replay=False, enqueued=False)) | {
+        "rendered": {
+            "subject": message.subject,
+            "html_body": message.html_body,
+            "text_body": message.text_body,
+        },
+        "would_deliver": rendered.delivery_decision["allowed"],
+        "delivery_decision": rendered.delivery_decision,
+    }
 
 
 def send_transactional_email_to_recipient_list_for_client(list_key, data, authenticated_client):
@@ -830,7 +885,13 @@ def transactional_delivery_decision(contact, payload):
     return {"allowed": True, "reason": ""}
 
 
-def create_transactional_message(*, client, contact, template, payload, sender, idempotency_key, status, last_error=""):
+def build_transactional_message(*, client, contact, template, payload, sender, idempotency_key, status, last_error=""):
+    """Build a fully rendered TransactionalMessage WITHOUT saving it.
+
+    Shared verbatim by the real send and the fake test-send: both render the same
+    subject/html/text from the same context. Only the real send persists the
+    result (see :func:`create_transactional_message`).
+    """
     context = payload["context"]
     metadata = payload["metadata"]
     if payload.get("reply_to"):
@@ -843,7 +904,7 @@ def create_transactional_message(*, client, contact, template, payload, sender, 
         metadata = metadata | {"headers": payload["headers"]}
     if payload.get("message_parts"):
         metadata = metadata | {"message_parts": payload["message_parts"]}
-    return TransactionalMessage.objects.create(
+    return TransactionalMessage(
         client=client,
         contact=contact,
         email=normalize_email(payload["email"]),
@@ -860,6 +921,12 @@ def create_transactional_message(*, client, contact, template, payload, sender, 
         metadata=metadata,
         last_error=last_error,
     )
+
+
+def create_transactional_message(**kwargs):
+    message = build_transactional_message(**kwargs)
+    message.save()
+    return message
 
 
 def append_transactional_event(message, event_type, metadata):

@@ -759,68 +759,6 @@ class CmpCallback(TimeStampedModel):
         return f"{self.event_type} {self.event_id} ({self.status})"
 
 
-class CapturedEmail(TimeStampedModel):
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="captured_emails")
-    audience = models.ForeignKey(
-        Audience,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="captured_emails",
-    )
-    contact = models.ForeignKey(
-        Contact,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="captured_emails",
-    )
-    transactional_message = models.ForeignKey(
-        TransactionalMessage,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="captured_emails",
-    )
-    campaign = models.ForeignKey(
-        Campaign,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="captured_emails",
-    )
-    campaign_recipient = models.ForeignKey(
-        CampaignRecipient,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="captured_emails",
-    )
-    email = models.EmailField(max_length=320)
-    from_email = models.CharField(max_length=320, blank=True)
-    subject = models.CharField(max_length=255)
-    html_body = models.TextField(blank=True)
-    text_body = models.TextField(blank=True)
-    template_key = models.CharField(max_length=120, blank=True)
-    source = models.CharField(max_length=80, db_index=True)
-    event = models.CharField(max_length=120, blank=True, db_index=True)
-    idempotency_key = models.CharField(max_length=255, blank=True)
-    metadata = models.JSONField(default=dict, blank=True)
-
-    class Meta:
-        db_table = "captured_emails"
-        ordering = ["-created_at", "-id"]
-        indexes = [
-            models.Index(fields=["client", "created_at"], name="capt_email_client_created_idx"),
-            models.Index(fields=["client", "email", "created_at"], name="capt_email_client_email_idx"),
-            models.Index(fields=["client", "source", "created_at"], name="capt_email_client_source_idx"),
-            models.Index(fields=["client", "event", "created_at"], name="capt_email_client_event_idx"),
-        ]
-
-    def __str__(self):
-        return f"{self.email} {self.subject}"
-
-
 class OperatorAudit(models.Model):
     actor = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="operator_audits"

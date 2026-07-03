@@ -75,13 +75,6 @@ from mailing.services.api_docs import (
 )
 from mailing.services.auth import authenticate_bearer_token
 from mailing.services.campaigns import estimate_campaign_recipients, queue_campaign
-from mailing.services.capture import (
-    capture_api_enabled,
-    clear_captured_emails,
-    get_captured_email,
-    get_captured_run_message,
-    list_captured_emails,
-)
 from mailing.services.contact_import_export import (
     bulk_import_contacts_for_client,
     csv_import_contacts_for_client,
@@ -92,12 +85,6 @@ from mailing.services.mailchimp import (
     mailchimp_status_payload,
     reconcile_tag_mappings_for_client,
     update_mailchimp_config_for_client,
-)
-from mailing.services.mock_inbox import (
-    clear_mock_inbox,
-    get_mock_inbox_message,
-    list_mock_inbox_messages,
-    mock_inbox_enabled,
 )
 from mailing.services.operator_management import (
     add_contact_tag,
@@ -145,12 +132,6 @@ from mailing.services.operator_ui import (
     metadata_summary,
     parse_contact_explorer_filters,
 )
-from mailing.services.real_inbox import (
-    clear_received_messages,
-    get_received_message,
-    list_received_messages,
-    real_inbox_enabled,
-)
 from mailing.services.recipient_lists import (
     bulk_upsert_recipient_list_members_for_client,
     create_recipient_list_import_job_for_client,
@@ -167,6 +148,7 @@ from mailing.services.tokens import get_recipient_by_unsubscribe_token
 from mailing.services.tracking import TRANSPARENT_GIF, apply_unsubscribe, record_click, record_open
 from mailing.services.transactional import (
     TransactionalSendRejected,
+    preview_transactional_email_for_client,
     send_transactional_email_for_client,
     send_transactional_email_to_recipient_list_for_client,
     send_transactional_email_to_transient_recipient_list_for_client,
@@ -1575,28 +1557,19 @@ def api_transactional_send(request):
     return JsonResponse(payload, status=202)
 
 
-def _mock_inbox_disabled_response():
-    return JsonResponse(
-        {
-            "error": {
-                "code": "mock_inbox_disabled",
-                "message": "The mock inbox is not enabled on this deployment.",
-            }
-        },
-        status=404,
-    )
+@csrf_exempt
+@require_POST
+def api_transactional_test_send(request):
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
 
+    try:
+        payload = preview_transactional_email_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
 
-def _capture_api_disabled_response():
-    return JsonResponse(
-        {
-            "error": {
-                "code": "capture_api_disabled",
-                "message": "The Datamailer capture API is not enabled on this deployment.",
-            }
-        },
-        status=404,
-    )
+    return JsonResponse(payload, status=200)
 
 
 @csrf_exempt
@@ -1765,163 +1738,6 @@ def api_client_mailchimp_tag_mappings(request):
         data = json_request_body(request)
         scope = validate_contact_scope(data, client, require_email=False, require_client=False)
         payload = reconcile_tag_mappings_for_client(scope.audience, data, client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-@csrf_exempt
-def api_mock_inbox_messages(request):
-    if request.method not in {"GET", "DELETE"}:
-        return method_not_allowed_response(["GET", "DELETE"])
-
-    if not mock_inbox_enabled():
-        return _mock_inbox_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        if request.method == "GET":
-            payload = list_mock_inbox_messages(request.GET, client)
-        else:
-            payload = clear_mock_inbox(api_request_data(request), client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-def api_mock_inbox_message_detail(request, message_id):
-    if request.method != "GET":
-        return method_not_allowed_response(["GET"])
-
-    if not mock_inbox_enabled():
-        return _mock_inbox_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        payload = get_mock_inbox_message(message_id, client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-@csrf_exempt
-def api_testbed_runs(request):
-    if request.method not in {"GET", "DELETE"}:
-        return method_not_allowed_response(["GET", "DELETE"])
-
-    if not capture_api_enabled():
-        return _capture_api_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        if request.method == "GET":
-            payload = list_captured_emails(request.GET, client)
-        else:
-            payload = clear_captured_emails(api_request_data(request), client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-def api_testbed_run_detail(request, run_id):
-    if request.method != "GET":
-        return method_not_allowed_response(["GET"])
-
-    if not capture_api_enabled():
-        return _capture_api_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        payload = get_captured_email(run_id, client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-def api_testbed_run_message(request, run_id, message_id):
-    if request.method != "GET":
-        return method_not_allowed_response(["GET"])
-
-    if not capture_api_enabled():
-        return _capture_api_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        payload = get_captured_run_message(run_id, message_id, client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-def _real_inbox_disabled_response():
-    return JsonResponse(
-        {
-            "error": {
-                "code": "real_inbox_disabled",
-                "message": "The real inbox (SES inbound) read API is not enabled on this deployment.",
-            }
-        },
-        status=404,
-    )
-
-
-@csrf_exempt
-def api_real_inbox_messages(request):
-    if request.method not in {"GET", "DELETE"}:
-        return method_not_allowed_response(["GET", "DELETE"])
-
-    if not real_inbox_enabled():
-        return _real_inbox_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        if request.method == "GET":
-            payload = list_received_messages(request.GET, client)
-        else:
-            payload = clear_received_messages(api_request_data(request), client)
-    except ApiValidationError as exc:
-        return validation_error_response(exc)
-
-    return JsonResponse(payload, status=200)
-
-
-def api_real_inbox_message_detail(request, s3_key):
-    if request.method != "GET":
-        return method_not_allowed_response(["GET"])
-
-    if not real_inbox_enabled():
-        return _real_inbox_disabled_response()
-
-    client, error_response = authenticate_api_request(request)
-    if error_response:
-        return error_response
-
-    try:
-        payload = get_received_message(request.GET, s3_key, client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

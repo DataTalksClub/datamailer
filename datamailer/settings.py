@@ -153,38 +153,3 @@ SES_WEBHOOKS_SIGNATURE_MODE = os.environ.get(
     "mock" if DEBUG or TESTING else "strict",
 )
 SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION = bool_env("SES_WEBHOOKS_ALLOW_SUBSCRIPTION_CONFIRMATION", default=False)
-DATAMAILER_DELIVERY_MODE = os.environ.get("DATAMAILER_DELIVERY_MODE", "send").strip().lower()
-DATAMAILER_CAPTURE_UI = bool_env(
-    "DATAMAILER_CAPTURE_UI",
-    default=DATAMAILER_DELIVERY_MODE == "capture" or TESTING,
-)
-
-# Mock inbox: capture-only test mailbox for e2e tests.
-# When enabled, transactional emails addressed to a recognized mock address are
-# still persisted as TransactionalMessage rows (so they can be inspected via the
-# mock-inbox API) but real SES delivery is skipped. An address is recognized as a
-# mock address when its domain matches MOCK_INBOX_DOMAIN, or when its local part
-# carries the MOCK_INBOX_PLUS_TAG sub-address (e.g. "e2e+anything@example.com").
-MOCK_INBOX_ENABLED = bool_env("MOCK_INBOX_ENABLED", default=DEBUG or TESTING)
-MOCK_INBOX_DOMAIN = os.environ.get("MOCK_INBOX_DOMAIN", "mailbox.test").strip().lower()
-MOCK_INBOX_PLUS_TAG = os.environ.get("MOCK_INBOX_PLUS_TAG", "e2e").strip().lower()
-
-# Real inbox (SES inbound): an e2e mailbox that, unlike the mock inbox, takes the
-# REAL SES send path and then reads the message back out of the S3 bucket that the
-# SES receipt rule writes to. This proves an email was actually sent via SES and
-# received in a real mailbox.
-#
-# An address is recognized as a real-inbox address when its (sub-addressed) domain
-# matches REAL_INBOX_DOMAIN, e.g. "datamailer+e2e-smoke-123@mailer.dtcdev.click".
-# Such addresses are NEVER short-circuited by the mock inbox: they go through SES.
-#
-# Reading received mail polls the S3 bucket REAL_INBOX_S3_BUCKET under
-# REAL_INBOX_S3_PREFIX, parses each raw MIME object, and filters by the recipient.
-# The read path is gated by REAL_INBOX_ENABLED so it is off by default in prod.
-REAL_INBOX_ENABLED = bool_env("REAL_INBOX_ENABLED", default=False)
-REAL_INBOX_DOMAIN = os.environ.get("REAL_INBOX_DOMAIN", "mailer.dtcdev.click").strip().lower()
-REAL_INBOX_S3_BUCKET = os.environ.get("REAL_INBOX_S3_BUCKET", "").strip()
-REAL_INBOX_S3_PREFIX = os.environ.get("REAL_INBOX_S3_PREFIX", "raw/").strip()
-# How many of the most recent S3 objects to scan when listing/polling. Inbound mail
-# expires after 14 days (S3 lifecycle), so this bounds the scan on a busy mailbox.
-REAL_INBOX_MAX_SCAN_OBJECTS = int(os.environ.get("REAL_INBOX_MAX_SCAN_OBJECTS", "200"))

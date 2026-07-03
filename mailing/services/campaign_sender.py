@@ -14,12 +14,9 @@ from mailing.models import (
     CampaignRecipient,
     CampaignRecipientStatus,
     CampaignStatus,
-    CapturedEmail,
     EmailEvent,
     EmailEventType,
 )
-from mailing.services.capture import capture_campaign_recipient, capture_mode_enabled
-from mailing.services.contacts import normalize_email
 from mailing.services.public_urls import click_redirect_url, open_pixel_url, unsubscribe_url
 from mailing.services.tokens import (
     CampaignRecipientTokens,
@@ -81,26 +78,6 @@ def send_campaign_test_message(campaign, to_email, *, ses_client=None, source=No
         tracking_token=generate_raw_token(),
         unsubscribe_token=generate_raw_token(),
     )
-    if capture_mode_enabled():
-        capture = CapturedEmail.objects.create(
-            client=campaign.client,
-            audience=campaign.audience,
-            email=normalize_email(to_email),
-            from_email=source or settings.DEFAULT_FROM_EMAIL,
-            subject=rendered["subject"],
-            html_body=rendered["html_body"],
-            text_body=rendered["text_body"],
-            source="campaign_test_send",
-            event="campaign_test_send",
-            idempotency_key=f"campaign-test:{campaign.id}:{normalize_email(to_email)}",
-            metadata={
-                "delivery_mode": "capture",
-                "campaign_id": campaign.id,
-                "campaign_external_key": campaign.external_key,
-            },
-        )
-        return f"capture:{capture.id}"
-
     return send_email(
         ses_client=ses_client or default_ses_client(),
         source=source or settings.DEFAULT_FROM_EMAIL,
@@ -167,34 +144,6 @@ def _send_campaign_recipient(campaign_id, recipient_id, ses):
 
     html_body = build_campaign_html_body(recipient.campaign.html_body, tokens.tracking_token, tokens.unsubscribe_token)
     text_body = build_campaign_text_body(recipient.campaign.text_body, tokens.unsubscribe_token)
-
-    if capture_mode_enabled():
-        capture = capture_campaign_recipient(
-            recipient,
-            rendered={
-                "subject": recipient.campaign.subject,
-                "html_body": html_body,
-                "text_body": text_body,
-            },
-            source="campaign",
-            metadata={"delivery_mode": "capture"},
-        )
-        now = timezone.now()
-        recipient.status = CampaignRecipientStatus.SENT
-        recipient.ses_message_id = f"capture:{capture.id}"
-        recipient.sent_at = now
-        recipient.last_error = ""
-        recipient.save(update_fields=["status", "ses_message_id", "sent_at", "last_error", "updated_at"])
-        _create_campaign_event(
-            recipient,
-            EmailEventType.SENT,
-            metadata={
-                "captured": True,
-                "delivery_mode": "capture",
-                "captured_email_id": capture.id,
-            },
-        )
-        return "sent"
 
     try:
         message_id = send_email(
