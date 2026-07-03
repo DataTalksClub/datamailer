@@ -157,6 +157,7 @@ from mailing.services.transactional_catalog import (
     filter_transactional_templates,
     recent_message_rows,
     template_catalog_rows,
+    transactional_queue_queryset,
     transactional_template_queryset,
 )
 from mailing.services.worker_status import worker_status_payload
@@ -280,6 +281,25 @@ def template_detail(request, template_id):
         request,
         "mailing/operator/template_detail.html",
         catalog_context(template) | {"recent_message_rows": recent_message_rows(recent_messages)},
+    )
+
+
+@staff_member_required
+def transactional_queue(request):
+    active_client = require_active_client(request)
+    if active_client is None:
+        return redirect("mailing:dashboard")
+    queue = paginate(request, transactional_queue_queryset(active_client), per_page=25)
+    return render(
+        request,
+        "mailing/operator/transactional_queue.html",
+        {
+            "active_client": active_client,
+            "queue": queue,
+            "message_rows": recent_message_rows(queue.object_list),
+            "queued_total": queue.paginator.count,
+            "pagination_querystring": pagination_querystring(request),
+        },
     )
 
 

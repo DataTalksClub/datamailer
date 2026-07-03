@@ -41,10 +41,13 @@ from mailing.services.operator_ui import (
     contact_event_timeline,
     contact_explorer_queryset,
     contact_search_queryset,
+    dashboard_context,
     metadata_summary,
     parse_contact_explorer_filters,
     rate,
 )
+from mailing.services.transactional_catalog import transactional_queue_queryset
+from mailing.services.worker_status import _backlog_count
 
 pytestmark = pytest.mark.django_db
 
@@ -1798,6 +1801,206 @@ def test_transactional_template_pages_show_operational_empty_states(client, oper
     assert b"Preview rendering will use an empty context." in detail_response.content
     assert b"Add a subject, text body, or HTML body before using this template." in detail_response.content
     assert b"Messages sent with this template will appear here for debugging." in detail_response.content
+
+
+def create_queued_message(
+    client_record,
+    *,
+    email,
+    template_key="welcome",
+    subject="Queued subject",
+    status=TransactionalMessageStatus.QUEUED,
+    created_at=None,
+    contact=None,
+):
+    if contact is None:
+        contact = create_contact(email)
+    template, _ = EmailTemplate.objects.get_or_create(
+        client=client_record,
+        key=template_key,
+        defaults={"name": template_key, "subject": subject, "is_transactional": True},
+    )
+    message = TransactionalMessage.objects.create(
+        client=client_record,
+        contact=contact,
+        email=email,
+        template=template,
+        template_key=template_key,
+        status=status,
+        subject=subject,
+    )
+    if created_at is not None:
+        TransactionalMessage.objects.filter(pk=message.pk).update(created_at=created_at)
+        message.refresh_from_db()
+    return message
+
+
+@pytest.fixture
+def other_client():
+    organization = Organization.objects.create(name="Other Org", slug="other-org")
+    return Client.objects.create(organization=organization, name="Other Client", slug="other-client")
+
+
+def test_transactional_queue_requires_staff(client):
+    response = client.get(reverse("mailing:transactional_queue"))
+
+    assert response.status_code == 302
+    assert "/admin/login/" in response["Location"]
+
+
+def test_transactional_queue_redirects_without_active_client(client, operator, client_record, other_client):
+    client.force_login(operator)
+
+    response = client.get(reverse("mailing:transactional_queue"))
+
+    assert response.status_code == 302
+    assert response["Location"] == reverse("mailing:dashboard")
+
+
+def test_transactional_queue_scopes_to_active_client_and_status(
+    client, operator, client_record, other_client
+):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    create_queued_message(client_record, email="waiting@example.com")
+    create_queued_message(client_record, email="sent@example.com", status=TransactionalMessageStatus.SENT)
+    create_queued_message(other_client, email="other@example.com")
+
+    response = client.get(reverse("mailing:transactional_queue"))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "waiting@example.com" in html
+    assert "sent@example.com" not in html
+    assert "other@example.com" not in html
+
+
+def test_transactional_queue_shows_row_details_and_contact_link(client, operator, client_record):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    created_at = timezone.now() - timedelta(days=2)
+    message = create_queued_message(
+        client_record,
+        email="waiting@example.com",
+        template_key="password-reset",
+        subject="Reset your password",
+        created_at=created_at,
+    )
+
+    response = client.get(reverse("mailing:transactional_queue"))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert f'href="{reverse("mailing:transactional_message_detail", args=[message.id])}"' in html
+    assert (
+        f'href="{reverse("mailing:contact_detail", args=[message.contact.normalized_email])}"' in html
+    )
+    assert "password-reset" in html
+    assert "Reset your password" in html
+    assert created_at.strftime("%Y-%m-%d %H:%M") in html
+    assert "2\xa0days" in html or "2 days" in html
+    assert '<span class="badge warning">Queued</span>' in html
+
+
+def test_transactional_queue_orders_oldest_first(client, operator, client_record):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    now = timezone.now()
+    create_queued_message(client_record, email="newest@example.com", created_at=now - timedelta(days=1))
+    create_queued_message(client_record, email="oldest@example.com", created_at=now - timedelta(days=3))
+    create_queued_message(client_record, email="middle@example.com", created_at=now - timedelta(days=2))
+
+    response = client.get(reverse("mailing:transactional_queue"))
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert html.index("oldest@example.com") < html.index("middle@example.com") < html.index("newest@example.com")
+
+
+def test_transactional_queue_paginates_and_preserves_query_params(client, operator, client_record):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    for index in range(26):
+        create_queued_message(client_record, email=f"queued-{index:02d}@example.com")
+
+    response = client.get(reverse("mailing:transactional_queue"), {"page": 2})
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Page 2 of 2" in html
+    assert "<strong>26</strong> messages queued" in html
+
+
+def test_transactional_queue_empty_state(client, operator, client_record):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+
+    response = client.get(reverse("mailing:transactional_queue"))
+
+    assert response.status_code == 200
+    assert b"No queued transactional messages." in response.content
+
+
+def test_transactional_queue_total_matches_scoped_count(client, operator, client_record, other_client):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    create_queued_message(client_record, email="a@example.com")
+    create_queued_message(client_record, email="b@example.com")
+    create_queued_message(other_client, email="c@example.com")
+
+    response = client.get(reverse("mailing:transactional_queue"))
+    html = response.content.decode()
+
+    scoped_count = TransactionalMessage.objects.filter(
+        client=client_record, status=TransactionalMessageStatus.QUEUED
+    ).count()
+    assert scoped_count == 2
+    assert f"<strong>{scoped_count}</strong> message" in html
+
+
+def test_transactional_queue_queryset_filters_and_orders(client_record, other_client):
+    now = timezone.now()
+    newest = create_queued_message(client_record, email="newest@example.com", created_at=now - timedelta(days=1))
+    oldest = create_queued_message(client_record, email="oldest@example.com", created_at=now - timedelta(days=3))
+    create_queued_message(client_record, email="sent@example.com", status=TransactionalMessageStatus.SENT)
+    create_queued_message(other_client, email="other@example.com")
+
+    results = list(transactional_queue_queryset(client_record))
+
+    assert results == [oldest, newest]
+
+
+def test_dashboard_transactional_backlog_links_and_is_client_scoped(
+    client, operator, client_record, other_client
+):
+    client.force_login(operator)
+    create_queued_message(client_record, email="a@example.com")
+    create_queued_message(client_record, email="b@example.com")
+    create_queued_message(other_client, email="c@example.com")
+    create_queued_message(other_client, email="d@example.com")
+    create_queued_message(other_client, email="e@example.com")
+
+    queue_url = reverse("mailing:transactional_queue")
+
+    select_active_client(client, client_record)
+    response = client.get(reverse("mailing:dashboard"))
+    html = response.content.decode()
+    assert f'<a href="{queue_url}"><strong>2</strong></a>' in html
+
+    select_active_client(client, other_client)
+    response = client.get(reverse("mailing:dashboard"))
+    html = response.content.decode()
+    assert f'<a href="{queue_url}"><strong>3</strong></a>' in html
+
+
+def test_dashboard_backlog_count_stays_global_in_worker_status(client_record, other_client):
+    create_queued_message(client_record, email="a@example.com")
+    create_queued_message(other_client, email="b@example.com")
+    create_queued_message(other_client, email="c@example.com")
+
+    assert _backlog_count("transactional") == 3
+    assert dashboard_context(client_record).transactional_backlog_count == 1
+    assert dashboard_context(other_client).transactional_backlog_count == 2
 
 
 def test_contact_detail_paginates_events(client, operator, campaign, client_record, audience):

@@ -62,6 +62,7 @@ urlpatterns = [
     path("api/workers/status", views.api_worker_status, name="api_worker_status"),
     path("templates/", views.template_catalog, name="template_catalog"),
     path("templates/<int:template_id>/", views.template_detail, name="template_detail"),
+    path("transactional/queue/", views.transactional_queue, name="transactional_queue"),
     path(
         "transactional/messages/<int:message_id>/",
         views.transactional_message_detail,

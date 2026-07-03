@@ -136,7 +136,10 @@
                 <div class="helptext">{{ worker.detail }}</div>
               </td>
               <td>
-                {% if worker.backlog_count is None %}
+                {% if worker.key == "transactional" %}
+                  <a href="{% url 'mailing:transactional_queue' %}"><strong>{{ dashboard.transactional_backlog_count }}</strong></a>
+                  <div class="helptext">{{ worker.backlog_label }}</div>
+                {% elif worker.backlog_count is None %}
                   <span class="muted">{{ worker.backlog_label }}</span>
                   <div class="helptext">Check SQS queue metrics</div>
                 {% else %}

@@ -277,6 +277,7 @@ class DashboardContext:
     worker_statuses: list[WorkerStatus]
     integration_stats: list[Stat]
     integration_clients: list[DashboardClient]
+    transactional_backlog_count: int
 
 
 def rate(numerator: int, denominator: int) -> str:
@@ -327,6 +328,11 @@ def dashboard_context(client: Client | None = None) -> DashboardContext:
     active_api_keys = ClientApiKey.objects.filter(client__in=client_scope, revoked_at__isnull=True).count()
     active_templates = template_scope.filter(is_transactional=True, is_active=True).count()
 
+    transactional_backlog_scope = TransactionalMessage.objects.filter(status=TransactionalMessageStatus.QUEUED)
+    if client is not None:
+        transactional_backlog_scope = transactional_backlog_scope.filter(client=client)
+    transactional_backlog_count = transactional_backlog_scope.count()
+
     recent_campaigns = [
         DashboardCampaign(campaign, campaign_status_badge(campaign.status))
         for campaign in campaign_scope.select_related("client", "audience").order_by("-updated_at", "-id")[:5]
@@ -368,6 +374,7 @@ def dashboard_context(client: Client | None = None) -> DashboardContext:
             Stat("templates", "Active templates", active_templates),
         ],
         integration_clients=integration_clients,
+        transactional_backlog_count=transactional_backlog_count,
     )
 
 

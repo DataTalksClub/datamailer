@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Transactional queue | Datamailer{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Transactional queue</h1>
+      <p>Queued transactional messages awaiting send for {{ active_client.name }}, oldest first.</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{% url 'mailing:dashboard' %}">Dashboard</a>
+      <a class="button secondary" href="{% url 'mailing:template_catalog' %}">Templates</a>
+    </div>
+  </div>
+
+  {% if message_rows %}
+    <section class="section" aria-labelledby="queue-table">
+      <div class="section-header">
+        <div>
+          <h2 id="queue-table">Queued messages</h2>
+          <p class="muted"><strong>{{ queued_total }}</strong> message{{ queued_total|pluralize }} queued for this client.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Recipient</th>
+              <th scope="col">Template</th>
+              <th scope="col">Subject</th>
+              <th scope="col">Queued</th>
+              <th scope="col">Waiting</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in message_rows %}
+              <tr>
+                <td>
+                  <a href="{% url 'mailing:transactional_message_detail' row.message.id %}">{{ row.message.email }}</a>
+                  {% if row.message.contact %}
+                    <div class="helptext"><a href="{% url 'mailing:contact_detail' row.message.contact.normalized_email %}">Contact</a></div>
+                  {% endif %}
+                </td>
+                <td><code>{{ row.message.template_key }}</code></td>
+                <td class="truncate">{{ row.message.subject|default:"-" }}</td>
+                <td class="nowrap">{{ row.message.created_at|date:"Y-m-d H:i" }}</td>
+                <td class="nowrap">{{ row.message.created_at|timesince }}</td>
+                <td><span class="badge {{ row.badge.tone }}">{{ row.badge.label }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% include "mailing/operator/_pagination.html" with page_obj=queue querystring=pagination_querystring %}
+    </section>
+  {% else %}
+    <div class="empty-state">
+      <strong>No queued transactional messages.</strong>
+      <p>Accepted transactional messages waiting to be sent for {{ active_client.name }} will appear here.</p>
+    </div>
+  {% endif %}
+{% endblock %}

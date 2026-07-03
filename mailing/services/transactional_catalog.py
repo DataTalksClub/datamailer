@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from django.db.models import Count, Q
 
-from mailing.models import EmailTemplate, TransactionalMessageStatus
+from mailing.models import EmailTemplate, TransactionalMessage, TransactionalMessageStatus
 from mailing.services.api import ApiValidationError
 from mailing.services.operator_ui import Badge, delivery_tone
 from mailing.services.transactional_rendering import render_template_string
@@ -105,6 +105,14 @@ def template_catalog_rows(templates, *, visible_requirements=3):
             )
         )
     return rows
+
+
+def transactional_queue_queryset(client):
+    return (
+        TransactionalMessage.objects.filter(client=client, status=TransactionalMessageStatus.QUEUED)
+        .select_related("contact", "template")
+        .order_by("created_at", "id")
+    )
 
 
 def recent_message_rows(messages):
