@@ -24,6 +24,7 @@ from mailing.forms import (
     TagForm,
 )
 from mailing.models import (
+    Audience,
     Campaign,
     CampaignStatus,
     Client,
@@ -31,6 +32,8 @@ from mailing.models import (
     CmpCallback,
     EmailEvent,
     EmailEventType,
+    MailchimpSync,
+    MailchimpTagMapping,
     Tag,
     TransactionalMessage,
 )
@@ -61,6 +64,7 @@ from mailing.services.api import (
     upsert_campaign_for_client,
     upsert_contact_for_client,
     upsert_transactional_template_for_client,
+    validate_contact_scope,
 )
 from mailing.services.api_docs import (
     DEMO_API_KEYS,
@@ -83,6 +87,11 @@ from mailing.services.contact_import_export import (
     csv_import_contacts_for_client,
     export_contacts_csv_for_client,
     export_contacts_for_client,
+)
+from mailing.services.mailchimp import (
+    mailchimp_status_payload,
+    reconcile_tag_mappings_for_client,
+    update_mailchimp_config_for_client,
 )
 from mailing.services.mock_inbox import (
     clear_mock_inbox,
@@ -825,6 +834,11 @@ def client_detail(request, client_id):
         .select_related("contact", "email_event")
         .order_by("-created_at", "-id")[:10]
     )
+    mailchimp_syncs = (
+        MailchimpSync.objects.filter(client=client)
+        .select_related("contact")
+        .order_by("-created_at", "-id")[:10]
+    )
     return render(
         request,
         "mailing/operator/client_detail.html",
@@ -836,9 +850,53 @@ def client_detail(request, client_id):
             "key_form": key_form,
             "raw_api_key_context": raw_api_key_context,
             "cmp_callbacks": cmp_callbacks,
+            "mailchimp_status": mailchimp_status_payload(client),
+            "mailchimp_syncs": mailchimp_syncs,
+            "mailchimp_audiences": _mailchimp_tag_mapping_editors(client),
             "audit_rows": latest_audits_for(client),
         },
     )
+
+
+def _mailchimp_tag_mapping_editors(client):
+    """One prefilled `list_key = tag` textarea per audience in the client's org."""
+    mappings_by_audience = {}
+    for mapping in MailchimpTagMapping.objects.filter(client=client).select_related("audience"):
+        mappings_by_audience.setdefault(mapping.audience_id, []).append(mapping)
+    editors = []
+    for audience in Audience.objects.filter(organization=client.organization).order_by("slug"):
+        rows = mappings_by_audience.get(audience.id, [])
+        text = "\n".join(
+            f"{row.list_key} = {row.tag}" + ("" if row.enabled else "  (disabled)")
+            for row in sorted(rows, key=lambda row: (row.list_key, row.tag))
+        )
+        editors.append({"audience": audience, "mappings_text": text, "count": len(rows)})
+    return editors
+
+
+@staff_member_required
+@require_POST
+def client_mailchimp_tag_mappings(request, client_id):
+    client = get_object_or_404(Client.objects.select_related("organization"), pk=client_id)
+    audience = get_object_or_404(
+        Audience, pk=request.POST.get("audience_id"), organization=client.organization
+    )
+    mappings = []
+    for raw_line in (request.POST.get("mappings") or "").splitlines():
+        enabled = "(disabled)" not in raw_line
+        line = raw_line.split("(disabled)", 1)[0].strip()
+        if not line or "=" not in line:
+            continue
+        list_key, tag = line.split("=", 1)
+        list_key, tag = list_key.strip(), tag.strip()
+        if list_key and tag:
+            mappings.append({"list_key": list_key, "tag": tag, "enabled": enabled})
+    try:
+        reconcile_tag_mappings_for_client(audience, {"mappings": mappings}, client)
+        messages.success(request, f"Mailchimp tag mappings saved for {audience.slug}.")
+    except ApiValidationError as exc:
+        messages.error(request, f"Could not save tag mappings: {exc.errors}")
+    return redirect("mailing:client_detail", client_id=client.id)
 
 
 @staff_member_required
@@ -1669,6 +1727,44 @@ def api_client_senders(request):
             payload = get_client_sender_policy_for_client(client)
         else:
             payload = update_client_sender_policy_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_client_mailchimp(request):
+    # Set-only: a client can write its Mailchimp key/audience/enabled state but
+    # the stored key is never returned.
+    if request.method != "PUT":
+        return method_not_allowed_response(["PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = update_mailchimp_config_for_client(json_request_body(request), client)
+    except ApiValidationError as exc:
+        return validation_error_response(exc)
+
+    return JsonResponse(payload, status=200)
+
+
+@csrf_exempt
+def api_client_mailchimp_tag_mappings(request):
+    if request.method != "PUT":
+        return method_not_allowed_response(["PUT"])
+
+    client, error_response = authenticate_api_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        data = json_request_body(request)
+        scope = validate_contact_scope(data, client, require_email=False, require_client=False)
+        payload = reconcile_tag_mappings_for_client(scope.audience, data, client)
     except ApiValidationError as exc:
         return validation_error_response(exc)
 

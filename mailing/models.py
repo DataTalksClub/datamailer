@@ -51,6 +51,9 @@ class Client(TimeStampedModel):
     sender_emails = models.JSONField(default=list, blank=True)
     cmp_webhook_url = models.URLField(max_length=2048, blank=True)
     cmp_webhook_token = models.CharField(max_length=255, blank=True)
+    mailchimp_api_key = models.CharField(max_length=255, blank=True)
+    mailchimp_list_id = models.CharField(max_length=64, blank=True)
+    mailchimp_enabled = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -839,3 +842,85 @@ class OperatorAudit(models.Model):
     def __str__(self):
         actor = self.actor.username if self.actor_id else "unknown"
         return f"{self.action} {self.target_type}:{self.target_id} by {actor}"
+
+
+class MailchimpTagMapping(TimeStampedModel):
+    """Maps a recipient-list path node to a Mailchimp tag for a client audience.
+
+    When a contact becomes an active member of ``list_key`` (a recipient-list
+    tree node such as ``ai-dev-tools-zoomcamp-2026:@registered`` or the audience
+    root ``<all>``), Datamailer pushes the contact to the client's Mailchimp
+    audience and applies ``tag``.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="mailchimp_tag_mappings")
+    audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name="mailchimp_tag_mappings")
+    list_key = models.CharField(max_length=255)
+    tag = models.CharField(max_length=200)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "mailchimp_tag_mappings"
+        ordering = ["client__slug", "audience__slug", "list_key", "tag"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "audience", "list_key", "tag"],
+                name="unique_mailchimp_tag_mapping",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["client", "audience", "list_key"], name="mc_tag_map_scope_key_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.client.slug}/{self.audience.slug}/{self.list_key} -> {self.tag}"
+
+
+class MailchimpSyncStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    DELIVERED = "delivered", "Delivered"
+    FAILED = "failed", "Failed"
+
+
+class MailchimpSync(TimeStampedModel):
+    """Outbox row for a one-way Datamailer -> Mailchimp tag sync.
+
+    Mirrors :class:`CmpCallback`: enqueued after commit, dispatched with
+    exponential backoff by ``process_mailchimp_syncs``.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="mailchimp_syncs")
+    audience = models.ForeignKey(
+        Audience, on_delete=models.PROTECT, null=True, blank=True, related_name="mailchimp_syncs"
+    )
+    contact = models.ForeignKey(
+        Contact, on_delete=models.PROTECT, null=True, blank=True, related_name="mailchimp_syncs"
+    )
+    email = models.EmailField(max_length=320)
+    list_key = models.CharField(max_length=255)
+    tag = models.CharField(max_length=200)
+    mailchimp_list_id = models.CharField(max_length=64)
+    dedup_key = models.CharField(max_length=255, unique=True)
+    status = models.CharField(
+        max_length=20,
+        choices=MailchimpSyncStatus.choices,
+        default=MailchimpSyncStatus.PENDING,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=8)
+    next_attempt_at = models.DateTimeField(db_index=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    response_status = models.PositiveIntegerField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "mailchimp_syncs"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["status", "next_attempt_at"], name="mc_sync_status_next_idx"),
+            models.Index(fields=["client", "status", "created_at"], name="mc_sync_client_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.email} {self.list_key} -> {self.tag} ({self.status})"

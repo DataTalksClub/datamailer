@@ -97,6 +97,45 @@
       </div>
     </section>
 
+    <section class="form-section" aria-labelledby="client-mailchimp-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="client-mailchimp-heading">Mailchimp sync</h2>
+          <p>
+            Push contacts to a Mailchimp audience with a tag when they join a mapped recipient-list node.
+            Tag mappings per audience subtree are configured on the client detail page.
+          </p>
+        </div>
+        {% if form.mailchimp_enabled.value %}
+          <span class="badge success">Enabled</span>
+        {% else %}
+          <span class="badge">Off</span>
+        {% endif %}
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          {{ form.mailchimp_api_key.label_tag }}
+          {{ form.mailchimp_api_key }}
+          {% if form.mailchimp_api_key.help_text %}<div class="helptext">{{ form.mailchimp_api_key.help_text }}</div>{% endif %}
+          {% if form.mailchimp_api_key.errors %}<div class="field-errors">{{ form.mailchimp_api_key.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          {{ form.mailchimp_list_id.label_tag }}
+          {{ form.mailchimp_list_id }}
+          {% if form.mailchimp_list_id.help_text %}<div class="helptext">{{ form.mailchimp_list_id.help_text }}</div>{% endif %}
+          {% if form.mailchimp_list_id.errors %}<div class="field-errors">{{ form.mailchimp_list_id.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field checkbox-field full">
+          <label>
+            {{ form.mailchimp_enabled }}
+            {{ form.mailchimp_enabled.label }}
+          </label>
+          {% if form.mailchimp_enabled.help_text %}<div class="helptext">{{ form.mailchimp_enabled.help_text }}</div>{% endif %}
+          {% if form.mailchimp_enabled.errors %}<div class="field-errors">{{ form.mailchimp_enabled.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
     <section class="form-section" aria-labelledby="client-access-heading">
       <div class="section-header">
         <div>

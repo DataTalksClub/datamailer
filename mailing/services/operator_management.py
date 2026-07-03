@@ -97,6 +97,9 @@ def create_or_update_client(
     cmp_webhook_url,
     cmp_webhook_token,
     is_active,
+    mailchimp_api_key="",
+    mailchimp_list_id="",
+    mailchimp_enabled=False,
 ):
     if client is None:
         client = Client.objects.create(
@@ -107,6 +110,9 @@ def create_or_update_client(
             sender_emails=sender_emails,
             cmp_webhook_url=cmp_webhook_url,
             cmp_webhook_token=cmp_webhook_token,
+            mailchimp_api_key=mailchimp_api_key,
+            mailchimp_list_id=mailchimp_list_id,
+            mailchimp_enabled=mailchimp_enabled,
             is_active=is_active,
         )
         audit(
@@ -120,10 +126,21 @@ def create_or_update_client(
                 "sender_emails": sender_emails,
                 "cmp_webhook_url": cmp_webhook_url,
                 "cmp_webhook_token_configured": bool(cmp_webhook_token),
+                "mailchimp_api_key_configured": bool(mailchimp_api_key),
+                "mailchimp_list_id": mailchimp_list_id,
+                "mailchimp_enabled": mailchimp_enabled,
                 "is_active": is_active,
             },
         )
         return client
+    # An empty API key on edit means "keep the current key" (the operator form
+    # never renders the stored secret back).
+    # Baseline against the stored row: when this is called from the operator
+    # form, ``form.is_valid()`` has already mutated ``client`` in place, so
+    # comparing against ``client`` would detect no changes.
+    stored = Client.objects.get(pk=client.pk)
+    if not mailchimp_api_key:
+        mailchimp_api_key = stored.mailchimp_api_key
     changed = {}
     changed_fields = set()
     for field, value in {
@@ -133,12 +150,15 @@ def create_or_update_client(
         "sender_emails": sender_emails,
         "cmp_webhook_url": cmp_webhook_url,
         "cmp_webhook_token": cmp_webhook_token,
+        "mailchimp_api_key": mailchimp_api_key,
+        "mailchimp_list_id": mailchimp_list_id,
+        "mailchimp_enabled": mailchimp_enabled,
         "is_active": is_active,
     }.items():
-        old = getattr(client, field)
+        old = getattr(stored, field)
         if old != value:
-            if field == "cmp_webhook_token":
-                changed["cmp_webhook_token_configured"] = [
+            if field in {"cmp_webhook_token", "mailchimp_api_key"}:
+                changed[f"{field}_configured"] = [
                     bool(old),
                     bool(value),
                 ]

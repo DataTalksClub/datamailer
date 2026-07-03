@@ -11,6 +11,8 @@ from mailing.models import (
     ContactTag,
     EmailEvent,
     EmailTemplate,
+    MailchimpSync,
+    MailchimpTagMapping,
     Organization,
     Subscription,
     Tag,
@@ -296,3 +298,38 @@ class CmpCallbackAdmin(admin.ModelAdmin):
         "last_error",
     )
     autocomplete_fields = ("email_event", "contact", "client", "audience")
+
+
+@admin.register(MailchimpTagMapping)
+class MailchimpTagMappingAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at", "updated_at")
+    list_display = ("client", "audience", "list_key", "tag", "enabled", "updated_at")
+    list_filter = ("enabled", "client", "audience")
+    search_fields = ("list_key", "tag", "client__slug", "audience__slug")
+
+
+@admin.register(MailchimpSync)
+class MailchimpSyncAdmin(admin.ModelAdmin):
+    readonly_fields = ("created_at", "updated_at", "last_attempt_at", "delivered_at")
+    list_display = (
+        "email",
+        "list_key",
+        "tag",
+        "status",
+        "client",
+        "attempt_count",
+        "next_attempt_at",
+        "delivered_at",
+        "created_at",
+    )
+    list_filter = ("status", "client")
+    search_fields = (
+        "email",
+        "list_key",
+        "tag",
+        "dedup_key",
+        "client__name",
+        "client__slug",
+        "last_error",
+    )
+    autocomplete_fields = ("contact", "client", "audience")

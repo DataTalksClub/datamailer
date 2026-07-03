@@ -206,10 +206,14 @@ class ClientForm(forms.ModelForm):
             "sender_emails",
             "cmp_webhook_url",
             "cmp_webhook_token",
+            "mailchimp_api_key",
+            "mailchimp_list_id",
+            "mailchimp_enabled",
             "is_active",
         ]
         widgets = {
             "cmp_webhook_token": forms.PasswordInput(render_value=True),
+            "mailchimp_api_key": forms.PasswordInput(render_value=False),
         }
 
     def __init__(self, *args, **kwargs):
@@ -243,6 +247,21 @@ class ClientForm(forms.ModelForm):
         self.fields["cmp_webhook_token"].required = False
         self.fields["cmp_webhook_token"].help_text = (
             "Bearer token Datamailer sends to the CMP webhook. Leave empty to use global settings, if configured."
+        )
+        self.fields["mailchimp_api_key"].label = "Mailchimp API key"
+        self.fields["mailchimp_api_key"].required = False
+        self.fields["mailchimp_api_key"].help_text = (
+            "Mailchimp API key including the datacenter suffix (e.g. abc123...-us21). "
+            "Stored write-only. Leave blank when editing to keep the current key."
+        )
+        self.fields["mailchimp_list_id"].label = "Mailchimp audience ID"
+        self.fields["mailchimp_list_id"].required = False
+        self.fields["mailchimp_list_id"].help_text = (
+            "The Mailchimp audience (list) ID that tagged contacts are synced into."
+        )
+        self.fields["mailchimp_enabled"].label = "Enable Mailchimp sync"
+        self.fields["mailchimp_enabled"].help_text = (
+            "When on, contacts added to mapped recipient-list nodes are pushed to Mailchimp with the mapped tag."
         )
         if self.instance and self.instance.pk:
             self.fields["sender_emails"].initial = "\n".join(

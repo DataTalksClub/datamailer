@@ -590,3 +590,91 @@ python manage.py process_cmp_callbacks --batch-size 25
 Sandbox deploys install this dispatcher as `datamailer-cmp-callbacks-worker`.
 Operators can inspect recent callback status, attempt counts, next retry time,
 delivery time, and the last error from the client detail page and Django admin.
+
+## Mailchimp Sync
+
+Datamailer can push contacts into a client's Mailchimp audience with a tag when
+they join a recipient-list tree node. This is a one-way sync (Datamailer →
+Mailchimp); Datamailer never reads Mailchimp state back.
+
+Each client configures its own Mailchimp credentials, so different clients sync
+into different Mailchimp accounts. Configuration is **write-only**: the key can
+be set but is never returned.
+
+### Configure credentials (set-only)
+
+```text
+PUT /api/client/mailchimp
+```
+
+```json
+{
+  "api_key": "abc123def456xxxxxxxxxxxxxxxxxxxx-us21",
+  "list_id": "1a2b3c4d5e",
+  "enabled": true
+}
+```
+
+- `api_key` — Mailchimp API key **including** the `-<datacenter>` suffix (e.g.
+  `-us21`). The datacenter is derived from the key; there is no separate field.
+- `list_id` — the Mailchimp audience (list) ID to sync tagged contacts into.
+- `enabled` — turn sync on/off without resending the key.
+
+Only the fields present in the body are updated. The response is a non-secret
+status; the stored key is never echoed back:
+
+```json
+{
+  "client": "dtc-courses",
+  "enabled": true,
+  "configured": true,
+  "list_id": "1a2b3c4d5e",
+  "datacenter": "us21",
+  "api_key_set": true
+}
+```
+
+There is no `GET` for this endpoint. Operators can also set the key, audience ID,
+and enabled flag on the client edit form in the product UI.
+
+### Map audience subtrees to tags (set-only)
+
+Each recipient-list tree node can carry a Mailchimp tag. When a contact becomes
+an active member of that node — including every ancestor node the cascade
+creates, up to the audience root `<all>` — the mapped tag is applied in
+Mailchimp. So registering for `ai-dev-tools-zoomcamp-2026:@registered` applies
+that node's tag, and a mapping on `<all>` applies an audience-wide tag to anyone
+added to any list.
+
+```text
+PUT /api/client/mailchimp/tag-mappings
+```
+
+```json
+{
+  "audience": "dtc-courses",
+  "mappings": [
+    {"list_key": "ai-dev-tools-zoomcamp-2026:@registered", "tag": "ai-dev-tools-zoomcamp-2026"},
+    {"list_key": "<all>", "tag": "dtc-courses-audience", "enabled": true}
+  ]
+}
+```
+
+The request is a full reconcile for that audience: mappings not present in the
+payload are removed. The response returns the resulting mapping set. The same
+mappings can be edited per audience from the client detail page.
+
+### Delivery
+
+Syncs are queued in the `mailchimp_syncs` outbox after the triggering
+transaction commits, then dispatched with exponential backoff (Mailchimp
+`PUT /lists/{id}/members/{hash}` upsert followed by
+`POST .../members/{hash}/tags`). `4xx` responses other than `429` are treated as
+permanent failures; `429`, `5xx`, and transport errors retry.
+
+```bash
+python manage.py process_mailchimp_syncs --batch-size 25
+```
+
+Operators can inspect recent sync status, attempt counts, next retry time, and
+the last error from the client detail page and Django admin.

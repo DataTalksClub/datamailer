@@ -141,6 +141,97 @@
       </div>
     {% endif %}
   </section>
+  <section class="detail-section" aria-labelledby="mailchimp">
+    <div class="section-header">
+      <div>
+        <h2 id="mailchimp">Mailchimp sync</h2>
+        <p class="muted">One-way push of tagged contacts into this client's Mailchimp audience.</p>
+      </div>
+      {% if mailchimp_status.enabled and mailchimp_status.configured %}
+        <span class="badge success">Active</span>
+      {% elif mailchimp_status.enabled %}
+        <span class="badge warning">Enabled, not configured</span>
+      {% else %}
+        <span class="badge neutral">Off</span>
+      {% endif %}
+    </div>
+    <div class="meta-grid">
+      <div class="meta-item"><span class="meta-label">API key</span>{% if mailchimp_status.api_key_set %}Set (datacenter {{ mailchimp_status.datacenter|default:"?" }}){% else %}Not set{% endif %}</div>
+      <div class="meta-item"><span class="meta-label">Audience ID</span>{{ mailchimp_status.list_id|default:"-" }}</div>
+      <div class="meta-item"><span class="meta-label">Sync enabled</span>{{ mailchimp_status.enabled|yesno:"Yes,No" }}</div>
+    </div>
+    <p class="muted">Edit the key, audience ID, and enabled flag on the <a href="{% url 'mailing:client_edit' client.id %}">client edit form</a>.</p>
+
+    <div class="secondary-section">
+      <div class="section-header">
+        <div>
+          <h3>Tag mappings by audience subtree</h3>
+          <p class="muted">
+            One mapping per line as <code>list_key = tag</code>. When a contact joins that recipient-list node
+            (e.g. <code>ai-dev-tools-zoomcamp-2026:@registered</code> or the audience root <code>&lt;all&gt;</code>),
+            Datamailer applies the tag in Mailchimp. Saving replaces all mappings for that audience.
+          </p>
+        </div>
+      </div>
+      {% for editor in mailchimp_audiences %}
+        <form method="post" action="{% url 'mailing:client_mailchimp_tag_mappings' client.id %}" class="stacked-form">
+          {% csrf_token %}
+          <input type="hidden" name="audience_id" value="{{ editor.audience.id }}">
+          <label>{{ editor.audience.name }} <span class="muted">({{ editor.audience.slug }}) — {{ editor.count }} mapping{{ editor.count|pluralize }}</span></label>
+          <textarea name="mappings" rows="4" placeholder="ai-dev-tools-zoomcamp-2026:@registered = ai-dev-tools-zoomcamp-2026">{{ editor.mappings_text }}</textarea>
+          <div class="action-row">
+            <button type="submit">Save mappings for {{ editor.audience.slug }}</button>
+          </div>
+        </form>
+      {% empty %}
+        <div class="empty-state"><strong>No audiences in this organization yet.</strong></div>
+      {% endfor %}
+    </div>
+
+    <div class="secondary-section">
+      <div class="section-header">
+        <div>
+          <h3>Recent syncs</h3>
+          <p class="muted">Latest Mailchimp tag sync attempts for this client.</p>
+        </div>
+      </div>
+      {% if mailchimp_syncs %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Contact</th>
+                <th scope="col">Node</th>
+                <th scope="col">Tag</th>
+                <th scope="col">Status</th>
+                <th scope="col">Attempts</th>
+                <th scope="col">Next retry</th>
+                <th scope="col">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sync in mailchimp_syncs %}
+                <tr>
+                  <td>{{ sync.email }}</td>
+                  <td><code>{{ sync.list_key }}</code></td>
+                  <td><code>{{ sync.tag }}</code></td>
+                  <td><span class="badge neutral">{{ sync.get_status_display }}</span></td>
+                  <td>{{ sync.attempt_count }}/{{ sync.max_attempts }}</td>
+                  <td>{{ sync.next_attempt_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                  <td class="truncate">{{ sync.last_error|default:"-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <strong>No Mailchimp syncs yet.</strong>
+          <div class="muted">Tag syncs appear here once mapped contacts are added.</div>
+        </div>
+      {% endif %}
+    </div>
+  </section>
   <section class="detail-section" aria-labelledby="api-keys">
     <div class="section-header">
       <div>

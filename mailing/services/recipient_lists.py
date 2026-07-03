@@ -19,6 +19,7 @@ from mailing.models import (
 )
 from mailing.services.api import ApiValidationError, isoformat, validate_contact_scope
 from mailing.services.contacts import normalize_email, upsert_contact
+from mailing.services.mailchimp import emit_mailchimp_syncs_for_node
 
 ROOT_LIST_KEY = "<all>"
 CASCADE_SOURCE_PREFIX = "cascade-contact:"
@@ -333,6 +334,25 @@ def upsert_cascade_memberships(recipient_list, member):
         refresh_recipient_list_counts(ancestor)
 
 
+def sync_member_to_mailchimp(recipient_list, member):
+    """Queue Mailchimp tag syncs for an active member's node and its ancestors.
+
+    ``upsert_cascade_memberships`` has already made the contact an active member
+    of every ancestor node, so each node whose key has a tag mapping produces a
+    sync. No-op when the member is inactive or Mailchimp is not configured.
+    """
+    if not member.active:
+        return
+    for node_key in [recipient_list.key, *ancestor_list_keys(recipient_list.key)]:
+        emit_mailchimp_syncs_for_node(
+            recipient_list.client,
+            recipient_list.audience,
+            member.contact,
+            member.email,
+            node_key,
+        )
+
+
 @transaction.atomic
 def upsert_recipient_list_for_client(list_key, data, authenticated_client):
     list_key = validate_path_key(list_key, "list_key")
@@ -470,6 +490,7 @@ def upsert_recipient_list_member_for_client(list_key, source_object_key, data, a
     member, created = upsert_member(recipient_list, source_object_key, member_data)
     refresh_recipient_list_counts(recipient_list)
     upsert_cascade_memberships(recipient_list, member)
+    sync_member_to_mailchimp(recipient_list, member)
     return {
         "recipient_list": recipient_list_payload(recipient_list),
         "member": recipient_list_member_payload(member),
@@ -546,6 +567,7 @@ def bulk_upsert_recipient_list_members_for_client(list_key, data, authenticated_
         source_object_key = validate_path_key(raw_member.get("source_object_key"), f"members.{index}.source_object_key")
         member, created = upsert_member(recipient_list, source_object_key, validate_member_payload(raw_member))
         upsert_cascade_memberships(recipient_list, member)
+        sync_member_to_mailchimp(recipient_list, member)
         if created:
             created_count += 1
         else:
@@ -615,6 +637,7 @@ def reconcile_recipient_list_for_client(list_key, data, authenticated_client):
     for source_object_key, member_data in parsed_members:
         member, _ = upsert_member(recipient_list, source_object_key, member_data)
         upsert_cascade_memberships(recipient_list, member)
+        sync_member_to_mailchimp(recipient_list, member)
 
     removed_count = 0
     if remove_absent:

@@ -25,6 +25,11 @@ urlpatterns = [
     path("clients/<int:client_id>/", views.client_detail, name="client_detail"),
     path("clients/<int:client_id>/edit/", views.client_edit, name="client_edit"),
     path(
+        "clients/<int:client_id>/mailchimp/tag-mappings/",
+        views.client_mailchimp_tag_mappings,
+        name="client_mailchimp_tag_mappings",
+    ),
+    path(
         "clients/<int:client_id>/api-keys/create/",
         views.client_api_key_create,
         name="client_api_key_create",
@@ -84,6 +89,12 @@ urlpatterns = [
     path("api/contacts/<int:contact_id>/suppression", views.api_contact_suppression, name="api_contact_suppression"),
     path("api/contacts/<int:contact_id>/history", views.api_contact_history, name="api_contact_history"),
     path("api/client/senders", views.api_client_senders, name="api_client_senders"),
+    path("api/client/mailchimp", views.api_client_mailchimp, name="api_client_mailchimp"),
+    path(
+        "api/client/mailchimp/tag-mappings",
+        views.api_client_mailchimp_tag_mappings,
+        name="api_client_mailchimp_tag_mappings",
+    ),
     path("api/campaigns/<str:external_key>", views.api_campaign, name="api_campaign"),
     path("api/campaigns/<str:external_key>/queue", views.api_campaign_queue, name="api_campaign_queue"),
     path("api/campaigns/<str:external_key>/cancel", views.api_campaign_cancel, name="api_campaign_cancel"),

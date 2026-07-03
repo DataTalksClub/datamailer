@@ -13,6 +13,7 @@ Datamailer includes:
 - Campaign sends with one recipient row per intended contact
 - Open tracking, click tracking, unsubscribe, bounce, and complaint handling
 - Transactional email API for registration, password reset, email verification, and similar client-app flows
+- Optional per-client one-way Mailchimp sync that tags contacts in a client's Mailchimp audience when they join a mapped recipient-list node
 - API for client apps to check whether an email is verified/subscribed
 - Postgres source of truth, SQS queues, Lambda workers, and SES delivery
 
