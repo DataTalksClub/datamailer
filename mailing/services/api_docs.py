@@ -74,7 +74,6 @@ API_DOC_PATHS = {
     ),
     "mailing:api_transactional_template": "/api/transactional/templates/{template_key}",
     "mailing:api_transactional_send": "/api/transactional/send",
-    "mailing:api_transactional_test_send": "/api/transactional/test-send",
     "mailing:api_transactional_message_status": "/api/transactional/messages/{message_id}",
     "mailing:tracking_open": "/t/o/{tracking_token}.gif",
     "mailing:tracking_click": "/t/c/{tracking_token}",
@@ -763,12 +762,7 @@ def endpoint_groups():
                 ("POST", "/api/contacts/imports/csv", "CSV upload/import."),
                 ("PUT", "/api/transactional/templates/{template_key}", "Create or update a transactional template."),
                 ("GET", "/api/transactional/templates/{template_key}", "Get one transactional template."),
-                ("POST", "/api/transactional/send", "Queue one transactional email."),
-                (
-                    "POST",
-                    "/api/transactional/test-send",
-                    "Render a transactional email for e2e tests without sending.",
-                ),
+                ("POST", "/api/transactional/send", "Queue one transactional email (dry_run renders without sending)."),
                 ("GET", "/api/transactional/messages/{message_id}", "Get transactional message status."),
             ],
         },
@@ -923,7 +917,6 @@ def route_path_map():
             args=["homework-submission-confirmation"],
         ),
         API_DOC_PATHS["mailing:api_transactional_send"]: reverse("mailing:api_transactional_send"),
-        API_DOC_PATHS["mailing:api_transactional_test_send"]: reverse("mailing:api_transactional_test_send"),
         API_DOC_PATHS["mailing:api_transactional_message_status"]: reverse(
             "mailing:api_transactional_message_status",
             args=[123],
@@ -1495,7 +1488,7 @@ OPENAPI_SPEC = {
             "post": {
                 "tags": ["Transactional"],
                 "summary": "Send transactional email",
-                "description": "Queues one transactional email for an active client-scoped template. Required context is validated from template catalog metadata before any contact, message, event, or queue mutation.",
+                "description": "Queues one transactional email for an active client-scoped template. Required context is validated from template catalog metadata before any contact, message, event, or queue mutation. Pass \"dry_run\": true to run the identical validate/render pipeline but return the rendered email inline (superset of the normal response, with message.id null) without sending, queuing, or persisting anything -- used by end-to-end tests to mimic the production send path.",
                 "security": [{"BearerAuth": []}],
                 "requestBody": json_body("#/components/schemas/TransactionalSendRequest"),
                 "responses": bearer_responses(
@@ -1503,21 +1496,6 @@ OPENAPI_SPEC = {
                     accepted=True,
                 )
                 | {"409": json_response("Contact suppressed", "#/components/schemas/TransactionalSendResponse")},
-            }
-        },
-        "/api/transactional/test-send": {
-            "post": {
-                "tags": ["Transactional"],
-                "summary": "Test-send transactional email",
-                "description": "Fake drop-in for POST /api/transactional/send used by end-to-end tests. Accepts the same request body and validation, renders the email, and returns it inline without sending, queuing, or persisting anything.",
-                "security": [{"BearerAuth": []}],
-                "requestBody": json_body("#/components/schemas/TransactionalSendRequest"),
-                "responses": bearer_responses(
-                    json_response(
-                        "Rendered transactional email",
-                        "#/components/schemas/TransactionalTestSendResponse",
-                    )
-                ),
             }
         },
         "/api/transactional/templates/{template_key}": {
@@ -2483,6 +2461,11 @@ OPENAPI_SPEC = {
                     "category_tag": {"type": "string"},
                     "context": {"type": "object"},
                     "metadata": {"type": "object"},
+                    "dry_run": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "When true, run the full validate/render pipeline but return the rendered email inline without sending, queuing, or persisting anything. Used by end-to-end tests to mimic the production send path.",
+                    },
                 },
             },
             "TransactionalSendResponse": {
@@ -2491,31 +2474,6 @@ OPENAPI_SPEC = {
                     "message": {"type": "object"},
                     "idempotent_replay": {"type": "boolean"},
                     "enqueued": {"type": "boolean"},
-                },
-            },
-            "TransactionalTestSendResponse": {
-                "type": "object",
-                "description": "Superset of TransactionalSendResponse returned by the fake test-send endpoint. Nothing is sent, queued, or persisted.",
-                "properties": {
-                    "message": {"type": "object"},
-                    "idempotent_replay": {"type": "boolean"},
-                    "enqueued": {"type": "boolean"},
-                    "rendered": {
-                        "type": "object",
-                        "properties": {
-                            "subject": {"type": "string"},
-                            "html_body": {"type": "string"},
-                            "text_body": {"type": "string"},
-                        },
-                    },
-                    "would_deliver": {"type": "boolean"},
-                    "delivery_decision": {
-                        "type": "object",
-                        "properties": {
-                            "allowed": {"type": "boolean"},
-                            "reason": {"type": "string"},
-                        },
-                    },
                 },
             },
             "StructuredMessagePart": {

@@ -66,7 +66,7 @@ class RenderedTransactional:
 def resolve_transactional_send(data, authenticated_client):
     """Validate a transactional-send request and load its template.
 
-    Shared verbatim by the real send and the fake test-send endpoints.
+    Shared verbatim by a real send and a ``dry_run`` send.
     """
     payload = validate_transactional_send_payload(data, authenticated_client)
     template = get_transactional_template(authenticated_client, payload["template_key"])
@@ -76,10 +76,11 @@ def resolve_transactional_send(data, authenticated_client):
 def render_transactional_send(payload, template, authenticated_client):
     """Resolve the sender, upsert the contact, and render the message.
 
-    Shared verbatim by the real send and the fake test-send endpoints. Returns an
-    UNSAVED, fully rendered message plus the delivery decision. The only work that
-    is special to a real send -- persisting the row, recording lifecycle events,
-    and enqueuing provider work -- lives in :func:`send_transactional_email_for_client`.
+    Shared verbatim by a real send and a ``dry_run`` send. Returns an UNSAVED,
+    fully rendered message plus the delivery decision. The only work special to a
+    real send -- persisting the row, recording lifecycle events, and enqueuing
+    provider work -- lives in :func:`send_transactional_email_for_client` and is
+    skipped for a dry run.
     """
     sender = resolve_sender_email(
         authenticated_client,
@@ -108,6 +109,9 @@ def render_transactional_send(payload, template, authenticated_client):
 
 def send_transactional_email_for_client(data, authenticated_client):
     payload, template = resolve_transactional_send(data, authenticated_client)
+
+    if payload["dry_run"]:
+        return dry_run_response(render_transactional_send(payload, template, authenticated_client))
 
     existing = find_existing_message(authenticated_client, payload["idempotency_key"])
     if existing is not None:
@@ -140,23 +144,20 @@ def send_transactional_email_for_client(data, authenticated_client):
     )
 
 
-def preview_transactional_email_for_client(data, authenticated_client):
-    """Fake drop-in for :func:`send_transactional_email_for_client` for e2e tests.
+def dry_run_response(rendered):
+    """Build the response for a ``dry_run`` transactional send (e2e mimic of prod).
 
-    Runs the identical validate -> resolve -> render pipeline, then returns the
-    rendered email inline in one response instead of persisting a message row,
-    recording lifecycle events, or enqueuing provider work. Nothing is sent.
+    A dry run exercises the exact prod send path -- same endpoint, same validate ->
+    resolve -> render pipeline -- but stops before persisting a message row,
+    recording lifecycle events, or enqueuing provider work, so nothing is sent.
 
     The response is a strict superset of the real send response: the same
     ``message``/``idempotent_replay``/``enqueued`` shape (with ``id``/``created_at``
     null because nothing is persisted) plus a ``rendered`` block and the delivery
-    decision, so e2e tests can assert the rendered output -- and whether the real
+    decision, so a caller can assert the rendered output -- and whether the real
     send would have delivered -- without a second request.
     """
-    payload, template = resolve_transactional_send(data, authenticated_client)
-    rendered = render_transactional_send(payload, template, authenticated_client)
     message = rendered.message
-
     return response_payload(TransactionalSendResult(message, idempotent_replay=False, enqueued=False)) | {
         "rendered": {
             "subject": message.subject,
@@ -503,6 +504,12 @@ def validate_transactional_send_payload(data, authenticated_client):
     headers = validate_headers(data.get("headers"), errors)
     message_parts = validate_message_parts(data.get("message_parts"), errors)
 
+    dry_run = data.get("dry_run", False)
+    if dry_run in (None, ""):
+        dry_run = False
+    elif not isinstance(dry_run, bool):
+        errors["dry_run"] = "must_be_boolean"
+
     if errors:
         raise ApiValidationError(errors)
 
@@ -525,6 +532,7 @@ def validate_transactional_send_payload(data, authenticated_client):
         "bcc": bcc,
         "headers": headers,
         "message_parts": message_parts,
+        "dry_run": dry_run,
     }
 
 
@@ -888,7 +896,7 @@ def transactional_delivery_decision(contact, payload):
 def build_transactional_message(*, client, contact, template, payload, sender, idempotency_key, status, last_error=""):
     """Build a fully rendered TransactionalMessage WITHOUT saving it.
 
-    Shared verbatim by the real send and the fake test-send: both render the same
+    Shared verbatim by a real send and a dry-run send: both render the same
     subject/html/text from the same context. Only the real send persists the
     result (see :func:`create_transactional_message`).
     """

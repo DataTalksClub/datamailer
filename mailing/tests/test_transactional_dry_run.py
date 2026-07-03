@@ -52,20 +52,21 @@ def auth_headers(raw_key=API_KEY):
     return {"HTTP_AUTHORIZATION": f"Bearer {raw_key}"}
 
 
-def post_test_send(django_client, payload, raw_key=API_KEY):
+def post_send(django_client, payload, raw_key=API_KEY):
     return django_client.post(
-        reverse("mailing:api_transactional_test_send"),
+        reverse("mailing:api_transactional_send"),
         data=payload,
         content_type="application/json",
         **auth_headers(raw_key),
     )
 
 
-def test_test_send_renders_inline_without_sending_or_persisting(client, template, monkeypatch):
+def test_dry_run_renders_inline_without_sending_or_persisting(client, template, monkeypatch):
+    # A dry run hits the SAME endpoint as production with one extra flag.
     enqueued = []
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
 
-    response = post_test_send(
+    response = post_send(
         client,
         {
             "email": " Person@Example.COM ",
@@ -78,10 +79,12 @@ def test_test_send_renders_inline_without_sending_or_persisting(client, template
             "reply_to": "support@example.com",
             "cc": ["mentor@example.com"],
             "bcc": "audit@example.com",
+            "dry_run": True,
         },
     )
 
-    assert response.status_code == 200
+    # Same 202 envelope as a real accepted send.
+    assert response.status_code == 202
     body = response.json()
 
     # Rendered email is returned inline.
@@ -110,7 +113,31 @@ def test_test_send_renders_inline_without_sending_or_persisting(client, template
     assert EmailEvent.objects.count() == 0
 
 
-def test_test_send_reports_suppression_but_still_renders(client, template, monkeypatch):
+def test_real_send_still_persists_and_enqueues(client, template, monkeypatch):
+    # The dry_run branch must not affect a normal send.
+    enqueued = []
+    monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
+
+    response = post_send(
+        client,
+        {
+            "email": "person@example.com",
+            "template_key": template.key,
+            "idempotency_key": "verify-real-1",
+            "context": {"product": "Datamailer", "verification_url": "https://example.com/v"},
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert "rendered" not in body
+    assert body["enqueued"] is True
+    message = TransactionalMessage.objects.get()
+    assert body["message"]["id"] == message.id
+    assert len(enqueued) == 1
+
+
+def test_dry_run_reports_suppression_but_still_renders(client, template, monkeypatch):
     enqueued = []
     monkeypatch.setattr("mailing.services.transactional.enqueue_transactional_email", enqueued.append)
     Contact.objects.create(
@@ -119,18 +146,19 @@ def test_test_send_reports_suppression_but_still_renders(client, template, monke
         hard_bounced_at=timezone.now(),
     )
 
-    response = post_test_send(
+    response = post_send(
         client,
         {
             "email": "bounced@example.com",
             "template_key": template.key,
             "context": {"product": "Datamailer", "verification_url": "https://example.com/v"},
+            "dry_run": True,
         },
     )
 
-    assert response.status_code == 200
+    # A real send would be rejected 409, but the dry run still renders and reports it.
+    assert response.status_code == 202
     body = response.json()
-    # A real send would be rejected 409, but the preview still renders and just reports it.
     assert body["would_deliver"] is False
     assert body["delivery_decision"] == {"allowed": False, "reason": "hard_bounce"}
     assert body["message"]["status"] == TransactionalMessageStatus.SKIPPED
@@ -139,22 +167,28 @@ def test_test_send_reports_suppression_but_still_renders(client, template, monke
     assert TransactionalMessage.objects.count() == 0
 
 
-def test_test_send_requires_authentication(client, template):
+def test_dry_run_requires_authentication(client, template):
     response = client.post(
-        reverse("mailing:api_transactional_test_send"),
-        data={"email": "a@example.com", "template_key": template.key},
+        reverse("mailing:api_transactional_send"),
+        data={"email": "a@example.com", "template_key": template.key, "dry_run": True},
         content_type="application/json",
     )
     assert response.status_code == 401
 
 
-def test_test_send_validates_payload_like_real_send(client, template):
-    response = post_test_send(client, {"template_key": template.key})
+def test_dry_run_validates_payload_like_real_send(client, template):
+    response = post_send(client, {"template_key": template.key, "dry_run": True})
     assert response.status_code == 400
     assert response.json()["error"]["fields"] == {"email": "required"}
 
 
-def test_test_send_returns_404_for_unknown_template(client, api_client_record):
-    response = post_test_send(client, {"email": "a@example.com", "template_key": "does-not-exist"})
+def test_dry_run_must_be_boolean(client, template):
+    response = post_send(client, {"email": "a@example.com", "template_key": template.key, "dry_run": "yes"})
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"] == {"dry_run": "must_be_boolean"}
+
+
+def test_dry_run_returns_404_for_unknown_template(client, api_client_record):
+    response = post_send(client, {"email": "a@example.com", "template_key": "does-not-exist", "dry_run": True})
     assert response.status_code == 404
     assert response.json()["error"]["fields"] == {"template_key": "not_found"}

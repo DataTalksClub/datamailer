@@ -344,17 +344,19 @@ GET /api/contacts/{contact_id}/history?audience=dtc-courses&client=dtc-courses&l
 
 Returns safe scoped campaign recipient, transactional message, and event history. Secret hashes and delivery link tokens are never returned.
 
-## Transactional Test-Send (test-only)
+## Transactional Dry-Run (test-only)
 
 ```text
-POST /api/transactional/test-send
+POST /api/transactional/send      { ..., "dry_run": true }
 ```
 
-A fake drop-in for `POST /api/transactional/send` for end-to-end tests. It uses
-the same client Bearer auth and accepts the **same request body and validation**
-as the real send. Instead of sending, it renders the email and returns it inline
-in a single response: it **sends nothing, queues nothing, and persists nothing**,
-so there are no message rows to poll and no teardown to run.
+For end-to-end tests, the real send endpoint accepts a `"dry_run": true` flag.
+It is **the same endpoint, path, auth, request body, and validation** as a normal
+send -- a test hits `/api/transactional/send` exactly as production does, adding
+only this one flag -- so the whole production send path is exercised. With
+`dry_run` set, Datamailer runs the identical validate/render pipeline but stops
+before delivery: it **sends nothing, queues nothing, and persists nothing**, so
+there are no message rows to poll and no teardown to run.
 
 The response is a superset of the real send response. Alongside the usual
 `message`, `idempotent_replay`, and `enqueued` fields it adds the rendered
