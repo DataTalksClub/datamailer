@@ -1241,6 +1241,136 @@ def test_audience_detail_membership_summaries_are_scoped_to_current_audience(
     assert "Other audience failure" not in html
 
 
+def test_audience_summary_subscription_counts_are_distinct_contacts(organization, audience, client_record):
+    other_client = Client.objects.create(organization=organization, name="DTC Zoomcamps", slug="dtc-zoomcamps")
+    # One contact subscribed under two clients in the same audience: two subscription
+    # rows, but a single distinct contact that the explorer list shows once.
+    multi = create_contact("multi@example.com", verified_at=timezone.now())
+    Subscription.objects.create(
+        contact=multi, audience=audience, client=client_record, status=SubscriptionStatus.SUBSCRIBED
+    )
+    Subscription.objects.create(
+        contact=multi, audience=audience, client=other_client, status=SubscriptionStatus.SUBSCRIBED
+    )
+    create_subscribed_contact("single@example.com", audience, client_record)
+
+    summary = {stat.key: stat for stat in audience_summary(audience)}
+
+    # Distinct-contact aligned: two contacts, not three subscription rows.
+    assert summary["subscribed"].value == 2
+    list_total = contact_explorer_queryset(
+        ContactExplorerFilters(audience_id=audience.id, subscription_status=SubscriptionStatus.SUBSCRIBED.value)
+    ).count()
+    assert summary["subscribed"].value == list_total
+
+    # Single-client scope is unchanged (one row per contact for that client).
+    scoped = {stat.key: stat.value for stat in audience_summary(audience, client_record)}
+    assert scoped["subscribed"] == 2
+
+
+def test_audience_summary_links_map_to_explorer_filters(audience, client_record):
+    summary = {stat.key: stat for stat in audience_summary(audience, client_record)}
+
+    assert summary["members"].href == "?#audience-members"
+    assert summary["subscribed"].href == "?subscription_status=subscribed#audience-members"
+    assert summary["pending"].href == "?subscription_status=pending#audience-members"
+    assert summary["unsubscribed"].href == "?subscription_status=unsubscribed#audience-members"
+    assert summary["verified"].href == "?verified=verified#audience-members"
+    assert summary["unverified"].href == "?verified=unverified#audience-members"
+    assert summary["global_unsubscribed"].href == "?suppression=global_unsubscribed#audience-members"
+    assert summary["hard_bounced"].href == "?suppression=hard_bounced#audience-members"
+    assert summary["complained"].href == "?suppression=complained#audience-members"
+
+    # Deferred signals stay non-clickable: no link, plain text only.
+    assert summary["inactive"].href == ""
+    assert summary["opened"].href == ""
+    assert summary["clicked"].href == ""
+
+
+def _seed_summary_signals(audience, client_record):
+    create_subscribed_contact("subscribed@example.com", audience, client_record)
+    create_subscribed_contact(
+        "pending@example.com", audience, client_record, status=SubscriptionStatus.PENDING
+    )
+    create_subscribed_contact(
+        "unsubscribed@example.com", audience, client_record, status=SubscriptionStatus.UNSUBSCRIBED
+    )
+    create_subscribed_contact("unverified@example.com", audience, client_record, verified=False)
+    create_subscribed_contact(
+        "globalunsub@example.com", audience, client_record, global_unsubscribed_at=timezone.now()
+    )
+    create_subscribed_contact("bounced@example.com", audience, client_record, hard_bounced_at=timezone.now())
+    create_subscribed_contact("complained@example.com", audience, client_record, complained_at=timezone.now())
+
+
+def test_audience_detail_renders_clickable_and_deferred_summary_stats(
+    client, operator, audience, client_record
+):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    _seed_summary_signals(audience, client_record)
+
+    response = client.get(reverse("mailing:audience_detail", args=[audience.id]))
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    for href in (
+        "?#audience-members",
+        "?subscription_status=subscribed#audience-members",
+        "?subscription_status=pending#audience-members",
+        "?subscription_status=unsubscribed#audience-members",
+        "?verified=verified#audience-members",
+        "?verified=unverified#audience-members",
+        "?suppression=global_unsubscribed#audience-members",
+        "?suppression=hard_bounced#audience-members",
+        "?suppression=complained#audience-members",
+    ):
+        assert f'class="stat-value stat-link" href="{href}"' in html
+    # Deferred stats are present as labels but never rendered as links.
+    assert "Inactive" in html
+    assert "Opened" in html
+    assert "Clicked" in html
+    assert "engagement=" not in html
+
+
+@pytest.mark.parametrize(
+    "params,key",
+    [
+        ({"subscription_status": SubscriptionStatus.SUBSCRIBED.value}, "subscribed"),
+        ({"subscription_status": SubscriptionStatus.PENDING.value}, "pending"),
+        ({"subscription_status": SubscriptionStatus.UNSUBSCRIBED.value}, "unsubscribed"),
+        ({"verified": "verified"}, "verified"),
+        ({"verified": "unverified"}, "unverified"),
+        ({"suppression": "global_unsubscribed"}, "global_unsubscribed"),
+        ({"suppression": "hard_bounced"}, "hard_bounced"),
+        ({"suppression": "complained"}, "complained"),
+        ({}, "members"),
+    ],
+)
+def test_audience_detail_summary_count_matches_linked_list_total(
+    client, operator, audience, client_record, params, key
+):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+    _seed_summary_signals(audience, client_record)
+
+    summary = {stat.key: stat.value for stat in audience_summary(audience, client_record)}
+    response = client.get(reverse("mailing:audience_detail", args=[audience.id]), params)
+
+    assert response.status_code == 200
+    paginator_total = response.context["members"].paginator.count
+    assert paginator_total == summary[key]
+    assert paginator_total >= 1
+    # Membership filter form reflects the applied filter so it can be refined/cleared.
+    filters = response.context["filters"]
+    if "subscription_status" in params:
+        assert filters.subscription_status == params["subscription_status"]
+    if "verified" in params:
+        assert filters.verified_state == params["verified"]
+    if "suppression" in params:
+        assert filters.suppression_state == params["suppression"]
+
+
 def test_audience_recent_events_filters_by_type(audience, client_record):
     contact = create_contact("person@example.com")
     open_event = EmailEvent.objects.create(

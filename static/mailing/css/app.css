@@ -490,6 +490,16 @@ textarea:focus-visible,
   line-height: 1.15;
 }
 
+a.stat-link {
+  color: var(--dm-color-primary);
+  text-decoration: none;
+}
+
+a.stat-link:hover,
+a.stat-link:focus {
+  text-decoration: underline;
+}
+
 .stat-label,
 .meta-label {
   display: block;

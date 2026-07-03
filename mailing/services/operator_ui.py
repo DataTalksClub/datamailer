@@ -93,6 +93,7 @@ class Stat:
     label: str
     value: int
     rate: str = ""
+    href: str = ""
 
 
 @dataclass(frozen=True)
@@ -1388,27 +1389,68 @@ def audience_suppressed_count(audience: Audience) -> int:
 
 def audience_summary(audience: Audience, client: Client | None = None) -> list[Stat]:
     contacts = audience_contacts(audience)
-    subscriptions = Subscription.objects.filter(audience=audience)
     if client is not None:
         contacts = contacts.filter(subscriptions__client=client).distinct()
-        subscriptions = subscriptions.filter(client=client)
+    client_id = client.id if client is not None else None
+    anchor = "#audience-members"
+
+    def linked_count(**signal) -> int:
+        # Count the exact queryset that audience_detail paginates for this signal so the
+        # displayed number always equals the linked (filtered) members list total.
+        filters = ContactExplorerFilters(audience_id=audience.id, client_id=client_id, **signal)
+        return contact_explorer_queryset(filters).count()
+
     return [
-        Stat("members", "Members", contacts.count()),
-        Stat("subscribed", "Subscribed", subscriptions.filter(status=SubscriptionStatus.SUBSCRIBED).count()),
-        Stat("pending", "Pending", subscriptions.filter(status=SubscriptionStatus.PENDING).count()),
+        Stat("members", "Members", linked_count(), href=f"?{anchor}"),
+        Stat(
+            "subscribed",
+            "Subscribed",
+            linked_count(subscription_status=SubscriptionStatus.SUBSCRIBED.value),
+            href=f"?subscription_status={SubscriptionStatus.SUBSCRIBED.value}{anchor}",
+        ),
+        Stat(
+            "pending",
+            "Pending",
+            linked_count(subscription_status=SubscriptionStatus.PENDING.value),
+            href=f"?subscription_status={SubscriptionStatus.PENDING.value}{anchor}",
+        ),
         Stat(
             "unsubscribed",
             "Unsubscribed",
-            subscriptions.filter(status=SubscriptionStatus.UNSUBSCRIBED).count(),
+            linked_count(subscription_status=SubscriptionStatus.UNSUBSCRIBED.value),
+            href=f"?subscription_status={SubscriptionStatus.UNSUBSCRIBED.value}{anchor}",
         ),
-        Stat("verified", "Verified", contacts.filter(verified_at__isnull=False).count()),
-        Stat("unverified", "Unverified", contacts.filter(verified_at__isnull=True).count()),
+        Stat(
+            "verified",
+            "Verified",
+            linked_count(verified_state="verified"),
+            href=f"?verified=verified{anchor}",
+        ),
+        Stat(
+            "unverified",
+            "Unverified",
+            linked_count(verified_state="unverified"),
+            href=f"?verified=unverified{anchor}",
+        ),
         Stat("inactive", "Inactive", audience_inactive_count(audience)),
         Stat(
-            "global_unsubscribed", "Global unsubscribed", contacts.filter(global_unsubscribed_at__isnull=False).count()
+            "global_unsubscribed",
+            "Global unsubscribed",
+            linked_count(suppression_state="global_unsubscribed"),
+            href=f"?suppression=global_unsubscribed{anchor}",
         ),
-        Stat("hard_bounced", "Hard bounced", contacts.filter(hard_bounced_at__isnull=False).count()),
-        Stat("complained", "Complained", contacts.filter(complained_at__isnull=False).count()),
+        Stat(
+            "hard_bounced",
+            "Hard bounced",
+            linked_count(suppression_state="hard_bounced"),
+            href=f"?suppression=hard_bounced{anchor}",
+        ),
+        Stat(
+            "complained",
+            "Complained",
+            linked_count(suppression_state="complained"),
+            href=f"?suppression=complained{anchor}",
+        ),
         Stat(
             "opened",
             "Opened",

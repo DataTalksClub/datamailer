@@ -41,7 +41,11 @@
       {% for stat in summary %}
         <div class="stat">
           <span class="stat-label">{{ stat.label }}</span>
-          <span class="stat-value">{{ stat.value }}</span>
+          {% if stat.href %}
+            <a class="stat-value stat-link" href="{{ stat.href }}">{{ stat.value }}</a>
+          {% else %}
+            <span class="stat-value">{{ stat.value }}</span>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
