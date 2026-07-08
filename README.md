@@ -76,17 +76,16 @@ Staff users can open the local API reference at `/api-docs/`. The OpenAPI JSON i
 available at `/api-docs/openapi.json`.
 Transactional template keys and required context are visible to staff at `/templates/`.
 
-## Local capture mode
+## Local demo app
 
-Run Datamailer locally with Postgres and capture delivery:
+Run Datamailer locally with Postgres and seeded demo data:
 
 ```bash
-make capture-up
+make demo-up
 ```
 
 The command starts the app on `http://localhost:8001`, runs migrations, seeds
-demo data, and enables `DATAMAILER_DELIVERY_MODE=capture`. Log in with
-`admin` / `admin`.
+demo data, and serves the operator UI. Log in with `admin` / `admin`.
 
 The seeded `dtc-courses` client has this local API key:
 
@@ -94,8 +93,9 @@ The seeded `dtc-courses` client has this local API key:
 dm_dtccourses_demo_transactional_email_key
 ```
 
-You can view captured transactional and campaign renders through the product UI
-and the testbed API at `/api/testbed/runs`.
+For transactional e2e checks, call `POST /api/transactional/send` with
+`"dry_run": true` to validate and render the message inline without queueing,
+sending, or persisting it.
 
 Client applications authenticate to `/api` with Bearer authentication. In the product UI, open
 `/clients/`, create or select a client, then create a named API key for each integration. The raw key is
