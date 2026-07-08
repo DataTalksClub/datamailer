@@ -651,6 +651,17 @@ a.compact-row:hover {
   font-weight: 700;
 }
 
+.inline-details summary {
+  color: var(--dm-color-primary);
+  cursor: pointer;
+  font-size: var(--dm-font-size-sm);
+  font-weight: 700;
+}
+
+.inline-details[open] summary {
+  margin-bottom: var(--dm-space-1);
+}
+
 .secondary-section[open] summary {
   margin-bottom: var(--dm-space-4);
 }

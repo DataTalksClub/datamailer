@@ -277,8 +277,19 @@
                   <div class="helptext">{{ recipient.open_count }} opens / {{ recipient.click_count }} clicks</div>
                 </td>
                 <td class="provider-cell">
-                  <span class="data-truncate" title="{{ recipient.ses_message_id|default:'-' }}">SES: {{ recipient.ses_message_id|default:"-" }}</span>
-                  <span class="data-truncate helptext" title="{{ recipient.last_error|default:'-' }}">Error: {{ recipient.last_error|default:"-" }}</span>
+                  {% if recipient.ses_message_id or recipient.last_error %}
+                    <details class="inline-details">
+                      <summary>Diagnostics</summary>
+                      {% if recipient.ses_message_id %}
+                        <span class="data-truncate" title="{{ recipient.ses_message_id }}">SES message ID: {{ recipient.ses_message_id }}</span>
+                      {% endif %}
+                      {% if recipient.last_error %}
+                        <span class="data-truncate helptext" title="{{ recipient.last_error }}">Error: {{ recipient.last_error }}</span>
+                      {% endif %}
+                    </details>
+                  {% else %}
+                    <span class="muted">None</span>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
@@ -317,11 +328,19 @@
               {% if event.url %}
                 <div class="truncate"><a href="{{ event.url }}">{{ event.url }}</a></div>
               {% endif %}
-              {% if event.provider_event_id %}
-                <div class="muted truncate">Provider event: {{ event.provider_event_id }}</div>
-              {% endif %}
               {% if row.metadata_summary %}
                 <div class="muted truncate">{{ row.metadata_summary }}</div>
+              {% endif %}
+              {% if event.provider_event_id or event.metadata.ses_message_id %}
+                <details class="inline-details">
+                  <summary>Provider details</summary>
+                  {% if event.provider_event_id %}
+                    <div class="muted truncate">Provider event ID: {{ event.provider_event_id }}</div>
+                  {% endif %}
+                  {% if event.metadata.ses_message_id %}
+                    <div class="muted truncate">SES message ID: {{ event.metadata.ses_message_id }}</div>
+                  {% endif %}
+                </details>
               {% endif %}
             </article>
           {% endwith %}

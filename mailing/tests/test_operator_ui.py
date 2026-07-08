@@ -209,7 +209,8 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
     assert f'href="{reverse("mailing:campaign_detail", args=[campaign.id])}"' in html
     assert "Bounce" in html
     assert html.index("bounced@example.com") < html.index("Campaign: Weekly update")
-    assert "bounce_type: Permanent" in html
+    assert "Permanent bounce" in html
+    assert "bounce_type: Permanent" not in html
     assert 'href="/contacts/bounced@example.com/"' in html
     assert "DTC Courses" in html
     assert f'href="{reverse("mailing:audience_list")}"' in html
@@ -828,7 +829,7 @@ def test_contact_timeline_is_newest_first_and_metadata_is_operator_readable(camp
     )
 
     assert list(contact_event_timeline(contact)) == [newer, older]
-    assert metadata_summary(newer.metadata) == "scope: campaign"
+    assert metadata_summary(newer.metadata) == "Campaign scope"
 
 
 def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
@@ -963,8 +964,9 @@ def test_contact_detail_summary_shows_blocked_reasons_and_secondary_raw_details(
     assert "client unsubscribe" in html
     assert "hard bounce" in html
     assert "complaint" in html
-    assert "bounce_type: Permanent" in html
-    assert html.index("bounce_type: Permanent") > html.index("Full event timeline and audit details")
+    assert "Permanent bounce" in html
+    assert "bounce_type: Permanent" not in html
+    assert html.index("Permanent bounce") > html.index("Full event timeline and audit details")
 
 
 def test_contact_detail_no_membership_explains_not_subscribed_and_no_activity(client, operator, client_record):
@@ -1157,7 +1159,8 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
         client=client_record,
         campaign=campaign,
         event_type=EmailEventType.OPEN,
-        metadata={"reason": "tracking"},
+        provider_event_id="aud-evt-123",
+        metadata={"reason": "tracking", "ses_message_id": "ses-aud-123"},
     )
 
     summary = {stat.key: stat.value for stat in audience_summary(audience)}
@@ -1194,7 +1197,11 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
     assert "/operator/" not in detail_html
     assert "Campaign History" in detail_html
     assert "Recent Events" in detail_html
-    assert "reason: tracking" in detail_html
+    assert "Tracking" in detail_html
+    assert "reason: tracking" not in detail_html
+    assert "Provider details" in detail_html
+    assert "Provider event ID: aud-evt-123" in detail_html
+    assert "SES message ID: ses-aud-123" in detail_html
 
 
 def test_audience_detail_membership_summaries_are_scoped_to_current_audience(
@@ -1468,7 +1475,9 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     assert recipient.email in html
     assert "other@example.com" not in html
     assert "ses-123" in html
-    assert "Provider event: evt-123" in html
+    assert "Provider details" in html
+    assert "Provider event ID: evt-123" in html
+    assert "Provider event: evt-123" not in html
     assert 'href="/contacts/person@example.com/"' in html
     assert f'id="recipient-{recipient.id}"' in html
 
@@ -1835,7 +1844,7 @@ def test_contact_search_and_detail_render_product_context(client, operator, audi
     assert f"/campaigns/{campaign.id}/#recipient-{recipient.id}".encode() in detail_response.content
     assert b"Transactional Messages" in detail_response.content
     assert b"Unsubscribe" in detail_response.content
-    assert b"scope: global" in detail_response.content
+    assert b"Global scope" in detail_response.content
     assert b"Operator Audit" not in detail_response.content
     assert b"No operator audit entries found" not in detail_response.content
 

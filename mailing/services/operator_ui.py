@@ -1336,14 +1336,63 @@ def metadata_summary(metadata) -> str:
         return str(metadata)
 
     preferred = []
-    for key in ("reason", "error", "scope", "ses_message_id", "bounce_type", "complaint_feedback_type"):
-        value = metadata.get(key)
-        if value not in (None, "", [], {}):
-            preferred.append(f"{key}: {value}")
+    reason = metadata.get("reason")
+    if reason not in (None, "", [], {}):
+        preferred.append(humanize_metadata_value("reason", reason))
+
+    error = metadata.get("error")
+    if error not in (None, "", [], {}):
+        preferred.append(str(error))
+
+    bounce_type = metadata.get("bounce_type")
+    if bounce_type not in (None, "", [], {}):
+        preferred.append(humanize_metadata_value("bounce_type", bounce_type))
+
+    complaint_type = metadata.get("complaint_feedback_type")
+    if complaint_type not in (None, "", [], {}):
+        preferred.append(humanize_metadata_value("complaint_feedback_type", complaint_type))
+
+    scope = metadata.get("scope")
+    if scope not in (None, "", [], {}):
+        preferred.append(humanize_metadata_value("scope", scope))
 
     if preferred:
         return "; ".join(preferred)
-    return json.dumps(metadata, sort_keys=True)[:240]
+
+    diagnostic_keys = {"ses_message_id", "mail_message_id", "provider_event_id"}
+    non_diagnostic_metadata = {key: value for key, value in metadata.items() if key not in diagnostic_keys}
+    if not non_diagnostic_metadata:
+        return ""
+    return json.dumps(non_diagnostic_metadata, sort_keys=True)[:240]
+
+
+def humanize_metadata_value(key, value) -> str:
+    normalized = str(value).replace("_", " ").replace("-", " ").strip()
+    compact = normalized.casefold()
+    if key == "bounce_type":
+        if compact == "permanent":
+            return "Permanent bounce"
+        if compact == "transient":
+            return "Temporary bounce"
+        return f"{normalized.capitalize()} bounce"
+    if key == "complaint_feedback_type":
+        if compact in {"abuse", "fraud"}:
+            return "Marked as spam"
+        return f"Complaint: {normalized}"
+    if key == "reason":
+        labels = {
+            "snapshot": "Recipient snapshot created",
+            "ses rejected": "Rejected by email provider",
+            "global unsubscribe": "Globally unsubscribed",
+            "client unsubscribe": "Client unsubscribed",
+            "audience unsubscribe": "Audience unsubscribed",
+            "unverified": "Email not verified",
+            "invalid email": "Invalid email address",
+        }
+        return labels.get(compact, normalized.capitalize())
+    if key == "scope":
+        return f"{normalized.capitalize()} scope"
+    return normalized
 
 
 def audience_queryset(client: Client | None = None) -> QuerySet[Audience]:

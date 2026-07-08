@@ -334,6 +334,17 @@
             {% endif %}
             {% if row.event.url %}<div class="truncate"><a href="{{ row.event.url }}">{{ row.event.url }}</a></div>{% endif %}
             {% if row.metadata_summary %}<div class="muted truncate">{{ row.metadata_summary }}</div>{% endif %}
+            {% if row.event.provider_event_id or row.event.metadata.ses_message_id %}
+              <details class="inline-details">
+                <summary>Provider details</summary>
+                {% if row.event.provider_event_id %}
+                  <div class="muted truncate">Provider event ID: {{ row.event.provider_event_id }}</div>
+                {% endif %}
+                {% if row.event.metadata.ses_message_id %}
+                  <div class="muted truncate">SES message ID: {{ row.event.metadata.ses_message_id }}</div>
+                {% endif %}
+              </details>
+            {% endif %}
           </article>
         {% endfor %}
       </div>
