@@ -70,6 +70,9 @@
                 <a href="{% url 'mailing:campaign_list' %}" {% if request.resolver_match.url_name == "campaign_list" or request.resolver_match.url_name == "campaign_create" or request.resolver_match.url_name == "campaign_detail" or request.resolver_match.url_name == "campaign_edit" %}aria-current="page"{% endif %}>
                   Campaigns
                 </a>
+                <a href="{% url 'mailing:transactional_queue' %}" {% if request.resolver_match.url_name == "transactional_queue" %}aria-current="page"{% endif %}>
+                  Transactional queue
+                </a>
                 <a href="{% url 'mailing:contact_search' %}" {% if request.resolver_match.url_name == "contact_search" or request.resolver_match.url_name == "contact_detail" %}aria-current="page"{% endif %}>
                   Contacts
                 </a>

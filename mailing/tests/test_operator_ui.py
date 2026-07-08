@@ -150,6 +150,17 @@ def test_base_template_loads_datamailer_static_css(client, operator):
     assert finders.find("mailing/css/app.css") is not None
 
 
+def test_sidebar_links_transactional_queue(client, operator, client_record):
+    client.force_login(operator)
+    select_active_client(client, client_record)
+
+    response = client.get(reverse("mailing:dashboard"))
+    html = response.content.decode()
+
+    assert "Transactional queue" in html
+    assert f'href="{reverse("mailing:transactional_queue")}"' in html
+
+
 def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
     client,
     operator,
@@ -2073,14 +2084,16 @@ def test_transactional_queue_paginates_and_preserves_query_params(client, operat
     assert "<strong>26</strong> messages queued" in html
 
 
-def test_transactional_queue_empty_state(client, operator, client_record):
+def test_transactional_queue_empty_state(client, operator, client_record, other_client):
     client.force_login(operator)
     select_active_client(client, client_record)
+    create_queued_message(other_client, email="other@example.com")
 
     response = client.get(reverse("mailing:transactional_queue"))
 
     assert response.status_code == 200
     assert b"No queued transactional messages." in response.content
+    assert b"There is 1 queued message under other clients" in response.content
 
 
 def test_transactional_queue_total_matches_scoped_count(client, operator, client_record, other_client):

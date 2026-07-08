@@ -36,6 +36,7 @@ from mailing.models import (
     MailchimpTagMapping,
     Tag,
     TransactionalMessage,
+    TransactionalMessageStatus,
 )
 from mailing.services.api import (
     ApiValidationError,
@@ -290,6 +291,7 @@ def transactional_queue(request):
     if active_client is None:
         return redirect("mailing:dashboard")
     queue = paginate(request, transactional_queue_queryset(active_client), per_page=25)
+    all_queued_total = TransactionalMessage.objects.filter(status=TransactionalMessageStatus.QUEUED).count()
     return render(
         request,
         "mailing/operator/transactional_queue.html",
@@ -298,6 +300,7 @@ def transactional_queue(request):
             "queue": queue,
             "message_rows": recent_message_rows(queue.object_list),
             "queued_total": queue.paginator.count,
+            "other_clients_queued_total": max(all_queued_total - queue.paginator.count, 0),
             "pagination_querystring": pagination_querystring(request),
         },
     )

@@ -59,6 +59,15 @@
     <div class="empty-state">
       <strong>No queued transactional messages.</strong>
       <p>Accepted transactional messages waiting to be sent for {{ active_client.name }} will appear here.</p>
+      {% if other_clients_queued_total %}
+        {% if other_clients_queued_total == 1 %}
+          <p>There is 1 queued message under other clients. Switch clients to review those queues.</p>
+        {% else %}
+          <p>There are {{ other_clients_queued_total }} queued messages under other clients. Switch clients to review those queues.</p>
+        {% endif %}
+      {% else %}
+        <p>No other client currently has queued transactional messages.</p>
+      {% endif %}
     </div>
   {% endif %}
 {% endblock %}
