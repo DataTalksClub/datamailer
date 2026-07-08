@@ -234,6 +234,7 @@
                 {% endif %}
               </div>
               <div class="compact-row-meta">
+                {% if item.context %}<span class="muted">{{ item.context }}</span>{% endif %}
                 <span class="muted">{{ item.detail }}</span>
                 {% if item.occurred_at %}<span class="helptext">{{ item.occurred_at|date:"M j, Y H:i" }}</span>{% endif %}
               </div>

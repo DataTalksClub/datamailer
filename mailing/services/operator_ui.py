@@ -261,6 +261,7 @@ class DashboardAttentionItem:
     badge: Badge
     title: str
     detail: str
+    context: str = ""
     href: str = ""
 
 
@@ -421,8 +422,9 @@ def dashboard_attention_items(client: Client | None = None) -> list[DashboardAtt
         DashboardAttentionItem(
             event.created_at,
             Badge(event.get_event_type_display(), event_tone(event.event_type)),
-            event_context(event),
+            event.contact.email if event.contact_id else event_context(event),
             metadata_summary(event.metadata) or event.url or "Email event recorded",
+            context=event_context(event),
             href=f"/contacts/{event.contact.normalized_email}/" if event.contact_id else "",
         )
         for event in event_queryset.filter(

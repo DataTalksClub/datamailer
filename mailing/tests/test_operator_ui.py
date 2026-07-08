@@ -207,6 +207,7 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
     assert "Weekly update" in html
     assert f'href="{reverse("mailing:campaign_detail", args=[campaign.id])}"' in html
     assert "Bounce" in html
+    assert html.index("bounced@example.com") < html.index("Campaign: Weekly update")
     assert "bounce_type: Permanent" in html
     assert 'href="/contacts/bounced@example.com/"' in html
     assert "DTC Courses" in html
