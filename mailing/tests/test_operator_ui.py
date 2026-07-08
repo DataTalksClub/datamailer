@@ -574,7 +574,7 @@ def test_active_contact_filters_summarize_applied_filter_state(audience, client_
     assert ("Client", "DTC Courses") in labels
     assert ("Subscription", "Subscribed") in labels
     assert ("Verification", "Verified") in labels
-    assert ("Validation", "Valid") in labels
+    assert ("Validation", "Valid email") in labels
     assert ("Suppression", "Hard bounced") in labels
     assert ("Engagement", "Inactive since 2026-05-01") in labels
     assert ("Includes tag", "newsletter") in labels
@@ -595,11 +595,11 @@ def test_operator_contact_views_show_email_validation_status(client, operator, a
     detail_response = client.get(reverse("mailing:contact_detail", args=[contact.normalized_email]))
 
     assert search_response.status_code == 200
-    assert b"Manually invalid" in search_response.content
+    assert b"Marked invalid" in search_response.content
     assert b"staff marked bad" in search_response.content
     assert detail_response.status_code == 200
     assert b"Validation" in detail_response.content
-    assert b"Manually invalid" in detail_response.content
+    assert b"Marked invalid" in detail_response.content
     assert b"staff marked bad" in detail_response.content
 
 
@@ -750,7 +750,7 @@ def test_operator_contact_explorer_renders_redesigned_filter_groups_and_result_h
     assert "Applied filters" in html
     assert "Audience: DataTalksClub" in html
     assert "Subscription: Subscribed" in html
-    assert "Validation: Valid" in html
+    assert "Validation: Valid email" in html
     assert "Includes tag: very-long-newsletter-segment-for-returning-learners" in html
     assert 'class="table-wrap contact-explorer-table"' in html
     assert "Last activity" in html
@@ -790,7 +790,7 @@ def test_operator_contact_explorer_badges_suppressed_unverified_and_no_activity_
     assert response.status_code == 200
     assert 'href="/contacts/suppressed@example.com/"' in html
     assert "Hard bounced" in html
-    assert "Manually invalid" in html
+    assert "Marked invalid" in html
     assert "Unverified" in html
     assert "manual block" in html
     assert "Sent never" in html
@@ -857,13 +857,13 @@ def test_contact_detail_eligibility_explains_marketing_and_transactional_blocks(
 
     assert detail.eligibility[0].can_send_marketing is False
     assert "unverified" in detail.eligibility[0].marketing_reasons
-    assert "invalid email validation: Manually invalid" in detail.eligibility[0].marketing_reasons
+    assert "invalid email validation: Marked invalid" in detail.eligibility[0].marketing_reasons
     assert "client unsubscribe" in detail.eligibility[0].marketing_reasons
     assert detail.eligibility[0].can_send_transactional is False
     assert "hard bounce" in detail.eligibility[0].transactional_reasons
     assert response.status_code == 200
     assert b"Send Eligibility" in response.content
-    assert b"invalid email validation: Manually invalid" in response.content
+    assert b"invalid email validation: Marked invalid" in response.content
     assert b"client unsubscribe" in response.content
 
 
@@ -956,7 +956,7 @@ def test_contact_detail_summary_shows_blocked_reasons_and_secondary_raw_details(
     html = response.content.decode()
 
     assert response.status_code == 200
-    assert "Risky" in html
+    assert "Risky email" in html
     assert "Globally unsubscribed" in html
     assert "Cannot send marketing" in html
     assert "Cannot send transactional" in html
@@ -978,7 +978,7 @@ def test_contact_detail_no_membership_explains_not_subscribed_and_no_activity(cl
 
     assert response.status_code == 200
     assert "No subscriptions" in html
-    assert "Unknown" in html
+    assert "No validation data" in html
     assert "Cannot send marketing" in html
     assert "not subscribed" in html
     assert "Can send transactional" in html
@@ -1191,7 +1191,16 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
     assert "Inactive since" in detail_html
     assert 'name="include_tags" value="newsletter"' in detail_html
     assert 'class="table-wrap audience-member-table"' in detail_html
-    assert "No MX" in detail_html
+    assert "Missing email DNS" in detail_html
+    assert "No MX: 1" not in detail_html
+    assert "Valid email: 1" in detail_html
+    assert "No validation data: 1" in detail_html
+    assert "Malformed email: 0" not in detail_html
+    assert "Sent: 2" in detail_html
+    assert "Skipped: 1" in detail_html
+    assert "Failed: 0" not in detail_html
+    assert "Invalid email: 1" in detail_html
+    assert "Client unsubscribe: 0" not in detail_html
     assert "Hard bounced" in detail_html
     assert "invalid@example.com" in detail_html
     assert 'href="/contacts/invalid@example.com/"' in detail_html

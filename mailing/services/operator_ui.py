@@ -636,7 +636,9 @@ def contact_explorer_options(client: Client | None = None):
         "tags": tag_queryset.order_by("audience__slug", "slug"),
         "subscription_statuses": choices_from_text_choices(SubscriptionStatus),
         "verified_states": [Choice(value=key, label=label) for key, label in VERIFIED_FILTER_LABELS.items()],
-        "email_validation_statuses": choices_from_text_choices(EmailValidationStatus),
+        "email_validation_statuses": [
+            Choice(value=value, label=email_validation_label(value)) for value, _label in EmailValidationStatus.choices
+        ],
         "suppression_states": [Choice(value=key, label=label) for key, label in SUPPRESSION_FILTER_LABELS.items()],
         "campaign_statuses": choices_from_text_choices(CampaignRecipientStatus),
         "skip_reasons": choices_from_text_choices(CampaignRecipientSkipReason),
@@ -659,7 +661,7 @@ def active_contact_filters(filters: ContactExplorerFilters) -> list[ActiveFilter
     if filters.verified_state:
         chips.append(ActiveFilter("Verification", VERIFIED_FILTER_LABELS[filters.verified_state]))
     if filters.email_validation_status:
-        chips.append(ActiveFilter("Validation", EmailValidationStatus(filters.email_validation_status).label))
+        chips.append(ActiveFilter("Validation", email_validation_label(filters.email_validation_status)))
     if filters.suppression_state:
         chips.append(ActiveFilter("Suppression", SUPPRESSION_FILTER_LABELS[filters.suppression_state]))
     if filters.campaign_status:
@@ -1037,7 +1039,7 @@ def verification_badge(contact: Contact) -> Badge:
 
 
 def validation_badge(contact: Contact) -> Badge:
-    label = contact.get_email_validation_status_display()
+    label = email_validation_label(contact.email_validation_status)
     if contact.email_validation_status in {
         EmailValidationStatus.VALID,
         EmailValidationStatus.EXTERNALLY_VALIDATED,
@@ -1285,7 +1287,7 @@ def marketing_reasons(contact: Contact, subscription: Subscription):
     if contact.verified_at is None:
         yield "unverified"
     if has_invalid_email_validation(contact):
-        yield f"invalid email validation: {contact.get_email_validation_status_display()}"
+        yield f"invalid email validation: {email_validation_label(contact.email_validation_status)}"
     if contact.global_unsubscribed_at is not None:
         yield "global unsubscribe"
     if contact.hard_bounced_at is not None:
@@ -1562,8 +1564,22 @@ def audience_summary(audience: Audience, client: Client | None = None) -> list[S
 def count_by_field(queryset, field, *, choices=None):
     raw_counts = dict(queryset.values_list(field).annotate(count=Count("id")))
     if choices:
-        return [(label, raw_counts.get(value, 0)) for value, label in choices]
+        return [(label, count) for value, label in choices if (count := raw_counts.get(value, 0)) > 0]
     return sorted(raw_counts.items())
+
+
+def email_validation_label(value) -> str:
+    labels = {
+        EmailValidationStatus.UNKNOWN: "No validation data",
+        EmailValidationStatus.VALID: "Valid email",
+        EmailValidationStatus.INVALID_SYNTAX: "Malformed email",
+        EmailValidationStatus.NO_MX: "Missing email DNS",
+        EmailValidationStatus.DISPOSABLE: "Disposable email",
+        EmailValidationStatus.RISKY: "Risky email",
+        EmailValidationStatus.MANUALLY_INVALID: "Marked invalid",
+        EmailValidationStatus.EXTERNALLY_VALIDATED: "Validated externally",
+    }
+    return labels.get(value, str(value))
 
 
 def audience_breakdowns(audience: Audience, client: Client | None = None):
@@ -1573,7 +1589,11 @@ def audience_breakdowns(audience: Audience, client: Client | None = None):
         contacts = contacts.filter(subscriptions__client=client).distinct()
         campaign_recipients = campaign_recipients.filter(campaign__client=client)
     return {
-        "validation": count_by_field(contacts, "email_validation_status", choices=EmailValidationStatus.choices),
+        "validation": count_by_field(
+            contacts,
+            "email_validation_status",
+            choices=[(value, email_validation_label(value)) for value, _label in EmailValidationStatus.choices],
+        ),
         "tags": Tag.objects.filter(audience=audience)
         .annotate(count=Count("contact_tags", distinct=True))
         .order_by("slug"),

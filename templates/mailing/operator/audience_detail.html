@@ -62,7 +62,7 @@
       <div class="meta-item">
         <span class="meta-label">Validation</span>
         <div class="badge-row">
-          {% for label, count in breakdowns.validation %}<span class="badge neutral">{{ label }}: {{ count }}</span>{% endfor %}
+          {% for label, count in breakdowns.validation %}<span class="badge neutral">{{ label }}: {{ count }}</span>{% empty %}<span class="badge neutral">No contacts</span>{% endfor %}
         </div>
       </div>
       <div class="meta-item">
@@ -78,7 +78,7 @@
       <div class="meta-item">
         <span class="meta-label">Campaign statuses</span>
         <div class="badge-row">
-          {% for label, count in breakdowns.campaign_statuses %}<span class="badge neutral">{{ label }}: {{ count }}</span>{% endfor %}
+          {% for label, count in breakdowns.campaign_statuses %}<span class="badge neutral">{{ label }}: {{ count }}</span>{% empty %}<span class="badge neutral">No campaign recipients</span>{% endfor %}
         </div>
       </div>
       <div class="meta-item">
