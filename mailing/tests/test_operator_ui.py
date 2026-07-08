@@ -1,4 +1,5 @@
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -1014,16 +1015,20 @@ def test_campaign_list_renders_recent_campaigns(client, operator, campaign):
     assert "DTC Courses" in html
     assert "DataTalksClub" in html
     assert "Send time" in html
-    assert "Queue" in html
-    assert "Speed" in html
-    assert "1 queued / 2 processed" in html
-    assert "0.03/sec" in html
-    assert "2.0/min" in html
+    assert "Queue" not in html
+    assert "Speed" not in html
+    assert "1 queued / 2 processed" not in html
+    assert "0.03/sec" not in html
+    assert "2.0/min" not in html
     assert "3 sent / 2 delivered" in html
-    assert "1 opens / 1 clicks" in html
+    assert "1 opens / 1 clicks" not in html
     assert "1 bounces / 1 complaints" in html
     assert '<span class="badge success">Sent</span>' in html
+    assert "Locked" not in html
     assert "Create campaign" in html
+    css = Path(finders.find("mailing/css/app.css")).read_text()
+    assert ".campaign-table .truncate" in css
+    assert "text-overflow: ellipsis" in css
 
 
 def test_campaign_list_empty_state_is_actionable(client, operator, client_record):

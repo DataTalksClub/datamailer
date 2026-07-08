@@ -32,11 +32,7 @@
               <th scope="col">Audience</th>
               <th scope="col">Send time</th>
               <th scope="col">Recipients</th>
-              <th scope="col">Queue</th>
               <th scope="col">Delivery</th>
-              <th scope="col">Speed</th>
-              <th scope="col">Engagement</th>
-              <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -45,7 +41,12 @@
               <tr>
                 <td class="truncate">
                   <a href="{% url 'mailing:campaign_detail' campaign.id %}">{{ campaign.subject }}</a>
-                  <div class="helptext">{{ active_client.name }}</div>
+                  <div class="helptext">
+                    {{ active_client.name }}
+                    {% if campaign.status == "draft" %}
+                      / <a href="{% url 'mailing:campaign_edit' campaign.id %}">Edit draft</a>
+                    {% endif %}
+                  </div>
                 </td>
                 <td><span class="badge {{ row.badge.tone }}">{{ row.badge.label }}</span></td>
                 <td class="truncate">
@@ -57,26 +58,8 @@
                 </td>
                 <td class="nowrap">{{ campaign.recipient_count }}</td>
                 <td class="nowrap">
-                  {{ row.progress.queued_count }} queued / {{ row.progress.processed_count }} processed
-                  <div class="helptext">Started {{ row.progress.started_at|date:"Y-m-d H:i"|default:"-" }}</div>
-                </td>
-                <td class="nowrap">
                   {{ campaign.sent_count }} sent / {{ campaign.delivered_count }} delivered
                   <div class="helptext">{{ campaign.bounce_count }} bounces / {{ campaign.complaint_count }} complaints</div>
-                </td>
-                <td class="nowrap">
-                  {{ row.progress.per_second|default:"-" }}
-                  <div class="helptext">{{ row.progress.per_minute|default:"-" }}</div>
-                </td>
-                <td class="nowrap">
-                  {{ campaign.unique_open_count }} opens / {{ campaign.unique_click_count }} clicks
-                </td>
-                <td class="nowrap">
-                  {% if campaign.status == "draft" %}
-                    <a href="{% url 'mailing:campaign_edit' campaign.id %}">Edit</a>
-                  {% else %}
-                    Locked
-                  {% endif %}
                 </td>
               </tr>
               {% endwith %}
