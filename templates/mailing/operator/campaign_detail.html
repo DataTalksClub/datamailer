@@ -69,34 +69,78 @@
       <div class="meta-item"><span class="meta-label">Scheduled</span>{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Sent</span>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Recipients snapshotted</span>{{ campaign.recipient_count }}</div>
-      <div class="meta-item"><span class="meta-label">Send started</span>{{ send_progress.started_at|date:"Y-m-d H:i:s"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Send ended</span>{{ send_progress.ended_at|date:"Y-m-d H:i:s"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Send duration</span>{{ send_progress.duration_label|default:"-" }}</div>
     </div>
   </section>
 
-  <section class="section" aria-labelledby="campaign-stats">
-    <div class="section-header">
-      <div>
-        <h2 id="campaign-stats">Stats</h2>
-        <p class="muted">Delivery, engagement, unsubscribe, and provider issue counts.</p>
-      </div>
-    </div>
-    <div class="stats-grid">
-      {% for stat in stats %}
-        <div class="stat">
-          <span class="stat-label">{{ stat.label }}</span>
-          <span class="stat-value">{{ stat.value }}</span>
-          {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
+  {% if campaign.status != "draft" %}
+    <section class="section" aria-labelledby="campaign-stats">
+      <div class="section-header">
+        <div>
+          <h2 id="campaign-stats">Stats</h2>
+          <p class="muted">Delivery and engagement rates use total recipients as the denominator.</p>
         </div>
-      {% endfor %}
-      <div class="stat">
-        <span class="stat-label">Send speed</span>
-        <span class="stat-value">{{ send_progress.per_second|default:"-" }}</span>
-        {% if send_progress.per_minute %}<span class="muted">{{ send_progress.per_minute }}</span>{% endif %}
       </div>
-    </div>
-  </section>
+      <div class="detail-grid">
+        <div class="campaign-stat-group">
+          <h3>Delivery</h3>
+          <div class="stats-grid">
+            {% for stat in stat_groups.delivery %}
+              <div class="stat">
+                <span class="stat-label">{{ stat.label }}</span>
+                <span class="stat-value">{{ stat.value }}</span>
+                {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="campaign-stat-group">
+          <h3>Engagement</h3>
+          <div class="stats-grid">
+            {% for stat in stat_groups.engagement %}
+              <div class="stat">
+                <span class="stat-label">{{ stat.label }}</span>
+                <span class="stat-value">{{ stat.value }}</span>
+                {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="send-progress">
+      <div class="section-header">
+        <div>
+          <h2 id="send-progress">Send progress</h2>
+          <p class="muted">Queue state and worker throughput for this campaign.</p>
+        </div>
+      </div>
+      <div class="stats-grid">
+        {% for stat in stat_groups.progress %}
+          <div class="stat">
+            <span class="stat-label">{{ stat.label }}</span>
+            <span class="stat-value">{{ stat.value }}</span>
+            {% if stat.rate %}<span class="muted">{{ stat.rate }}</span>{% endif %}
+          </div>
+        {% endfor %}
+        <div class="stat">
+          <span class="stat-label">Send speed</span>
+          <span class="stat-value">{{ send_progress.per_second|default:"-" }}</span>
+          {% if send_progress.per_minute %}<span class="muted">{{ send_progress.per_minute }}</span>{% endif %}
+        </div>
+        <div class="stat">
+          <span class="stat-label">Duration</span>
+          <span class="stat-value">{{ send_progress.duration_label|default:"-" }}</span>
+          {% if send_progress.started_at %}
+            <span class="muted">Started {{ send_progress.started_at|date:"Y-m-d H:i:s" }}</span>
+          {% endif %}
+          {% if send_progress.ended_at %}
+            <span class="muted">Ended {{ send_progress.ended_at|date:"Y-m-d H:i:s" }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  {% endif %}
 
   {% if estimate %}
     <section class="section" aria-labelledby="recipient-estimate">

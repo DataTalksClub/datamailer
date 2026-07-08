@@ -325,7 +325,8 @@ def test_campaign_stats_include_derived_rates_and_failed_count(campaign):
     assert stats["processed"].value == 1
     assert stats["sent"].value == 3
     assert stats["sent"].rate == "75.0%"
-    assert stats["delivered"].rate == "66.7%"
+    assert stats["delivered"].rate == "50.0%"
+    assert stats["unique_opens"].rate == "25.0%"
     assert stats["failures"].value == 1
     assert stats["failures"].rate == "25.0%"
 
@@ -1441,9 +1442,12 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     assert response.status_code == 200
     assert "Summary" in html
     assert "Stats" in html
-    assert "Send started" in html
-    assert "Send ended" in html
-    assert "Send duration" in html
+    assert "Delivery" in html
+    assert "Engagement" in html
+    assert "Send progress" in html
+    assert "Duration" in html
+    assert "Started" in html
+    assert "Ended" in html
     assert "Send speed" in html
     assert "Queued" in html
     assert "Processed" in html
@@ -1459,7 +1463,8 @@ def test_campaign_detail_renders_stats_and_recipient_audit_fields(client, operat
     assert "data-truncate" in html
     assert '<span class="badge success">Sent</span>' in html
     assert "Unique opens" in html
-    assert "33.3%" in html
+    assert "25.0%" in html
+    assert "133.3%" not in html
     assert recipient.email in html
     assert "other@example.com" not in html
     assert "ses-123" in html
@@ -1681,6 +1686,8 @@ def test_campaign_detail_shows_draft_estimate_and_state_dependent_controls(clien
 
     assert draft_response.status_code == 200
     assert b"Queue Preview" in draft_response.content
+    assert b"Stats" not in draft_response.content
+    assert b"Send progress" not in draft_response.content
     assert b"Queue send" in draft_response.content
     assert b"Snapshot and queue" not in draft_response.content
     assert b"Edit draft" in draft_response.content

@@ -560,18 +560,30 @@ def campaign_stats(campaign: Campaign) -> list[Stat]:
         Stat("processed", "Processed", progress.processed_count, rate(progress.processed_count, recipient_count)),
         Stat("sent", "Sent", sent_count, rate(sent_count, recipient_count)),
         Stat("skipped", "Skipped", campaign.skipped_count, rate(campaign.skipped_count, recipient_count)),
-        Stat("delivered", "Delivered", campaign.delivered_count, rate(campaign.delivered_count, sent_count)),
-        Stat("unique_opens", "Unique opens", campaign.unique_open_count, rate(campaign.unique_open_count, sent_count)),
+        Stat("delivered", "Delivered", campaign.delivered_count, rate(campaign.delivered_count, recipient_count)),
+        Stat("unique_opens", "Unique opens", campaign.unique_open_count, rate(campaign.unique_open_count, recipient_count)),
         Stat("total_opens", "Total opens", campaign.open_count),
         Stat(
-            "unique_clicks", "Unique clicks", campaign.unique_click_count, rate(campaign.unique_click_count, sent_count)
+            "unique_clicks",
+            "Unique clicks",
+            campaign.unique_click_count,
+            rate(campaign.unique_click_count, recipient_count),
         ),
         Stat("total_clicks", "Total clicks", campaign.click_count),
-        Stat("unsubscribes", "Unsubscribes", campaign.unsubscribe_count, rate(campaign.unsubscribe_count, sent_count)),
-        Stat("bounces", "Bounces", campaign.bounce_count, rate(campaign.bounce_count, sent_count)),
-        Stat("complaints", "Complaints", campaign.complaint_count, rate(campaign.complaint_count, sent_count)),
+        Stat("unsubscribes", "Unsubscribes", campaign.unsubscribe_count, rate(campaign.unsubscribe_count, recipient_count)),
+        Stat("bounces", "Bounces", campaign.bounce_count, rate(campaign.bounce_count, recipient_count)),
+        Stat("complaints", "Complaints", campaign.complaint_count, rate(campaign.complaint_count, recipient_count)),
         Stat("failures", "Failures", failed_count, rate(failed_count, recipient_count)),
     ]
+
+
+def campaign_stat_groups(campaign: Campaign) -> dict[str, list[Stat]]:
+    stats_by_key = {stat.key: stat for stat in campaign_stats(campaign)}
+    return {
+        "delivery": [stats_by_key[key] for key in ("sent", "delivered", "bounces", "complaints", "failures")],
+        "engagement": [stats_by_key[key] for key in ("unique_opens", "unique_clicks", "unsubscribes")],
+        "progress": [stats_by_key[key] for key in ("queued", "processed")],
+    }
 
 
 def campaign_queryset(client: Client | None = None) -> QuerySet[Campaign]:

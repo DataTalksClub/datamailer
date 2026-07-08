@@ -116,7 +116,7 @@ from mailing.services.operator_ui import (
     campaign_recent_events,
     campaign_recipient_queryset,
     campaign_send_progress,
-    campaign_stats,
+    campaign_stat_groups,
     campaign_status_badge,
     choices_from_text_choices,
     contact_campaign_history,
@@ -414,6 +414,7 @@ def campaign_detail(request, campaign_id):
     recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
     estimate = estimate_campaign_recipients(campaign) if campaign.status == CampaignStatus.DRAFT else None
     confirm_queue = request.GET.get("confirm_send") == "1" and campaign.status == CampaignStatus.DRAFT
+    stat_groups = campaign_stat_groups(campaign)
     events = campaign_recent_events(campaign)[:10]
     event_rows = [{"event": event, "metadata_summary": metadata_summary(event.metadata)} for event in events]
     return render(
@@ -427,7 +428,7 @@ def campaign_detail(request, campaign_id):
             "can_queue": campaign.status == CampaignStatus.DRAFT,
             "confirm_queue": confirm_queue,
             "estimate": estimate,
-            "stats": campaign_stats(campaign),
+            "stat_groups": stat_groups,
             "send_progress": campaign_send_progress(campaign),
             "recipients": recipients,
             "event_rows": event_rows,
