@@ -198,8 +198,9 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
 
     assert response.status_code == 200
     assert "Operational Summary" in html
-    assert "Worker Status" in html
-    assert "datamailer-campaign-worker.service" in html
+    assert "Background processing" in html
+    assert "Processing diagnostics" in html
+    assert html.index("Processing diagnostics") < html.index("datamailer-campaign-worker.service")
     assert "Recent Campaign Activity" in html
     assert "Deliverability Attention" in html
     assert "Quick Links" in html
@@ -211,6 +212,7 @@ def test_dashboard_renders_operational_summary_links_and_seeded_style_data(
     assert "DTC Courses" in html
     assert f'href="{reverse("mailing:audience_list")}"' in html
     assert f'href="{reverse("mailing:contact_search")}"' in html
+    assert f'href="{reverse("mailing:transactional_queue")}"' in html
     assert "/operator/" not in html
 
 
@@ -2140,12 +2142,12 @@ def test_dashboard_transactional_backlog_links_and_is_client_scoped(
     select_active_client(client, client_record)
     response = client.get(reverse("mailing:dashboard"))
     html = response.content.decode()
-    assert f'<a href="{queue_url}"><strong>2</strong></a>' in html
+    assert f'<a class="stat-value" href="{queue_url}">2</a>' in html
 
     select_active_client(client, other_client)
     response = client.get(reverse("mailing:dashboard"))
     html = response.content.decode()
-    assert f'<a href="{queue_url}"><strong>3</strong></a>' in html
+    assert f'<a class="stat-value" href="{queue_url}">3</a>' in html
 
 
 def test_dashboard_backlog_count_stays_global_in_worker_status(client_record, other_client):

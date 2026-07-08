@@ -276,6 +276,9 @@ class DashboardContext:
     recent_campaigns: list[DashboardCampaign]
     attention_items: list[DashboardAttentionItem]
     worker_statuses: list[WorkerStatus]
+    worker_health_label: str
+    worker_health_tone: str
+    worker_waiting_count: int
     integration_stats: list[Stat]
     integration_clients: list[DashboardClient]
     transactional_backlog_count: int
@@ -292,6 +295,9 @@ def choices_from_text_choices(text_choices) -> list[Choice]:
 
 
 def dashboard_context(client: Client | None = None) -> DashboardContext:
+    worker_statuses = sandbox_worker_statuses()
+    worker_health_label, worker_health_tone = worker_health(worker_statuses)
+    worker_waiting_count = sum(worker.backlog_count or 0 for worker in worker_statuses)
     campaign_scope = Campaign.objects.all()
     subscription_scope = Subscription.objects.all()
     template_scope = EmailTemplate.objects.all()
@@ -368,7 +374,10 @@ def dashboard_context(client: Client | None = None) -> DashboardContext:
         ],
         recent_campaigns=recent_campaigns,
         attention_items=dashboard_attention_items(client),
-        worker_statuses=sandbox_worker_statuses(),
+        worker_statuses=worker_statuses,
+        worker_health_label=worker_health_label,
+        worker_health_tone=worker_health_tone,
+        worker_waiting_count=worker_waiting_count,
         integration_stats=[
             Stat("clients", "Active clients", active_clients, f"{client_scope.count()} total"),
             Stat("api_keys", "Active API keys", active_api_keys),
@@ -377,6 +386,14 @@ def dashboard_context(client: Client | None = None) -> DashboardContext:
         integration_clients=integration_clients,
         transactional_backlog_count=transactional_backlog_count,
     )
+
+
+def worker_health(workers: list[WorkerStatus]) -> tuple[str, str]:
+    if any(worker.badge_tone in {"danger", "warning"} for worker in workers):
+        return "Degraded", "danger"
+    if any(worker.alive is None for worker in workers):
+        return "Unknown", "neutral"
+    return "Healthy", "success"
 
 
 def suppressed_contact_queryset(client: Client | None = None):

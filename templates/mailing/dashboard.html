@@ -107,56 +107,66 @@
     </div>
   </section>
 
-  <section class="section" aria-labelledby="worker-status">
+  <section class="section" aria-labelledby="background-processing">
     <div class="section-header">
       <div>
-        <h2 id="worker-status">Worker Status</h2>
-        <p class="muted">Sandbox background services and local backlog signals.</p>
+        <h2 id="background-processing">Background processing</h2>
+        <p class="muted">
+          <span class="badge {{ dashboard.worker_health_tone }}">{{ dashboard.worker_health_label }}</span>
+          {{ dashboard.worker_waiting_count }} item{{ dashboard.worker_waiting_count|pluralize }} waiting across background work.
+        </p>
       </div>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Worker</th>
-            <th>Status</th>
-            <th>Backlog</th>
-            <th>Runtime</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for worker in dashboard.worker_statuses %}
-            <tr>
-              <td>
-                <strong>{{ worker.label }}</strong>
-                <div class="helptext">{{ worker.service_name }}</div>
-              </td>
-              <td>
-                <span class="badge {{ worker.badge_tone }}">{{ worker.badge_label }}</span>
-                <div class="helptext">{{ worker.detail }}</div>
-              </td>
-              <td>
-                {% if worker.key == "transactional" %}
-                  <a href="{% url 'mailing:transactional_queue' %}"><strong>{{ dashboard.transactional_backlog_count }}</strong></a>
-                  <div class="helptext">{{ worker.backlog_label }}</div>
-                {% elif worker.backlog_count is None %}
-                  <span class="muted">{{ worker.backlog_label }}</span>
-                  <div class="helptext">Check SQS queue metrics</div>
-                {% else %}
-                  <strong>{{ worker.backlog_count }}</strong>
-                  <div class="helptext">{{ worker.backlog_label }}</div>
-                {% endif %}
-              </td>
-              <td>
-                <code>{{ worker.command }}</code>
-                {% if worker.pid and worker.pid != "0" %}<div class="helptext">pid {{ worker.pid }}</div>{% endif %}
-                {% if worker.started_at %}<div class="helptext">started {{ worker.started_at }}</div>{% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="stats-grid">
+      {% for worker in dashboard.worker_statuses %}
+        <div class="stat">
+          <span class="stat-label">{{ worker.label }}</span>
+          {% if worker.key == "transactional" %}
+            <a class="stat-value" href="{% url 'mailing:transactional_queue' %}">{{ dashboard.transactional_backlog_count }}</a>
+          {% elif worker.backlog_count is None %}
+            <span class="stat-value">-</span>
+          {% else %}
+            <span class="stat-value">{{ worker.backlog_count }}</span>
+          {% endif %}
+          <span class="helptext">{{ worker.backlog_label }}</span>
+        </div>
+      {% endfor %}
     </div>
+    <details class="secondary-section">
+      <summary>Processing diagnostics</summary>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Worker</th>
+              <th>Status</th>
+              <th>Service</th>
+              <th>Runtime</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for worker in dashboard.worker_statuses %}
+              <tr>
+                <td><strong>{{ worker.label }}</strong></td>
+                <td>
+                  <span class="badge {{ worker.badge_tone }}">{{ worker.badge_label }}</span>
+                  <div class="helptext">{{ worker.detail }}</div>
+                </td>
+                <td>
+                  <div class="helptext">{{ worker.service_name }}</div>
+                  <code>{{ worker.command }}</code>
+                </td>
+                <td>
+                  {% if worker.pid and worker.pid != "0" %}<div class="helptext">pid {{ worker.pid }}</div>{% endif %}
+                  {% if worker.started_at %}<div class="helptext">started {{ worker.started_at }}</div>{% endif %}
+                  {% if not worker.pid or worker.pid == "0" %}<span class="muted">No running process reported</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
   </section>
 
   <div class="detail-grid">
