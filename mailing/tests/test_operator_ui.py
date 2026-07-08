@@ -147,8 +147,14 @@ def test_base_template_loads_datamailer_static_css(client, operator):
     assert b"<style>" not in response.content
     assert b'aria-current="page">Datamailer' in response.content
     assert b'data-theme-toggle aria-label="Toggle dark mode"' in response.content
+    assert b'data-sidebar-toggle aria-expanded="true"' in response.content
+    assert b'matchMedia("(max-width: 860px)")' in response.content
     assert b"datamailer.theme" in response.content
     assert finders.find("mailing/css/app.css") is not None
+    css = Path(finders.find("mailing/css/app.css")).read_text()
+    assert ".client-table,\n  .campaign-table,\n  .audience-table,\n  .audience-member-table" in css
+    assert "scrollbar-width: thin" in css
+    assert ".sidebar-collapsed .sidebar-context,\n  .sidebar-collapsed .sidebar-nav" in css
 
 
 def test_sidebar_links_transactional_queue(client, operator, client_record):

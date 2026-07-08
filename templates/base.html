@@ -112,12 +112,21 @@
         const toggle = document.querySelector("[data-sidebar-toggle]");
         if (!shell || !toggle) return;
         const key = "datamailer.sidebar.collapsed";
-        const setCollapsed = (collapsed) => {
+        const mobileQuery = window.matchMedia("(max-width: 860px)");
+        const storedPreference = () => {
+          try {
+            return localStorage.getItem(key);
+          } catch (error) {
+            return null;
+          }
+        };
+        const setCollapsed = (collapsed, persist = true) => {
           shell.classList.toggle("sidebar-collapsed", collapsed);
           toggle.setAttribute("aria-expanded", String(!collapsed));
-          localStorage.setItem(key, collapsed ? "1" : "0");
+          if (persist) localStorage.setItem(key, collapsed ? "1" : "0");
         };
-        setCollapsed(localStorage.getItem(key) === "1");
+        const stored = storedPreference();
+        setCollapsed(stored === null ? mobileQuery.matches : stored === "1", false);
         toggle.addEventListener("click", function () {
           setCollapsed(!shell.classList.contains("sidebar-collapsed"));
         });

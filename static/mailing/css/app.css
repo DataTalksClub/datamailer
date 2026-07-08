@@ -1446,9 +1446,24 @@ code {
     border-bottom: 1px solid var(--dm-color-border);
   }
 
-  .sidebar-toggle,
   .sidebar-titlebar {
-    display: none;
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: var(--dm-space-2);
+  }
+
+  .sidebar-toggle,
+  .sidebar-collapsed .sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 var(--dm-space-2);
+    border: 1px solid var(--dm-color-border);
+    border-radius: var(--dm-radius-sm);
+    background: var(--dm-color-background);
+    writing-mode: horizontal-tb;
   }
 
   .sidebar-inner,
@@ -1458,7 +1473,7 @@ code {
 
   .sidebar-collapsed .sidebar-context,
   .sidebar-collapsed .sidebar-nav {
-    display: grid;
+    display: none;
   }
 
   .sidebar-nav {
@@ -1468,6 +1483,15 @@ code {
 
   .sidebar-nav a {
     min-height: 38px;
+  }
+
+  .client-table,
+  .campaign-table,
+  .audience-table,
+  .audience-member-table {
+    max-width: 100%;
+    scrollbar-width: thin;
+    box-shadow: inset -14px 0 14px -16px var(--dm-color-muted);
   }
 
   .app-main {
@@ -1691,14 +1715,6 @@ code {
   .app-sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--dm-color-border);
-  }
-
-  .sidebar-toggle {
-    width: auto;
-  }
-
-  .sidebar-collapsed .sidebar-toggle {
-    height: 34px;
   }
 
   .sidebar-collapsed .sidebar-toggle-closed {
