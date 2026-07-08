@@ -410,6 +410,7 @@ def campaign_detail(request, campaign_id):
     active_filter = request.GET.get("filter", "")
     recipients = paginate(request, campaign_recipient_queryset(campaign, active_filter), per_page=50)
     estimate = estimate_campaign_recipients(campaign) if campaign.status == CampaignStatus.DRAFT else None
+    confirm_queue = request.GET.get("confirm_send") == "1" and campaign.status == CampaignStatus.DRAFT
     events = campaign_recent_events(campaign)[:10]
     event_rows = [{"event": event, "metadata_summary": metadata_summary(event.metadata)} for event in events]
     return render(
@@ -421,6 +422,7 @@ def campaign_detail(request, campaign_id):
             "campaign_badge": campaign_status_badge(campaign.status),
             "can_edit": campaign.status == CampaignStatus.DRAFT,
             "can_queue": campaign.status == CampaignStatus.DRAFT,
+            "confirm_queue": confirm_queue,
             "estimate": estimate,
             "stats": campaign_stats(campaign),
             "send_progress": campaign_send_progress(campaign),
@@ -440,6 +442,9 @@ def campaign_queue(request, campaign_id):
     if active_client is None:
         return redirect("mailing:dashboard")
     campaign = get_object_or_404(Campaign, pk=campaign_id, client=active_client)
+    if request.POST.get("confirm") != "1":
+        messages.warning(request, "Confirm the recipient estimate before queueing this campaign.")
+        return redirect(f"{reverse('mailing:campaign_detail', args=[campaign.id])}?confirm_send=1")
     result = queue_campaign(campaign)
     if result.queued:
         messages.success(

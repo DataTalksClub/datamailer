@@ -30,13 +30,30 @@
         <a class="button secondary" href="{% url 'mailing:campaign_edit' campaign.id %}">Edit draft</a>
       {% endif %}
       {% if can_queue %}
-        <form method="post" action="{% url 'mailing:campaign_queue' campaign.id %}">
-          {% csrf_token %}
-          <button type="submit">Snapshot and queue</button>
-        </form>
+        <a class="button" href="{% url 'mailing:campaign_detail' campaign.id %}?confirm_send=1">Queue send</a>
       {% endif %}
     </div>
   </div>
+
+  {% if confirm_queue and estimate %}
+    <section class="section" aria-labelledby="queue-confirmation">
+      <div class="section-header">
+        <div>
+          <h2 id="queue-confirmation">Queue this send?</h2>
+          <p class="muted">
+            Queue send to approximately {{ estimate.recipient_count }} recipient{{ estimate.recipient_count|pluralize }}.
+            {{ estimate.skipped_count }} contact{{ estimate.skipped_count|pluralize }} will be skipped.
+          </p>
+        </div>
+      </div>
+      <form class="toolbar" method="post" action="{% url 'mailing:campaign_queue' campaign.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="confirm" value="1">
+        <button type="submit">Send campaign</button>
+        <a class="button secondary" href="{% url 'mailing:campaign_detail' campaign.id %}">Cancel</a>
+      </form>
+    </section>
+  {% endif %}
 
   <section class="section" aria-labelledby="campaign-summary">
     <div class="section-header">
@@ -86,7 +103,7 @@
       <div class="section-header">
         <div>
           <h2 id="recipient-estimate">Queue Preview</h2>
-          <p class="muted">Estimated recipients before snapshotting this draft.</p>
+          <p class="muted">Estimated recipients before queueing this draft.</p>
         </div>
       </div>
       <div class="stats-grid">

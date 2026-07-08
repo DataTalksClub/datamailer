@@ -1662,15 +1662,20 @@ def test_campaign_detail_shows_draft_estimate_and_state_dependent_controls(clien
 
     assert draft_response.status_code == 200
     assert b"Queue Preview" in draft_response.content
-    assert b"Snapshot and queue" in draft_response.content
+    assert b"Queue send" in draft_response.content
+    assert b"Snapshot and queue" not in draft_response.content
     assert b"Edit draft" in draft_response.content
     assert b"No campaign email events found yet" in draft_response.content
+    confirm_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]), {"confirm_send": "1"})
+    assert b"Queue this send?" in confirm_response.content
+    assert b"Queue send to approximately 1 recipient" in confirm_response.content
+    assert b"Send campaign" in confirm_response.content
 
     campaign.status = "queued"
     campaign.save()
     queued_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
     assert b"Queue Preview" not in queued_response.content
-    assert b"Snapshot and queue" not in queued_response.content
+    assert b"Queue send" not in queued_response.content
     assert b"Edit draft" not in queued_response.content
 
 
@@ -1698,8 +1703,15 @@ def test_queue_action_snapshots_enqueues_idempotently_and_does_not_call_ses(
         lambda: (_ for _ in ()).throw(AssertionError("SES should not be called by queue action")),
     )
 
-    first = client.post(reverse("mailing:campaign_queue", args=[campaign.id]))
-    second = client.post(reverse("mailing:campaign_queue", args=[campaign.id]))
+    unconfirmed = client.post(reverse("mailing:campaign_queue", args=[campaign.id]))
+    campaign.refresh_from_db()
+    assert unconfirmed.status_code == 302
+    assert unconfirmed["Location"] == f"{reverse('mailing:campaign_detail', args=[campaign.id])}?confirm_send=1"
+    assert campaign.status == "draft"
+    assert CampaignRecipient.objects.filter(campaign=campaign).count() == 0
+
+    first = client.post(reverse("mailing:campaign_queue", args=[campaign.id]), {"confirm": "1"})
+    second = client.post(reverse("mailing:campaign_queue", args=[campaign.id]), {"confirm": "1"})
 
     campaign.refresh_from_db()
     assert first.status_code == 302
