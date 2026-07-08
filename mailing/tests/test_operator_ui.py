@@ -915,10 +915,16 @@ def test_contact_detail_renders_summary_before_management_and_debug_sections(
     assert "Last sent" in html
     assert "Long Newsletter Audience Tag" in html
     assert "Recent Activity" in html
+    assert "Manage contact" in html
+    assert "Manage contact state, subscriptions, and tags" not in html
     assert "Campaign: Weekly update" in html
     assert f"/campaigns/{campaign.id}/#recipient-{recipient.id}" in html
-    assert html.index("Send Eligibility") < html.index("Membership and Tags") < html.index("Recent Activity")
-    assert html.index("Recent Activity") < html.index("Manage contact state, subscriptions, and tags")
+    assert html.index('id="sendability">Send Eligibility') < html.index('id="membership">Membership and Tags')
+    assert html.index('id="membership">Membership and Tags') < html.index('id="manage-contact-heading">Manage contact')
+    assert html.index('id="manage-contact-heading">Manage contact') < html.index('id="recent-activity">Recent Activity')
+    manage_html = html[html.index('<section class="detail-section manage-contact-panel"') :]
+    assert manage_html.index("Subscription") < manage_html.index("State") < manage_html.index("Add tag")
+    assert manage_html.index("Add tag") < manage_html.index("Remove tag")
     assert html.index("Full event timeline and audit details") > html.index("Recent Activity")
 
 

@@ -611,6 +611,16 @@ a.stat-link:focus {
   gap: var(--dm-space-3);
 }
 
+.manage-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--dm-space-3);
+}
+
+.manage-form h3 {
+  margin-top: 0;
+}
+
 .compact-row {
   display: grid;
   gap: var(--dm-space-2);
