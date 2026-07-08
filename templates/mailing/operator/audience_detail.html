@@ -226,7 +226,9 @@
               <tr>
                 <td class="email-cell">
                   <a class="data-truncate" href="{% url 'mailing:contact_detail' row.contact.normalized_email %}" title="{{ row.contact.email }}">{{ row.contact.email }}</a>
-                  <div class="helptext">{{ row.contact.normalized_email }}</div>
+                  {% if row.contact.email != row.contact.normalized_email %}
+                    <div class="helptext">{{ row.contact.normalized_email }}</div>
+                  {% endif %}
                 </td>
                 <td>
                   <div class="badge-row">

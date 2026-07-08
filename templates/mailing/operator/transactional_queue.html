@@ -43,7 +43,10 @@
                     <div class="helptext"><a href="{% url 'mailing:contact_detail' row.message.contact.normalized_email %}">Contact</a></div>
                   {% endif %}
                 </td>
-                <td><code>{{ row.message.template_key }}</code></td>
+                <td>
+                  {{ row.message.template.name }}
+                  <div class="muted">Integration key: {{ row.message.template_key }}</div>
+                </td>
                 <td class="truncate">{{ row.message.subject|default:"-" }}</td>
                 <td class="nowrap">{{ row.message.created_at|date:"Y-m-d H:i" }}</td>
                 <td class="nowrap">{{ row.message.created_at|timesince }}</td>

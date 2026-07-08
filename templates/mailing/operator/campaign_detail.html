@@ -68,7 +68,7 @@
       <div class="meta-item"><span class="meta-label">Audience</span><a href="{% url 'mailing:audience_detail' campaign.audience_id %}">{{ campaign.audience.name }}</a></div>
       <div class="meta-item"><span class="meta-label">Scheduled</span>{{ campaign.scheduled_at|date:"Y-m-d H:i"|default:"-" }}</div>
       <div class="meta-item"><span class="meta-label">Sent</span>{{ campaign.sent_at|date:"Y-m-d H:i"|default:"-" }}</div>
-      <div class="meta-item"><span class="meta-label">Recipients snapshotted</span>{{ campaign.recipient_count }}</div>
+      <div class="meta-item"><span class="meta-label">Recipients selected</span>{{ campaign.recipient_count }}</div>
     </div>
   </section>
 
@@ -226,7 +226,7 @@
     <div class="section-header">
       <div>
         <h2 id="campaign-recipients">Recipients</h2>
-        <p class="muted">Snapshot recipients, delivery state, engagement, provider IDs, and errors.</p>
+        <p class="muted">Recipients, delivery state, engagement, provider diagnostics, and errors.</p>
       </div>
     </div>
     <form class="toolbar" method="get">
@@ -302,7 +302,7 @@
         {% if active_filter %}
           No recipients match this filter.
         {% else %}
-          No recipient snapshot rows exist for this campaign yet.
+          No recipients have been selected for this campaign yet.
         {% endif %}
       </div>
     {% endif %}

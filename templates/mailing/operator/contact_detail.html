@@ -12,7 +12,9 @@
   <div class="page-header contact-header">
     <div>
       <h1>{{ contact.email }}</h1>
-      <p class="contact-subtitle">{{ contact.normalized_email }}</p>
+      {% if contact.email != contact.normalized_email %}
+        <p class="contact-subtitle">{{ contact.normalized_email }}</p>
+      {% endif %}
       <div class="badge-row" aria-label="Contact state">
         <span class="badge {{ verification_badge.tone }}">{{ verification_badge.label }}</span>
         <span class="badge {{ validation_badge.tone }}">Validation: {{ validation_badge.label }}</span>
@@ -289,7 +291,10 @@
             {% for row in transactional_rows %}
               {% with message=row.message %}
               <tr>
-                <td>{{ message.template_key }}</td>
+                <td>
+                  {{ message.template.name }}
+                  <div class="muted">Integration key: {{ message.template_key }}</div>
+                </td>
                 <td>{{ message.client.name }}</td>
                 <td><span class="badge">{{ message.get_status_display }}</span></td>
                 <td class="truncate">{{ message.subject }}</td>

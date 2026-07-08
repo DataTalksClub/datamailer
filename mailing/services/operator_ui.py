@@ -461,6 +461,8 @@ def dashboard_attention_items(client: Client | None = None) -> list[DashboardAtt
 
 def campaign_status_badge(status: str) -> Badge:
     label = CampaignStatus(status).label
+    if status == CampaignStatus.SNAPSHOTTING:
+        label = "Preparing recipients"
     if status == CampaignStatus.SENT:
         return Badge(label, "success")
     if status in {CampaignStatus.QUEUED, CampaignStatus.SNAPSHOTTING, CampaignStatus.SENDING}:
@@ -975,13 +977,15 @@ def contact_campaign_history(contact: Contact, client: Client | None = None) -> 
 
 
 def contact_transactional_history(contact: Contact, client: Client | None = None):
-    queryset = contact.transactional_messages.select_related("client")
+    queryset = contact.transactional_messages.select_related("client", "template")
     if client is not None:
         queryset = queryset.filter(client=client)
     return queryset.order_by("-created_at", "-id").only(
         "id",
         "client__name",
         "client__slug",
+        "template_id",
+        "template__name",
         "template_key",
         "status",
         "subject",
@@ -1193,7 +1197,7 @@ def recent_contact_activity(contact: Contact, client: Client | None = None) -> l
             ContactActivity(
                 message.sent_at or message.created_at,
                 Badge(message.get_status_display(), delivery_tone(message.status)),
-                f"Transactional: {message.template_key}",
+                f"Transactional: {message.template.name}",
                 message.subject,
                 metadata=message.last_error or metadata_summary(message.metadata),
             )
@@ -1313,6 +1317,7 @@ def contact_event_timeline(contact: Contact, client: Client | None = None) -> Qu
         "campaign__audience",
         "campaign_recipient",
         "transactional_message",
+        "transactional_message__template",
         "client",
         "audience",
     )
@@ -1325,7 +1330,7 @@ def event_context(event: EmailEvent) -> str:
     if event.campaign_id:
         return f"Campaign: {event.campaign.subject}"
     if event.transactional_message_id:
-        return f"Transactional: {event.transactional_message.template_key}"
+        return f"Transactional: {event.transactional_message.template.name}"
     return "Contact event"
 
 

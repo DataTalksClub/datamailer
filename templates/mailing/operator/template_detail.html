@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}{{ template.key }} | Datamailer{% endblock %}
+{% block title %}{{ template.name }} | Datamailer{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <div>
       <h1>{{ template.name }}</h1>
-      <p>{{ template.client.name }} / <code>{{ template.key }}</code></p>
+      <p>{{ template.client.name }}</p>
+      <div class="helptext">Integration key: {{ template.key }}</div>
       <div class="badge-row" aria-label="Template state">
         {% if template.is_active %}
           <span class="badge success">Active</span>
@@ -32,7 +33,7 @@
     </div>
     <div class="meta-grid">
       <div class="meta-item"><span class="meta-label">Client</span>{{ template.client.name }}<div class="muted">{{ template.client.slug }}</div></div>
-      <div class="meta-item"><span class="meta-label">Key</span><code>{{ template.key }}</code></div>
+      <div class="meta-item"><span class="meta-label">Integration key</span>{{ template.key }}</div>
       <div class="meta-item"><span class="meta-label">Usage</span>{% if template.is_transactional %}Transactional{% else %}Campaign only{% endif %}</div>
       <div class="meta-item"><span class="meta-label">Updated</span>{{ template.updated_at|date:"Y-m-d H:i" }}</div>
     </div>

@@ -6,7 +6,7 @@
   <div class="page-header">
     <div>
       <h1>Transactional Templates</h1>
-      <p>Template keys, required context, and recent send state for {{ active_client.name }}.</p>
+      <p>Templates, required context, and recent send state for {{ active_client.name }}.</p>
     </div>
     <div class="actions">
       <a class="button secondary" href="{% url 'mailing:api_docs' %}">API docs</a>
@@ -18,7 +18,7 @@
       <table>
         <thead>
           <tr>
-            <th>Key</th>
+            <th>Template</th>
             <th>Client</th>
             <th>Status</th>
             <th>Required context</th>
@@ -30,8 +30,8 @@
           {% for row in template_rows %}
             <tr>
               <td>
-                <a href="{% url 'mailing:template_detail' row.template.id %}"><code>{{ row.template.key }}</code></a>
-                <div class="muted">{{ row.template.name }}</div>
+                <a href="{% url 'mailing:template_detail' row.template.id %}">{{ row.template.name }}</a>
+                <div class="muted">Integration key: {{ row.template.key }}</div>
               </td>
               <td>{{ row.template.client.name }}<div class="muted">{{ row.template.client.slug }}</div></td>
               <td>

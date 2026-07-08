@@ -983,6 +983,7 @@ def test_contact_detail_no_membership_explains_not_subscribed_and_no_activity(cl
     assert "not subscribed" in html
     assert "Can send transactional" in html
     assert "No data" in html
+    assert "contact-subtitle" not in html
     assert "No recent campaign, transactional, or contact events found." in html
 
 
@@ -1194,6 +1195,7 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
     assert "Hard bounced" in detail_html
     assert "invalid@example.com" in detail_html
     assert 'href="/contacts/invalid@example.com/"' in detail_html
+    assert '<div class="helptext">invalid@example.com</div>' not in detail_html
     assert "/operator/" not in detail_html
     assert "Campaign History" in detail_html
     assert "Recent Events" in detail_html
@@ -1713,6 +1715,12 @@ def test_campaign_detail_shows_draft_estimate_and_state_dependent_controls(clien
     assert b"Queue send" not in queued_response.content
     assert b"Edit draft" not in queued_response.content
 
+    campaign.status = "snapshotting"
+    campaign.save()
+    snapshotting_response = client.get(reverse("mailing:campaign_detail", args=[campaign.id]))
+    assert b"Preparing recipients" in snapshotting_response.content
+    assert b"Snapshotting" not in snapshotting_response.content
+
 
 def test_queue_action_snapshots_enqueues_idempotently_and_does_not_call_ses(
     client,
@@ -1898,10 +1906,17 @@ def test_transactional_template_catalog_is_staff_only(client, operator, client_r
     detail_response = client.get(reverse("mailing:template_detail", args=[template.id]))
 
     assert list_response.status_code == 200
+    list_html = list_response.content.decode()
     assert b"email-verification" in list_response.content
+    assert b"Email Verification" in list_response.content
+    assert list_html.index("Email Verification") < list_html.index("Integration key: email-verification")
+    assert b"<code>email-verification</code>" not in list_response.content
     assert b"Active" in list_response.content
     assert b"verification_url" in list_response.content
     assert detail_response.status_code == 200
+    detail_html = detail_response.content.decode()
+    assert detail_html.index("Email Verification") < detail_html.index("Integration key: email-verification")
+    assert b"<code>email-verification</code>" not in detail_response.content
     assert b"Verify a client account email." in detail_response.content
     assert b"Client-generated verification URL." in detail_response.content
     assert b"https://client.example/verify/placeholder" in detail_response.content
@@ -2056,6 +2071,13 @@ def test_transactional_queue_shows_row_details_and_contact_link(client, operator
     client.force_login(operator)
     select_active_client(client, client_record)
     created_at = timezone.now() - timedelta(days=2)
+    EmailTemplate.objects.create(
+        client=client_record,
+        key="password-reset",
+        name="Password reset",
+        subject="Reset your password",
+        is_transactional=True,
+    )
     message = create_queued_message(
         client_record,
         email="waiting@example.com",
@@ -2072,7 +2094,10 @@ def test_transactional_queue_shows_row_details_and_contact_link(client, operator
     assert (
         f'href="{reverse("mailing:contact_detail", args=[message.contact.normalized_email])}"' in html
     )
+    assert "Password reset" in html
     assert "password-reset" in html
+    assert html.index("Password reset") < html.index("Integration key: password-reset")
+    assert "<code>password-reset</code>" not in html
     assert "Reset your password" in html
     assert created_at.strftime("%Y-%m-%d %H:%M") in html
     assert "2\xa0days" in html or "2 days" in html

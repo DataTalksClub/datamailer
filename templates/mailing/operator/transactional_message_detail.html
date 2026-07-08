@@ -7,11 +7,12 @@
     <div>
       <p class="breadcrumbs">
         <a href="{% url 'mailing:template_catalog' %}">Templates</a>
-        / <a href="{% url 'mailing:template_detail' message.template_id %}">{{ message.template_key }}</a>
+        / <a href="{% url 'mailing:template_detail' message.template_id %}">{{ message.template.name }}</a>
         / Message {{ message.id }}
       </p>
       <h1>{{ message.email }}</h1>
-      <p>{{ message.client.name }} / <code>{{ message.template_key }}</code></p>
+      <p>{{ message.client.name }} / {{ message.template.name }}</p>
+      <div class="helptext">Integration key: {{ message.template_key }}</div>
       <span class="badge {{ badge.tone }}">{{ badge.label }}</span>
     </div>
     <div class="actions">
