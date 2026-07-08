@@ -1065,37 +1065,27 @@ tr:last-child td {
 }
 
 .audience-member-table table {
-  min-width: 1040px;
+  min-width: 760px;
   table-layout: fixed;
 }
 
 .audience-member-table .email-cell {
-  width: 21%;
+  width: 34%;
 }
 
 .audience-member-table th:nth-child(2),
 .audience-member-table td:nth-child(2) {
-  width: 19%;
+  width: 24%;
 }
 
 .audience-member-table th:nth-child(3),
 .audience-member-table td:nth-child(3) {
-  width: 18%;
+  width: 26%;
 }
 
 .audience-member-table th:nth-child(4),
 .audience-member-table td:nth-child(4) {
   width: 16%;
-}
-
-.audience-member-table th:nth-child(5),
-.audience-member-table td:nth-child(5) {
-  width: 14%;
-}
-
-.audience-member-table th:nth-child(6),
-.audience-member-table td:nth-child(6) {
-  width: 12%;
 }
 
 .campaign-recipient-table .email-cell {

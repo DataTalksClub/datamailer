@@ -151,6 +151,22 @@ class ContactResultRow:
     last_clicked_at: object | None
     recent_issue: str
 
+    @property
+    def primary_status_badge(self) -> "Badge":
+        return self.subscription_badge
+
+    @property
+    def hidden_status_badges(self) -> tuple["Badge", ...]:
+        return (self.validation_badge, self.verification_badge)
+
+    @property
+    def hidden_status_badge_count(self) -> int:
+        return len(self.hidden_status_badges)
+
+    @property
+    def hidden_status_badge_summary(self) -> str:
+        return ", ".join(badge.label for badge in self.hidden_status_badges)
+
 
 @dataclass(frozen=True)
 class ActiveFilter:

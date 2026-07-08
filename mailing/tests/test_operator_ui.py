@@ -1188,9 +1188,20 @@ def test_audience_list_and_detail_render_summaries_members_history_and_events(
     detail_html = detail_response.content.decode()
     assert "Segmentation" in detail_html
     assert "Membership" in detail_html
+    css = Path(finders.find("mailing/css/app.css")).read_text()
+    assert ".audience-member-table table" in css
+    assert "min-width: 760px" in css
+    assert 'class="contact-explorer-form audience-member-form"' in detail_html
+    assert 'class="filter-grid promoted-filter-grid"' in detail_html
+    assert '<details class="advanced-panel">' in detail_html
+    assert '<details class="advanced-panel" open>' not in detail_html
+    assert "<summary>Advanced filters</summary>" in detail_html
     assert "Inactive since" in detail_html
     assert 'name="include_tags" value="newsletter"' in detail_html
     assert 'class="table-wrap audience-member-table"' in detail_html
+    assert '<th scope="col">Subscriptions</th>' not in detail_html
+    assert '<th scope="col">Tags</th>' not in detail_html
+    assert ">+2</span>" in detail_html
     assert "Missing email DNS" in detail_html
     assert "No MX: 1" not in detail_html
     assert "Valid email: 1" in detail_html
