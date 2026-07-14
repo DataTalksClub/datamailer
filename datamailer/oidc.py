@@ -28,7 +28,47 @@ def _b64url(value):
 
 
 def _safe_return_to(value):
-    return value if value and value.startswith("/") and not value.startswith("//") else "/admin/"
+    if not isinstance(value, str) or not value:
+        return "/admin/"
+    candidate = value
+    for _ in range(8):
+        decoded = urllib.parse.unquote(candidate)
+        if decoded == candidate:
+            break
+        candidate = decoded
+    controls = any(ord(char) < 32 or 127 <= ord(char) <= 159 or char in "\u2028\u2029" for char in candidate)
+    malformed_escape = any(
+        candidate[index] == "%"
+        and (
+            index + 2 >= len(candidate)
+            or any(char not in "0123456789abcdefABCDEF" for char in candidate[index + 1 : index + 3])
+        )
+        for index in range(len(candidate))
+    )
+    if controls or malformed_escape or "\\" in candidate or candidate.startswith("//"):
+        return "/admin/"
+    try:
+        parsed = urllib.parse.urlsplit(candidate)
+    except ValueError:
+        return "/admin/"
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return "/admin/"
+    if parsed.path == "/login" or parsed.path == "/logout" or parsed.path.startswith("/auth/"):
+        return "/admin/"
+    return urllib.parse.urlunsplit(("", "", parsed.path, parsed.query, ""))
+
+
+def _security_headers(response):
+    response["Cache-Control"] = "no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _error_redirect():
+    response = HttpResponseRedirect("/auth/error")
+    response.status_code = 303
+    return _security_headers(response)
 
 
 @require_GET
@@ -56,7 +96,7 @@ def begin(request):
             "code_challenge_method": "S256",
         }
     )
-    return HttpResponseRedirect(f"{settings.AUTH_BASE_URL}/oauth2/authorize?{query}")
+    return _security_headers(HttpResponseRedirect(f"{settings.AUTH_BASE_URL}/oauth2/authorize?{query}"))
 
 
 def _exchange(code, verifier):
@@ -96,23 +136,23 @@ def callback(request):
     pending = request.session.pop("oidc", None)
     code, state = request.GET.get("code", ""), request.GET.get("state", "")
     if not pending or not code or not hmac.compare_digest(state, str(pending.get("state", ""))):
-        return HttpResponse("Invalid or expired login state", status=400)
+        return _error_redirect()
     try:
         claims = _verify(_exchange(code, pending["verifier"])["id_token"])
     except Exception:
-        return HttpResponse("Login verification failed", status=401)
+        return _error_redirect()
     if not hmac.compare_digest(str(claims.get("nonce", "")), str(pending.get("nonce", ""))):
-        return HttpResponse("Identity token nonce mismatch", status=401)
+        return _error_redirect()
     email = claims.get("email")
     if not isinstance(email, str) or claims.get("email_verified") is not True:
-        return HttpResponse("A verified email address is required", status=401)
+        return _error_redirect()
     email = email.lower()
     model = get_user_model()
     user = model.objects.filter(email__iexact=email).first()
     if user is None:
         user = model.objects.create_user(username=email, email=email)
     if not user.is_active:
-        return HttpResponse("This operator account is disabled", status=403)
+        return _error_redirect()
     changed = []
     if user.email != email:
         user.email = email
@@ -123,7 +163,20 @@ def callback(request):
     if changed:
         user.save(update_fields=changed)
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-    return HttpResponseRedirect(_safe_return_to(pending.get("return_to")))
+    return _security_headers(HttpResponseRedirect(_safe_return_to(pending.get("return_to"))))
+
+
+@require_GET
+def auth_error(_request):
+    response = HttpResponse(
+        """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign-in error · Datamailer</title><style>body{margin:0;font:16px system-ui;background:#f5f7fa;color:#172033}main{max-width:32rem;margin:10vh auto;padding:2rem;background:white;border:1px solid #dce2ea;border-radius:.75rem;box-shadow:0 8px 28px #17203314}a{color:#1769aa;font-weight:600}</style></head><body><main><h1>Sign-in error</h1><p>Authentication could not be completed. No account changes were made.</p><p><a href="/auth/login?return_to=/admin/">Try again</a></p></main></body></html>""",
+        status=403,
+        content_type="text/html; charset=utf-8",
+    )
+    response["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    return _security_headers(response)
 
 
 @require_GET
@@ -131,9 +184,7 @@ def end(request):
     logout(request)
     if not configured() or not settings.AUTH_LOGOUT_URL:
         return HttpResponseRedirect("/admin/login/")
-    query = urllib.parse.urlencode(
-        {"client_id": settings.AUTH_CLIENT_ID, "logout_uri": settings.AUTH_LOGOUT_URL}
-    )
+    query = urllib.parse.urlencode({"client_id": settings.AUTH_CLIENT_ID, "logout_uri": settings.AUTH_LOGOUT_URL})
     return HttpResponseRedirect(f"{settings.AUTH_BASE_URL}/logout?{query}")
 
 

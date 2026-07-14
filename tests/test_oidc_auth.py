@@ -49,7 +49,46 @@ def test_oidc_login_uses_pkce_and_verified_callback_creates_staff_session(client
 def test_oidc_callback_rejects_invalid_state(client, settings):
     for key, value in AUTH_SETTINGS.items():
         setattr(settings, key, value)
-    assert client.get("/auth/callback?code=valid&state=wrong").status_code == 400
+    response = client.get("/auth/callback?code=valid&state=wrong")
+    assert response.status_code == 303
+    assert response["Location"] == "/auth/error"
+    assert response["Cache-Control"] == "no-store"
+    assert response["Referrer-Policy"] == "no-referrer"
+    assert response.content == b""
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "//evil.example",
+        "/\\evil.example",
+        "/%5cevil.example",
+        "/%255cevil.example",
+        "https://evil.example/",
+        "/%2f%2fevil.example",
+        "/auth/callback",
+        "/auth/error",
+        "/ok%0d%0aLocation:https://evil.example",
+        "/bad%escape",
+    ],
+)
+def test_oidc_return_to_rejects_unsafe_targets(value):
+    assert oidc._safe_return_to(value) == "/admin/"
+
+
+def test_oidc_return_to_accepts_clean_local_path_and_query():
+    assert oidc._safe_return_to("/admin/mailing/campaign/?page=2#ignored") == "/admin/mailing/campaign/?page=2"
+
+
+def test_oidc_error_page_is_clean_and_hardened(client):
+    response = client.get("/auth/error?code=not-rendered&state=not-rendered")
+    assert response.status_code == 403
+    assert b"not-rendered" not in response.content
+    assert b"Datamailer" in response.content
+    assert response["Cache-Control"] == "no-store"
+    assert response["Referrer-Policy"] == "no-referrer"
+    assert response["X-Content-Type-Options"] == "nosniff"
+    assert "default-src 'none'" in response["Content-Security-Policy"]
 
 
 def test_admin_login_redirects_to_shared_auth_when_configured(client, settings):
