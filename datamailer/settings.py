@@ -49,11 +49,15 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 CSRF_TRUSTED_ORIGINS = csv_env("CSRF_TRUSTED_ORIGINS", "", allow_empty=True)
-AUTH_BASE_URL = os.environ.get("AUTH_BASE_URL", "").rstrip("/")
-AUTH_CLIENT_ID = os.environ.get("AUTH_CLIENT_ID", "")
-AUTH_CALLBACK_URL = os.environ.get("AUTH_CALLBACK_URL", "")
-AUTH_LOGOUT_URL = os.environ.get("AUTH_LOGOUT_URL", "")
-AUTH_ISSUER = os.environ.get("AUTH_ISSUER", "").rstrip("/")
+AUTH_BASE_URL = os.environ.get("AUTH_BASE_URL", "" if DEBUG else "https://auth.dtcdev.click").rstrip("/")
+AUTH_CLIENT_ID = os.environ.get("AUTH_CLIENT_ID", "" if DEBUG else "41gcnc18qjtq61rsag9iqoepmk")
+AUTH_CALLBACK_URL = os.environ.get(
+    "AUTH_CALLBACK_URL", "" if DEBUG else "https://datamailer.dtcdev.click/auth/callback"
+)
+AUTH_LOGOUT_URL = os.environ.get("AUTH_LOGOUT_URL", "" if DEBUG else "https://datamailer.dtcdev.click/")
+AUTH_ISSUER = os.environ.get(
+    "AUTH_ISSUER", "" if DEBUG else "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs"
+).rstrip("/")
 AUTH_JWKS_URL = os.environ.get(
     "AUTH_JWKS_URL", f"{AUTH_ISSUER}/.well-known/jwks.json" if AUTH_ISSUER else ""
 )
