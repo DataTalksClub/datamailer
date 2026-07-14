@@ -49,6 +49,14 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 CSRF_TRUSTED_ORIGINS = csv_env("CSRF_TRUSTED_ORIGINS", "", allow_empty=True)
+AUTH_BASE_URL = os.environ.get("AUTH_BASE_URL", "").rstrip("/")
+AUTH_CLIENT_ID = os.environ.get("AUTH_CLIENT_ID", "")
+AUTH_CALLBACK_URL = os.environ.get("AUTH_CALLBACK_URL", "")
+AUTH_LOGOUT_URL = os.environ.get("AUTH_LOGOUT_URL", "")
+AUTH_ISSUER = os.environ.get("AUTH_ISSUER", "").rstrip("/")
+AUTH_JWKS_URL = os.environ.get(
+    "AUTH_JWKS_URL", f"{AUTH_ISSUER}/.well-known/jwks.json" if AUTH_ISSUER else ""
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
