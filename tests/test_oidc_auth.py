@@ -19,6 +19,7 @@ AUTH_SETTINGS = {
 def test_oidc_login_uses_pkce_and_verified_callback_creates_staff_session(client, settings, monkeypatch):
     for key, value in AUTH_SETTINGS.items():
         setattr(settings, key, value)
+    settings.SESSION_COOKIE_SECURE = True
     start = client.get("/auth/login?return_to=/admin/")
     assert start.status_code == 302
     authorize = urlparse(start["Location"])
@@ -40,6 +41,8 @@ def test_oidc_login_uses_pkce_and_verified_callback_creates_staff_session(client
     callback = client.get(f"/auth/callback?code=valid&state={query['state'][0]}")
     assert callback.status_code == 302
     assert callback["Location"] == "/admin/"
+    assert callback.cookies["sessionid"]["secure"] is True
+    assert callback.cookies["sessionid"]["httponly"] is True
     user = get_user_model().objects.get(email="person@datatalks.club")
     assert user.is_staff is True
     assert client.get("/admin/").status_code == 200
