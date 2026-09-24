@@ -60,13 +60,31 @@ def process_inbound_object(bucket, key, *, s3, dynamodb, publisher):
     return results
 
 
+SAFE_ROUTE_RE = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?")
+
+
 def matching_routes(recipients, configured_routes):
     matched = {}
     for recipient in recipients:
-        route = configured_routes.get(recipient.lower())
+        route = configured_routes.get(recipient.lower()) or fallback_route(recipient)
         if route:
             matched.setdefault(route, []).append(recipient)
     return matched
+
+
+def fallback_route(recipient):
+    """Map the local part to a route for enabled trigger domains.
+
+    Exact INBOUND_EMAIL_ROUTES entries always win. The fallback lets a
+    whole domain accept ad-hoc addresses (Zapier-style email triggers):
+    anything@dtcdev.click routes as "anything" without per-address config.
+    """
+    local, _, domain = recipient.lower().rpartition("@")
+    if domain not in settings.INBOUND_EMAIL_ROUTE_DOMAINS:
+        return None
+    if not SAFE_ROUTE_RE.fullmatch(local):
+        return None
+    return local
 
 
 def build_event(message, *, event_id, route, matched_recipients, raw_bucket, raw_key, s3):

@@ -7,7 +7,7 @@ import pytest
 from django.test import override_settings
 
 from mailing.inbound_mime import address_values, parse_mime
-from mailing.services.inbound_email import process_inbound_s3_notification
+from mailing.services.inbound_email import matching_routes, process_inbound_s3_notification
 
 
 class ConditionalCheckFailedException(Exception):
@@ -163,3 +163,62 @@ def test_parser_rejects_malformed_mime(raw, error):
 
 def test_address_values_ignores_empty_optional_headers():
     assert address_values("invoice@example.com", "", None) == ["invoice@example.com"]
+
+
+@override_settings(INBOUND_EMAIL_ROUTE_DOMAINS={"dtcdev.click"})
+def test_matching_routes_falls_back_to_local_part_on_trigger_domains():
+    routes = matching_routes(
+        ["invoice-2026@dtcdev.click", "keep@mailer.test", "Bad_Name@dtcdev.click", "x@other.test"],
+        {"keep@mailer.test": "keep"},
+    )
+
+    assert routes == {
+        "invoice-2026": ["invoice-2026@dtcdev.click"],
+        "keep": ["keep@mailer.test"],
+    }
+
+
+def test_matching_routes_exact_entry_wins_over_fallback():
+    routes = matching_routes(["special@dtcdev.click"], {"special@dtcdev.click": "renamed"})
+
+    assert routes == {"renamed": ["special@dtcdev.click"]}
+
+
+@override_settings(
+    INBOUND_EMAIL_ROUTES={},
+    INBOUND_EMAIL_ROUTE_DOMAINS={"dtcdev.click"},
+    INBOUND_EMAIL_IDEMPOTENCY_TABLE="inbound-idempotency",
+    INBOUND_EMAIL_EVENTS_TOPIC_ARN="arn:aws:sns:eu-west-1:123:inbound-events",
+    INBOUND_EMAIL_ARTIFACT_PREFIX="processed/",
+    INBOUND_EMAIL_INLINE_BODY_MAX_BYTES=65536,
+)
+def test_worker_publishes_trigger_domain_address_as_its_own_route():
+    message = EmailMessage()
+    message["From"] = "Billing <billing@example.com>"
+    message["To"] = "income-2026-08@dtcdev.click"
+    message["Message-ID"] = "<trigger-123@example.com>"
+    message.set_content("Please file this invoice")
+    s3 = FakeS3(message.as_bytes())
+    dynamodb = FakeDynamoDB()
+    publisher = FakePublisher()
+
+    results = process_inbound_s3_notification(
+        {
+            "Records": [
+                {
+                    "eventSource": "aws:s3",
+                    "s3": {
+                        "bucket": {"name": "inbound-private"},
+                        "object": {"key": "raw%2Fmessage-trigger"},
+                    },
+                }
+            ]
+        },
+        s3=s3,
+        dynamodb=dynamodb,
+        publisher=publisher,
+    )
+
+    assert [item["route"] for item in results] == ["income-2026-08"]
+    event = json.loads(publisher.messages[0]["Message"])
+    assert event["route"] == "income-2026-08"

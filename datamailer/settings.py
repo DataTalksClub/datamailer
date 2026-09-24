@@ -228,6 +228,10 @@ INBOUND_EMAIL_ROUTES = {
     )
     if separator and address.strip() and route.strip()
 }
+INBOUND_EMAIL_ROUTE_DOMAINS = {
+    domain.strip().lower()
+    for domain in os.environ.get("INBOUND_EMAIL_ROUTE_DOMAINS", "").split(",") if domain.strip()
+}
 WORKER_STATUS_SYSTEMD_ENABLED = bool_env("DATAMAILER_WORKER_STATUS_SYSTEMD_ENABLED", default=not TESTING)
 WORKER_STATUS_SYSTEMD_TIMEOUT_SECONDS = float_env("DATAMAILER_WORKER_STATUS_SYSTEMD_TIMEOUT_SECONDS", default=1.5)
 TRANSACTIONAL_EMAIL_QUEUE_NAME = os.environ.get("TRANSACTIONAL_EMAIL_QUEUE_NAME", "transactional-email")
