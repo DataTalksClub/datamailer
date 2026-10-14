@@ -18,6 +18,8 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/datamailer
 EnvironmentFile=/opt/datamailer/.env
+# Unbuffered so drain failures reach journald immediately instead of sitting in the stdout block buffer until the next restart.
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/datamailer/.venv/bin/python manage.py drain_sqs_ingress ${command_name} --batch-size 10 --wait-time 20
 Restart=always
 RestartSec=5
@@ -42,6 +44,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/datamailer
 EnvironmentFile=/opt/datamailer/.env
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/datamailer/.venv/bin/python manage.py process_cmp_callbacks --batch-size 25 --idle-sleep 5
 Restart=always
 RestartSec=5
@@ -66,6 +69,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/datamailer
 EnvironmentFile=/opt/datamailer/.env
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/datamailer/.venv/bin/python manage.py process_recipient_list_imports --batch-size 10 --idle-sleep 5
 Restart=always
 RestartSec=5
@@ -90,6 +94,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/datamailer
 EnvironmentFile=/opt/datamailer/.env
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/datamailer/.venv/bin/python manage.py db_worker
 Restart=always
 RestartSec=5
@@ -137,11 +142,9 @@ systemctl enable datamailer-ses-webhooks-worker
 systemctl enable datamailer-inbound-email-worker
 systemctl enable datamailer-cmp-callbacks-worker
 systemctl enable datamailer-recipient-list-imports-worker
-systemctl restart datamailer-db-worker
-systemctl restart datamailer-ses-webhooks-worker
-systemctl restart datamailer-inbound-email-worker
-systemctl restart datamailer-cmp-callbacks-worker
-systemctl restart datamailer-recipient-list-imports-worker
+# One restart transaction for the whole worker set: one failing unit must
+# not leave the others running the previous deploy's code.
+systemctl restart datamailer-db-worker datamailer-ses-webhooks-worker datamailer-inbound-email-worker datamailer-cmp-callbacks-worker datamailer-recipient-list-imports-worker
 systemctl is-active datamailer-db-worker
 systemctl is-active datamailer-ses-webhooks-worker
 systemctl is-active datamailer-inbound-email-worker
